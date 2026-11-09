@@ -15,7 +15,7 @@
 
         <localInspection language="Markdown" shortName="ComarkUnknownComponent"
                          bundle="messages.ComarkBundle" key="inspection.unknown.component.display.name"
-                         groupKey="inspection.group.comark"
+                         groupKey="inspection.unknown.component.group"
                          enabledByDefault="false" level="WEAK WARNING"
                          implementationClass="cz.xprees.comark.meta.ComarkUnknownComponentInspection"/>
     </extensions>

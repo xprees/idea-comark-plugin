@@ -4,11 +4,13 @@ import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.util.SimpleModificationTracker
 import com.intellij.util.io.HttpRequests
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
@@ -66,12 +68,16 @@ class ComarkRemoteMetadata(private val scope: CoroutineScope) {
     private fun fetch(url: String) {
         if (!inFlight.compareAndSet(null, url)) return
         scope.launch(Dispatchers.IO) {
+            // HttpRequests reads blockingly; an indicator cancelled with this coroutine (plugin unload, app exit) stops it early
+            val indicator = EmptyProgressIndicator()
+            val job = coroutineContext.job
+            val cancellation = job.invokeOnCompletion { if (job.isCancelled) indicator.cancel() }
             try {
                 val text = HttpRequests.request(url)
                     .accept("application/json")
                     .connectTimeout(CONNECT_TIMEOUT_MS)
                     .readTimeout(READ_TIMEOUT_MS)
-                    .readString()
+                    .readString(indicator)
                 val records = ComponentMetaParser.parse(text)
                 if (records == null) {
                     LOG.warn("Comark component metadata from $url is not in a supported format")
@@ -81,11 +87,13 @@ class ComarkRemoteMetadata(private val scope: CoroutineScope) {
                     LOG.info("Comark: ${records.size} components loaded from $url")
                 }
             } catch (e: CancellationException) {
+                // also the ProcessCanceledException of the cancelled indicator
                 throw e
             } catch (e: Exception) {
                 LOG.warn("Comark: cannot fetch component metadata from $url: ${e.message}")
                 failed(url)
             } finally {
+                cancellation.dispose()
                 inFlight.set(null)
             }
             modificationTracker.incModificationCount()
