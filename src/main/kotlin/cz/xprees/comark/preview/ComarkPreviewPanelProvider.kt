@@ -10,7 +10,6 @@ import org.intellij.plugins.markdown.ui.preview.MarkdownHtmlPanel
 import org.intellij.plugins.markdown.ui.preview.MarkdownHtmlPanelProvider
 import org.intellij.plugins.markdown.ui.preview.SourceTextPreprocessor
 import org.intellij.plugins.markdown.ui.preview.html.MarkdownUtil
-import org.intellij.plugins.markdown.ui.preview.jcef.JCEFHtmlPanelProvider
 
 /**
  * Makes the Markdown preview render Comark components.
@@ -26,9 +25,19 @@ import org.intellij.plugins.markdown.ui.preview.jcef.JCEFHtmlPanelProvider
  * Side effect: the Markdown settings page lists the JCEF preview twice; both entries are the same choice.
  */
 class ComarkPreviewPanelProvider : MarkdownHtmlPanelProvider() {
-    /** The provider this one stands in for, or null when the IDE has none (then this provider is never chosen). */
+    /**
+     * The provider this one stands in for, or null when the IDE has none (then this provider is never chosen).
+     *
+     * Found by class name rather than by type: the JCEF provider's class is not API and moved between IDE versions (its 2026.1
+     * package is gone in 2026.3), so linking against it would fail the Plugin Verifier and break with NoClassDefFoundError.
+     * Without a JCEF provider the first other available provider is used.
+     */
     private val delegate: MarkdownHtmlPanelProvider?
-        get() = getProviders().firstOrNull { it is JCEFHtmlPanelProvider }
+        get() {
+            val others = getProviders().filter { it !is ComarkPreviewPanelProvider }
+            return others.firstOrNull { it.javaClass.simpleName == JCEF_PROVIDER_CLASS }
+                ?: others.firstOrNull { it.isAvailable() == AvailabilityInfo.AVAILABLE }
+        }
 
     override fun createHtmlPanel(): MarkdownHtmlPanel = requireDelegate().createHtmlPanel()
 
@@ -43,6 +52,10 @@ class ComarkPreviewPanelProvider : MarkdownHtmlPanelProvider() {
         ComarkSourceTextPreprocessor(delegate?.sourceTextPreprocessor ?: SourceTextPreprocessor.default)
 
     private fun requireDelegate(): MarkdownHtmlPanelProvider = checkNotNull(delegate) { "The JCEF Markdown preview is not available" }
+
+    private companion object {
+        const val JCEF_PROVIDER_CLASS = "JCEFHtmlPanelProvider"
+    }
 }
 
 /**
