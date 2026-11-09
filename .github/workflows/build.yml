@@ -124,11 +124,24 @@ jobs:
           name: tests-result
           path: ${{ github.workspace }}/build/reports/tests
 
-  # Run plugin structure verification along with IntelliJ Plugin Verifier
+  # Run plugin structure verification along with IntelliJ Plugin Verifier.
+  # One job per IDE: every IDE distribution is kept both zipped and extracted in the Gradle cache, and all of them together don't
+  # fit on a hosted runner. Keep this list in sync with verify*Versions in gradle.properties (those are what a local verifyPlugin uses).
   verify:
-    name: Verify plugin
+    name: Verify plugin (${{ matrix.ide }} ${{ matrix.version }})
     needs: [ build ]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { ide: IDEA, version: 2026.1.5, idea: 2026.1.5 }
+          - { ide: IDEA, version: 2026.2.3, idea: 2026.2.3 }
+          - { ide: IDEA, version: 2026.3, idea: 2026.3 }
+          - { ide: WebStorm, version: 2026.1.5, webstorm: 2026.1.5 }
+          - { ide: WebStorm, version: 2026.3, webstorm: 2026.3 }
+          - { ide: Rider, version: 2026.1.5, rider: 2026.1.5 }
+          - { ide: Rider, version: 2026.2.3, rider: 2026.2.3 }
     steps:
 
       # Free GitHub Actions Environment Disk Space
@@ -160,14 +173,18 @@ jobs:
 
       # Run Verify Plugin task and IntelliJ Plugin Verifier tool
       - name: Run Plugin Verification tasks
-        run: ./gradlew verifyPlugin
+        run: >
+          ./gradlew verifyPlugin
+          -PverifyIdeaVersions=${{ matrix.idea }}
+          -PverifyWebStormVersions=${{ matrix.webstorm }}
+          -PverifyRiderVersions=${{ matrix.rider }}
 
       # Collect Plugin Verifier Result
       - name: Collect Plugin Verifier Result
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: pluginVerifier-result
+          name: pluginVerifier-result-${{ matrix.ide }}-${{ matrix.version }}
           path: ${{ github.workspace }}/build/reports/pluginVerifier
 
   # Tag the merge commit with the next version, only after build, tests and verification passed
