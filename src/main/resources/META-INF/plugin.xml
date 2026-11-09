@@ -22,6 +22,9 @@
         <lang.parserDefinition language="Comark" implementationClass="cz.xprees.comark.parser.ComarkParserDefinition"/>
 
         <applicationService serviceImplementation="cz.xprees.comark.settings.ComarkSettings"/>
+        <applicationConfigurable parentId="language" id="cz.xprees.comark.settings"
+                                 instance="cz.xprees.comark.settings.ComarkConfigurable"
+                                 key="settings.display.name" bundle="messages.ComarkBundle"/>
     </extensions>
 
     <!-- One file per feature area -->
