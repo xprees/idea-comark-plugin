@@ -24,8 +24,10 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
 
     class State {
         var mode: Mode = Mode.AUTO
+        var formatterEnabled: Boolean = true
         var componentCompletion: Boolean = true
         var componentMetadataUrl: String = ""
+        var componentMetadataCacheMinutes: Int = 30
     }
 
     private var state = State()
@@ -34,6 +36,13 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         get() = state.mode
         set(value) {
             state.mode = value
+        }
+
+    /** Reformat Code uses the Comark formatter (a port of the VS Code extension's) for Comark files. */
+    var formatterEnabled: Boolean
+        get() = state.formatterEnabled
+        set(value) {
+            state.formatterEnabled = value
         }
 
     var componentCompletion: Boolean
@@ -46,6 +55,13 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         get() = state.componentMetadataUrl
         set(value) {
             state.componentMetadataUrl = value.trim()
+        }
+
+    /** How long component metadata fetched from [componentMetadataUrl] is reused. */
+    var componentMetadataCacheMinutes: Int
+        get() = state.componentMetadataCacheMinutes
+        set(value) {
+            state.componentMetadataCacheMinutes = value.coerceAtLeast(0)
         }
 
     override fun getState(): State = state
