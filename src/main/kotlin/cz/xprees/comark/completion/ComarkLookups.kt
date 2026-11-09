@@ -1,5 +1,6 @@
 package cz.xprees.comark.completion
 
+import com.intellij.codeInsight.AutoPopupController
 import com.intellij.codeInsight.completion.CompletionResultSet
 import com.intellij.codeInsight.completion.InsertHandler
 import com.intellij.codeInsight.completion.InsertionContext
@@ -26,7 +27,7 @@ import cz.xprees.comark.psi.ComarkFile
 
 /**
  * Turns a [CompletionSite] into lookup items: component names (block and inline), props as attributes (with `:binding`
- * variants for values that are not strings), slots and props-block keys. Items carry a [ComarkLookupObject] so the
+ * variants for values that are not strings), slots, props-block keys and the values of string literal union props. Items carry a [ComarkLookupObject] so the
  * documentation popup can describe them, show the prop type / requiredness / component source, and put required props first.
  */
 object ComarkLookups {
@@ -65,7 +66,28 @@ object ComarkLookups {
                     sink.addElement(prioritized(propItem(component, prop, context, prop.attributeName).withInsertHandler(YamlKeyInsertHandler(prop, site.indent)), prop))
                 }
             }
+
+            is CompletionSite.PropValue -> index.find(site.componentName, contextFile)?.let { component ->
+                val prop = component.findProp(site.propName) ?: return
+                for (value in valuesOf(prop, site.binding)) {
+                    sink.addElement(
+                        LookupElementBuilder.create(ComarkLookupObject(context, ComarkSymbol(component, prop = prop)), value)
+                            .withTypeText(prop.attributeName)
+                            .withTailText(if (value == prop.defaultValue?.trim('\'', '"', '`')) " " + ComarkBundle.message("completion.value.default") else null, true),
+                    )
+                }
+            }
         }
+    }
+
+    /**
+     * Values worth suggesting for [prop]: the members of a string literal union (`'info' | 'warning'`), or `true` / `false` for a
+     * boolean `:binding`. Bindings of string unions would need JSON quotes inside the attribute quotes, so they get nothing.
+     */
+    private fun valuesOf(prop: ComarkProp, binding: Boolean): List<String> = when {
+        prop.kind == PropKind.BOOLEAN -> if (binding) listOf("true", "false") else emptyList()
+        binding -> emptyList()
+        else -> prop.literalValues
     }
 
     // ---- Components -------------------------------------------------------------------------------------------------
@@ -152,9 +174,11 @@ object ComarkLookups {
     private fun attributeItems(component: ComarkComponent, prop: ComarkProp, context: PsiElement): List<LookupElement> {
         val kind = prop.kind
         val items = ArrayList<LookupElement>(2)
-        items += prioritized(propItem(component, prop, context, prop.attributeName).withInsertHandler(AttributeInsertHandler(kind != PropKind.BOOLEAN)), prop)
+        val plain = AttributeInsertHandler(withValue = kind != PropKind.BOOLEAN, suggestValues = valuesOf(prop, false).isNotEmpty())
+        items += prioritized(propItem(component, prop, context, prop.attributeName).withInsertHandler(plain), prop)
         if (kind != PropKind.STRING) {
-            val binding = propItem(component, prop, context, ":" + prop.attributeName).withInsertHandler(AttributeInsertHandler(true))
+            val bound = AttributeInsertHandler(withValue = true, suggestValues = valuesOf(prop, true).isNotEmpty())
+            val binding = propItem(component, prop, context, ":" + prop.attributeName).withInsertHandler(bound)
             items += PrioritizedLookupElement.withPriority(binding, BINDING_PRIORITY)
         }
         return items
@@ -163,8 +187,11 @@ object ComarkLookups {
     private fun prioritized(item: LookupElementBuilder, prop: ComarkProp): LookupElement =
         PrioritizedLookupElement.withPriority(item, if (prop.required) REQUIRED_PRIORITY else PROP_PRIORITY)
 
-    /** Adds `=""` with the caret between the quotes, unless the attribute already has a value. */
-    private class AttributeInsertHandler(private val withValue: Boolean) : InsertHandler<LookupElement> {
+    /**
+     * Adds `=""` with the caret between the quotes, unless the attribute already has a value, and opens the completion popup
+     * again when the prop has known values ([suggestValues]).
+     */
+    private class AttributeInsertHandler(private val withValue: Boolean, private val suggestValues: Boolean) : InsertHandler<LookupElement> {
         override fun handleInsert(context: InsertionContext, item: LookupElement) {
             if (!withValue) return
             val chars = context.document.immutableCharSequence
@@ -172,6 +199,7 @@ object ComarkLookups {
             if (tail < chars.length && chars[tail] == '=') return
             context.document.insertString(tail, "=\"\"")
             context.editor.caretModel.moveToOffset(tail + 2)
+            if (suggestValues) AutoPopupController.getInstance(context.project).scheduleAutoPopup(context.editor)
         }
     }
 
@@ -193,6 +221,7 @@ object ComarkLookups {
             }
             document.insertString(keyEnd, text)
             context.editor.caretModel.moveToOffset(keyEnd + caret)
+            if (prop.literalValues.isNotEmpty()) AutoPopupController.getInstance(context.project).scheduleAutoPopup(context.editor)
         }
     }
 

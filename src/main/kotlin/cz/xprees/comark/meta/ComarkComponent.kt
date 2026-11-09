@@ -63,6 +63,16 @@ class ComarkProp(
     /** How the prop is written in Markdown attributes and YAML: kebab-case (`iconName` -> `icon-name`). */
     val attributeName: String get() = ComponentNaming.kebabCase(name).ifEmpty { name }
 
+    /** The values of a string literal union type (`'info' | 'warning' | (string & {})` -> `info`, `warning`), else empty. */
+    val literalValues: List<String>
+        get() {
+            val type = displayType ?: return emptyList()
+            return ScriptScanner.splitType(type, 0, type.length, '|').mapNotNull { range ->
+                val part = type.substring(range.first, range.last + 1)
+                if (part.length >= 2 && part[0] in "'\"`" && part.last() == part[0]) part.substring(1, part.length - 1) else null
+            }.distinct()
+        }
+
     fun withDescription(description: String?, defaultValue: String?): ComarkProp =
         ComarkProp(name, type, required, this.defaultValue ?: defaultValue, this.description ?: description, offset)
 

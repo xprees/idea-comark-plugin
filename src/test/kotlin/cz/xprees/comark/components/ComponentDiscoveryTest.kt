@@ -1,5 +1,6 @@
 package cz.xprees.comark.components
 
+import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.VfsUtil
@@ -103,6 +104,16 @@ class ComponentDiscoveryTest : ComponentsTestBase() {
         assertNotNull(index().find("hero"))
         WriteCommandAction.runWriteCommandAction(project) { hero.delete(this) }
         assertNull(index().find("hero"))
+    }
+
+    fun testRefreshAction() {
+        addStandardComponents()
+        assertNotNull(index().find("alert"))
+        val action = ActionManager.getInstance().getAction("Comark.RefreshComponents")
+        assertNotNull("action registered", action)
+        assertEquals("Refresh Comark Components", action.templatePresentation.text)
+        myFixture.testAction(action)
+        assertNotNull(index().find("alert"))
     }
 
     fun testWorksInDumbMode() {

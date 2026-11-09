@@ -35,6 +35,13 @@ sealed class CompletionSite(val prefixStart: Int, val prefix: String) {
     /** A top-level key in the YAML props block of [componentName]; [indent] is the line's indentation. */
     class PropsKey(prefixStart: Int, prefix: String, val componentName: String, val existing: Set<String>, val indent: String) :
         CompletionSite(prefixStart, prefix)
+
+    /**
+     * The value of prop [propName] of [componentName]: inside the quotes of `{type="in|"}` ([binding] for `:type`), or after
+     * `type: ` in a props block.
+     */
+    class PropValue(prefixStart: Int, prefix: String, val componentName: String, val propName: String, val binding: Boolean) :
+        CompletionSite(prefixStart, prefix)
 }
 
 /**
@@ -48,6 +55,7 @@ object ComarkCompletionSites {
     private val SLOT_NAME = Regex("""^[ \t]*#([A-Za-z$][\w$.-]*)?$""")
     private val NAME_REST = Regex("""^[\w$.-]*""")
     private val PROPS_KEY = Regex("""^([ \t]*)([A-Za-z_$][\w$-]*)?$""")
+    private val PROPS_VALUE = Regex("""^([ \t]*)("[^"]*"|'[^']*'|[A-Za-z_$][\w$-]*)[ \t]*:[ \t]+(['"]?)([^'"#]*)$""")
 
     /** Containers in which a `#name` line is not a slot of the enclosing component. */
     private val NOT_SLOT_LEVEL = TokenSet.create(
@@ -73,7 +81,7 @@ object ComarkCompletionSites {
         if (props != null) {
             val component = props.parent?.parent as? ComarkBlockComponent ?: return null
             val start = props.textRange.startOffset
-            return propsKey(component, props.text, offset - start)?.shifted(start)
+            return propsSite(component, props.text, offset - start)?.shifted(start)
         }
         // The line's first token tells whether the line is code (fence, indented block), HTML, front matter or props.
         val lineElement = file.findElementAt(contentStart) ?: probe
@@ -95,13 +103,19 @@ object ComarkCompletionSites {
         return inlineName(text, offset, lineStart)
     }
 
-    /** A props block key at [offset] of [yaml] (the props block text, injected or not). */
-    fun propsKey(component: ComarkBlockComponent, yaml: CharSequence, offset: Int): CompletionSite.PropsKey? {
+    /** A key, or the value after `key: `, at [offset] of [yaml]: the text of a component's props block, injected or not. */
+    fun propsSite(component: ComarkBlockComponent, yaml: CharSequence, offset: Int): CompletionSite? {
         val name = component.componentName ?: return null
         if (offset < 0 || offset > yaml.length) return null
         var lineStart = offset
         while (lineStart > 0 && yaml[lineStart - 1] != '\n') lineStart--
         val before = yaml.subSequence(lineStart, offset).toString()
+        PROPS_VALUE.find(before)?.let { match ->
+            if (match.groupValues[1].length != PropsYaml.baseIndent(yaml)) return null
+            val value = match.groupValues[4]
+            val key = match.groupValues[2].trim('"', '\'')
+            return CompletionSite.PropValue(offset - value.length, value, name, key, binding = false)
+        }
         val match = PROPS_KEY.find(before) ?: return null
         val indent = match.groupValues[1]
         // a line indented deeper than the other keys belongs to a nested mapping or a multi-line string
@@ -121,7 +135,11 @@ object ComarkCompletionSites {
         return false
     }
 
-    private fun CompletionSite.PropsKey.shifted(by: Int) = CompletionSite.PropsKey(prefixStart + by, prefix, componentName, existing, indent)
+    private fun CompletionSite.shifted(by: Int): CompletionSite = when (this) {
+        is CompletionSite.PropsKey -> CompletionSite.PropsKey(prefixStart + by, prefix, componentName, existing, indent)
+        is CompletionSite.PropValue -> CompletionSite.PropValue(prefixStart + by, prefix, componentName, propName, binding)
+        else -> this
+    }
 
     private fun slot(file: ComarkFile, text: CharSequence, offset: Int, lineEnd: Int, contentStart: Int, prefix: String): CompletionSite? {
         if (!NAME_REST.matches(text.subSequence(offset, lineEnd))) return null
@@ -162,11 +180,28 @@ object ComarkCompletionSites {
         val prefixStart = when (token?.part) {
             null -> offset
             ComarkSyntax.AttrPart.NAME -> token.start
+            ComarkSyntax.AttrPart.VALUE -> return valueSite(text, offset, scan, token, componentName)
             else -> return null
         }
         val existing = scan.tokens.filter { it.part == ComarkSyntax.AttrPart.NAME && it !== token }
             .mapTo(HashSet()) { ComponentNaming.looseKey(text.subSequence(it.start, it.end).toString().removePrefix(":")) }
         return CompletionSite.Attribute(prefixStart, text.subSequence(prefixStart, offset).toString(), componentName, existing)
+    }
+
+    /** Inside the (quoted) value of `name="..."`. */
+    private fun valueSite(text: CharSequence, offset: Int, scan: ComarkSyntax.AttrScan, value: ComarkSyntax.AttrToken, componentName: String): CompletionSite? {
+        val index = scan.tokens.indexOf(value)
+        if (index < 2 || scan.tokens[index - 1].part != ComarkSyntax.AttrPart.EQ) return null
+        val name = scan.tokens[index - 2].takeIf { it.part == ComarkSyntax.AttrPart.NAME } ?: return null
+        val quote = text[value.start]
+        val quoted = quote == '"' || quote == '\''
+        val contentStart = if (quoted) value.start + 1 else value.start
+        if (offset < contentStart) return null
+        val closed = quoted && value.end - value.start >= 2 && text[value.end - 1] == quote
+        if (closed && offset >= value.end) return null
+        val rawName = text.subSequence(name.start, name.end).toString()
+        val prefix = text.subSequence(contentStart, offset).toString()
+        return CompletionSite.PropValue(contentStart, prefix, componentName, rawName.removePrefix(":"), rawName.startsWith(":"))
     }
 
     /** `:na|` where an inline component may start (comark's previous-character rule). */

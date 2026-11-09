@@ -94,6 +94,14 @@ class ComponentMetaParserTest {
     }
 
     @Test
+    fun literalUnionValues() {
+        assertEquals(listOf("info", "warning"), ComarkProp("type", "'info' | \"warning\" | undefined").literalValues)
+        assertEquals(listOf("sm", "md"), ComarkProp("size", "'sm' | 'md' | (string & {})").literalValues)
+        assertEquals(emptyList<String>(), ComarkProp("title", "string").literalValues)
+        assertEquals(emptyList<String>(), ComarkProp("untyped").literalValues)
+    }
+
+    @Test
     fun cleansUndefinedFromTypes() {
         assertEquals("string", ComarkProp.cleanType("string | undefined"))
         assertEquals("number", ComarkProp.cleanType("undefined | number"))
