@@ -1,0 +1,21 @@
+<html>
+<body>
+Reports Comark block components (<code>::name</code>) and inline components (<code>:name</code>) that no known component matches.
+<p>
+  Components are discovered from <code>.vue</code> files in Nuxt <code>components/</code> directories,
+  from <code>.nuxt/component-meta.mjs</code> files written by <code>nuxt-component-meta</code>,
+  and from the component metadata URL in <b>Settings | Languages &amp; Frameworks | Comark</b>.
+  The inspection stays silent until at least one component has been discovered.
+</p>
+<p>Example:</p>
+<pre><code>::alret{type="info"}
+Typo in the component name.
+::
+</code></pre>
+<!-- tooltip end -->
+<p>
+  Components registered at runtime (by a Nuxt module or a custom renderer) may be unknown to the IDE;
+  the inspection is therefore disabled by default.
+</p>
+</body>
+</html>
