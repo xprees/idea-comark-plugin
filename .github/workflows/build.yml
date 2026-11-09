@@ -1,0 +1,291 @@
+# GitHub Actions workflow for building, testing, verifying, and preparing plugin release drafts:
+# - Build the plugin ZIP with the 'buildPlugin' task and upload it as a workflow artifact.
+# - Run the 'check' task and upload test reports on failure.
+# - Run the 'verifyPlugin' task and upload Plugin Verifier reports.
+# - On pushes to 'master' (merged pull requests), once everything is green: tag the commit with the next version and
+#   create a draft GitHub release for that tag with the built (and, if the signing secrets exist, signed) plugin attached.
+#   Publishing the draft starts the Release workflow.
+#
+# Version = <major>.<minor>.<patch>: major and minor come from the repository variables PLUGIN_VERSION_MAJOR and
+# PLUGIN_VERSION_MINOR (Settings > Secrets and variables > Actions > Variables; unset = the values in gradle.properties),
+# the patch is the next free one for that major.minor (see build.gradle.kts).
+#
+# The workflow is triggered on pushes to the 'master' branch and on pull_request events.
+#
+# GitHub Actions reference: https://docs.github.com/actions
+#
+## JBIJPPTPL
+
+name: Build
+on:
+  # Trigger the workflow on pushes to only the 'master' branch (this avoids duplicate checks being run e.g., for dependabot pull requests)
+  push:
+    branches: [ master ]
+  # Trigger the workflow on any pull request
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # superseded pull request runs are cancelled; runs for master finish so every merge gets its tag
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Major and minor of the plugin version; empty when the variables are not defined (Gradle then falls back to gradle.properties)
+  PLUGIN_VERSION_MAJOR: ${{ vars.PLUGIN_VERSION_MAJOR }}
+  PLUGIN_VERSION_MINOR: ${{ vars.PLUGIN_VERSION_MINOR }}
+
+jobs:
+
+  # Prepare the environment and build the plugin
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+
+      # Free GitHub Actions Environment Disk Space
+      - name: Maximize Build Space
+        uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          tool-cache: false
+          large-packages: false
+
+      # Check out the current repository
+      - name: Fetch Sources
+        uses: actions/checkout@v7
+        with:
+          # full history and tags: the plugin version is derived from git tags
+          fetch-depth: 0
+
+      # Set up the Java environment for the next steps
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: 21
+
+      # Setup Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # Build plugin
+      - name: Build plugin
+        run: ./gradlew buildPlugin
+
+      # Store an already-built plugin as an artifact for downloading
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-distribution
+          path: ./build/distributions/*.zip
+
+  # Run tests and upload test reports on failure
+  test:
+    name: Test
+    needs: [ build ]
+    runs-on: ubuntu-latest
+    steps:
+
+      # Free GitHub Actions Environment Disk Space
+      - name: Maximize Build Space
+        uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          tool-cache: false
+          large-packages: false
+
+      # Check out the current repository
+      - name: Fetch Sources
+        uses: actions/checkout@v7
+        with:
+          # full history and tags: the plugin version is derived from git tags
+          fetch-depth: 0
+
+      # Set up the Java environment for the next steps
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: 21
+
+      # Setup Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      # Run tests
+      - name: Run Tests
+        run: ./gradlew check
+
+      # Collect Tests Result of failed tests
+      - name: Collect Tests Result
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: tests-result
+          path: ${{ github.workspace }}/build/reports/tests
+
+  # Run plugin structure verification along with IntelliJ Plugin Verifier
+  verify:
+    name: Verify plugin
+    needs: [ build ]
+    runs-on: ubuntu-latest
+    steps:
+
+      # Free GitHub Actions Environment Disk Space
+      - name: Maximize Build Space
+        uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          tool-cache: false
+          large-packages: false
+
+      # Check out the current repository
+      - name: Fetch Sources
+        uses: actions/checkout@v7
+        with:
+          # full history and tags: the plugin version is derived from git tags
+          fetch-depth: 0
+
+      # Set up the Java environment for the next steps
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: 21
+
+      # Setup Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      # Run Verify Plugin task and IntelliJ Plugin Verifier tool
+      - name: Run Plugin Verification tasks
+        run: ./gradlew verifyPlugin
+
+      # Collect Plugin Verifier Result
+      - name: Collect Plugin Verifier Result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pluginVerifier-result
+          path: ${{ github.workspace }}/build/reports/pluginVerifier
+
+  # Tag the merge commit with the next version, only after build, tests and verification passed
+  tag:
+    name: Tag release
+    if: github.event_name != 'pull_request'
+    needs: [ build, test, verify ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+
+      # Full history and tags are needed to find the next free patch number
+      - name: Fetch Sources
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      # The version logic lives in build.gradle.kts, so the tag, the draft release and the built plugin always agree
+      - name: Create the tag
+        run: |
+          VERSION=$(./gradlew properties --property version --quiet --console=plain | tail -n 1 | cut -f2- -d ' ')
+          if git rev-parse -q --verify "refs/tags/$VERSION" > /dev/null; then
+            echo "Tag $VERSION already exists, nothing to do"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+          echo "Tagged ${{ github.sha }} as $VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+  # Prepare a draft release for GitHub Releases page for the manual verification
+  # If accepted and published, the release workflow would be triggered
+  releaseDraft:
+    name: Release draft
+    if: github.event_name != 'pull_request'
+    needs: [ build, test, verify, tag ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+
+      # Check out the current repository
+      - name: Fetch Sources
+        uses: actions/checkout@v7
+        with:
+          # full history and tags: the plugin version is derived from git tags
+          fetch-depth: 0
+
+      # Set up the Java environment for the next steps
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: 21
+
+      # Setup Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      # Remove old release drafts by using the curl request for the available releases with a draft flag
+      - name: Remove Old Release Drafts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/{owner}/{repo}/releases \
+            --jq '.[] | select(.draft == true) | .id' \
+            | xargs -r -I '{}' gh api -X DELETE repos/{owner}/{repo}/releases/{}
+
+      # Create a new release draft which is not publicly visible and requires manual acceptance
+      - name: Create Release Draft
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(./gradlew properties --property version --quiet --console=plain | tail -n 1 | cut -f2- -d ' ')
+          RELEASE_NOTE="./build/tmp/release_note.txt"
+          ./gradlew getChangelog --unreleased --no-header --quiet --console=plain --output-file=$RELEASE_NOTE
+
+          gh release create $VERSION \
+            --draft \
+            --title $VERSION \
+            --notes-file $RELEASE_NOTE
+
+      # Build the plugin from the tagged commit (its version is exactly the tag), so the draft carries the installable zip
+      - name: Build plugin
+        run: ./gradlew buildPlugin
+
+      # Also sign it when the signing secrets are configured; these are the same files the Release workflow publishes
+      - name: Sign plugin
+        env:
+          CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$PRIVATE_KEY" ] || [ -z "$CERTIFICATE_CHAIN" ]; then
+            echo "Signing secrets are not configured: attaching the unsigned plugin only"
+            exit 0
+          fi
+          ./gradlew signPlugin
+
+      # Attach the built plugin (comark-<version>.zip, plus the -signed one when available) to the draft release
+      - name: Attach plugin to the draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(./gradlew properties --property version --quiet --console=plain | tail -n 1 | cut -f2- -d ' ')
+          gh release upload "$VERSION" build/distributions/*.zip --clobber
