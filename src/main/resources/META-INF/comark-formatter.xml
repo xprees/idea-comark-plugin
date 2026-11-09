@@ -7,5 +7,7 @@
         <!-- Enter: new lines in component bodies and props start where the formatter would put them -->
         <lineIndentProvider implementation="cz.xprees.comark.format.ComarkLineIndentProvider"/>
         <enterHandlerDelegate implementation="cz.xprees.comark.format.ComarkEnterHandlerDelegate" order="before MarkdownEnterHandler"/>
+        <!-- props blocks: ahead of the YAML plugin's Enter handling of the injected YAML -->
+        <editorActionHandler action="EditorEnter" implementationClass="cz.xprees.comark.format.ComarkPropsEnterHandler" order="first"/>
     </extensions>
 </idea-plugin>

@@ -97,6 +97,10 @@ class ComarkEnterTest : BasePlatformTestCase() {
     fun testEnterOnBlankLineInProps() =
         enter("::card\n---\nui:\n  a: 1\n<caret>\n---\n::\n", "::card\n---\nui:\n  a: 1\n\n  <caret>\n---\n::\n")
 
+    fun testEnterOnBlankLineInNestedInjectedProps() =
+        // the props are injected YAML here (the YAML plugin is present in tests): the nested component's indentation must survive
+        enter("::outer\n  :::inner\n  ---\n  ui:\n    a: 1\n<caret>\n  ---\n  :::\n::\n", "::outer\n  :::inner\n  ---\n  ui:\n    a: 1\n\n    <caret>\n  ---\n  :::\n::\n")
+
     fun testThematicBreakIsNotYaml() =
         // the formatter takes `---` for a YAML block, but only props and front matter get YAML indentation on Enter
         enter("::outer\n:::inner\nIntro\n\n---\n\nNote:<caret>\n:::\n::\n", "::outer\n:::inner\nIntro\n\n---\n\nNote:\n  <caret>\n:::\n::\n")
