@@ -1,0 +1,20 @@
+<html>
+<body>
+Reports block components that have no closing marker.
+<p>
+  Comark closes such a component automatically at the end of its parent component (or of the document), so everything up to
+  that point becomes the component's content, which is rarely what was intended.
+</p>
+<p>Example:</p>
+<pre><code>
+::alert
+Watch out!
+
+This paragraph ends up inside the alert as well.
+</code></pre>
+<p>
+  The quick-fix inserts the closing marker (<code>::</code>, <code>:::</code>, ... with as many colons as the opener) on its
+  own line after the component's last content line, indented like the opener.
+</p>
+</body>
+</html>
