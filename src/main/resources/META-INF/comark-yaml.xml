@@ -1,6 +1,9 @@
 <idea-plugin>
     <!-- Loaded only with the YAML plugin (optional dependency in plugin.xml) -->
     <extensions defaultExtensionNs="com.intellij">
+        <!-- editor: YAML highlighting and checks inside component props blocks -->
         <multiHostInjector implementation="cz.xprees.comark.editor.yaml.ComarkPropsYamlInjector"/>
+        <!-- components: prop key completion inside props blocks injected as YAML -->
+        <completion.contributor language="yaml" implementationClass="cz.xprees.comark.completion.ComarkPropsYamlCompletionContributor"/>
     </extensions>
 </idea-plugin>
