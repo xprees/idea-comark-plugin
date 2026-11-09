@@ -90,6 +90,8 @@ dependencies {
         intellijIdea(platformVersion)
         // Comark extends the bundled Markdown language; YAML backs frontmatter and component props blocks.
         bundledPlugins("org.intellij.plugins.markdown", "org.jetbrains.plugins.yaml")
+        // Optional at runtime (comark-spellchecker.xml): spellchecking of component content and attribute values
+        bundledModule("intellij.spellchecker")
         testFramework(TestFrameworkType.Platform)
     }
 }

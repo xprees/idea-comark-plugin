@@ -1,5 +1,6 @@
 package cz.xprees.comark.format
 
+import cz.xprees.comark.lang.ComarkLanguage
 import com.intellij.application.options.CodeStyle
 import com.intellij.injected.editor.EditorWindow
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
@@ -26,7 +27,7 @@ class ComarkEnterTest : BasePlatformTestCase() {
 
     private fun withIndentSize(size: Int, action: () -> Unit) {
         CodeStyle.doWithTemporarySettings(project, CodeStyle.getSettings(project)) { settings ->
-            settings.getIndentOptions(MarkdownFileType.INSTANCE).INDENT_SIZE = size
+            settings.getCommonSettings(ComarkLanguage).indentOptions!!.INDENT_SIZE = size
             action()
         }
     }
