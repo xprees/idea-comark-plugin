@@ -43,6 +43,8 @@ class ComarkUnknownComponentInspection : LocalInspectionTool() {
                 val text = file.viewProvider.contents
                 val range = element.textRange
                 for (component in InlineComponentSyntax.findAll(text, range.startOffset, range.endOffset)) {
+                    // `:smile:` is an emoji shortcode when comark's emoji plugin is on (its rule runs before components)
+                    if (component.contentOpen < 0 && component.attributes == null && text.getOrNull(component.nameEnd) == ':') continue
                     val leaf = file.findElementAt(component.nameStart) ?: continue
                     if (ComponentUsages.isInsideNonContent(leaf)) continue
                     check(element, component.name(text), TextRange(component.nameStart, component.nameEnd).shiftLeft(range.startOffset))

@@ -1,6 +1,7 @@
 package cz.xprees.comark.components
 
 import com.intellij.openapi.extensions.ExtensionPointName
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.platform.backend.documentation.DocumentationResult
 import com.intellij.platform.backend.documentation.DocumentationTarget
 import com.intellij.platform.backend.documentation.DocumentationTargetProvider
@@ -89,6 +90,14 @@ class ComponentDocumentationTest : ComponentsTestBase() {
         assertInstanceOf(element, ComarkLookupObject::class.java)
         val target = ComarkPsiDocumentationTargetProvider().documentationTarget(element!!, null)
         assertTrue(html(target).contains("Highlights important information."))
+    }
+
+    fun testGoToSourceFromDocumentation() {
+        val component = targetAt("::al<caret>ert\n::")!!.navigatable as OpenFileDescriptor
+        assertEquals("Alert.vue", component.file.name)
+        val prop = targetAt("::alert{ti<caret>tle=\"x\"}\n::")!!.navigatable as OpenFileDescriptor
+        val text = String(prop.file.contentsToByteArray())
+        assertEquals(text.indexOf("title: string"), prop.offset)
     }
 
     fun testHintAndPointer() {

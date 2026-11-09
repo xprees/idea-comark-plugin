@@ -2,6 +2,8 @@ package cz.xprees.comark.navigation
 
 import com.intellij.lang.documentation.DocumentationMarkup
 import com.intellij.model.Pointer
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.util.text.HtmlBuilder
 import com.intellij.openapi.util.text.HtmlChunk
@@ -11,6 +13,7 @@ import com.intellij.platform.backend.documentation.DocumentationTarget
 import com.intellij.platform.backend.documentation.DocumentationTargetProvider
 import com.intellij.platform.backend.documentation.PsiDocumentationTargetProvider
 import com.intellij.platform.backend.presentation.TargetPresentation
+import com.intellij.pom.Navigatable
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import cz.xprees.comark.ComarkBundle
@@ -35,22 +38,30 @@ class ComarkDocumentationTargetProvider : DocumentationTargetProvider, DumbAware
         val index = ComarkComponentService.getInstance(file.project).index()
         val component = index.find(usage.componentName, ComponentUsages.contextFile(file)) ?: return emptyList()
         val symbol = ComarkSymbol.of(component, usage) ?: return emptyList()
-        return listOf(ComarkDocumentationTarget(symbol))
+        return listOf(ComarkDocumentationTarget(file.project, symbol))
     }
 }
 
 /** Documentation of completion items and navigation targets, which stand for a [ComarkSymbol] ([ComarkSymbolElement]). */
 class ComarkPsiDocumentationTargetProvider : PsiDocumentationTargetProvider {
     override fun documentationTarget(element: PsiElement, originalElement: PsiElement?): DocumentationTarget? =
-        (element as? ComarkSymbolElement)?.let { ComarkDocumentationTarget(it.symbol) }
+        (element as? ComarkSymbolElement)?.let { ComarkDocumentationTarget(element.project, it.symbol) }
 }
 
 /**
  * The documentation of a [ComarkSymbol]. The symbol is an immutable snapshot of discovered metadata (no PSI), so a hard pointer
- * to the target is safe.
+ * to the target is safe. The popup's "go to source" opens the component's `.vue` file, at the prop or slot when its position
+ * is known.
  */
-class ComarkDocumentationTarget(val symbol: ComarkSymbol) : DocumentationTarget {
+class ComarkDocumentationTarget(private val project: Project, val symbol: ComarkSymbol) : DocumentationTarget {
     override fun createPointer(): Pointer<out DocumentationTarget> = Pointer.hardPointer(this)
+
+    override val navigatable: Navigatable?
+        get() {
+            val file = symbol.component.file?.takeIf { it.isValid } ?: return null
+            val offset = symbol.prop?.offset ?: symbol.slot?.offset ?: -1
+            return if (offset >= 0) OpenFileDescriptor(project, file, offset) else OpenFileDescriptor(project, file)
+        }
 
     override fun computePresentation(): TargetPresentation = TargetPresentation.builder(symbol.presentableName)
         .icon(symbol.icon)

@@ -780,9 +780,14 @@ object VueSfcParser {
 
     private fun indexOfIgnoreCase(text: CharSequence, needle: String, from: Int): Int {
         var i = from
-        while (i + needle.length <= text.length) {
-            if (text.subSequence(i, i + needle.length).toString().equals(needle, ignoreCase = true)) return i
-            i++
+        outer@ while (i + needle.length <= text.length) {
+            for (k in needle.indices) {
+                if (!text[i + k].equals(needle[k], ignoreCase = true)) {
+                    i++
+                    continue@outer
+                }
+            }
+            return i
         }
         return -1
     }

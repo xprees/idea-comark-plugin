@@ -53,7 +53,7 @@ class ComarkPropsYamlCompletionContributor : CompletionContributor(), DumbAware 
                 val yaml = parameters.originalFile
                 val host = ComponentUsages.propsHost(yaml) ?: return
                 val component = host.parent?.parent as? ComarkBlockComponent ?: return
-                val site = ComarkCompletionSites.propsKey(component, yaml.viewProvider.contents, parameters.offset) ?: return
+                val site = ComarkCompletionSites.propsSite(component, yaml.viewProvider.contents, parameters.offset) ?: return
                 val index = ComarkComponentService.getInstance(yaml.project).index()
                 if (index.isEmpty) return
                 ComarkLookups.add(site, index, host.containingFile, result)

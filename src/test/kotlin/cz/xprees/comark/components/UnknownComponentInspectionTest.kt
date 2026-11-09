@@ -28,7 +28,7 @@ class UnknownComponentInspectionTest : ComponentsTestBase() {
             |---|
             | cell |
 
-            Not components: `:inline-code`, https://example.com, 10:30, Note: text.
+            Not components: `:inline-code`, https://example.com, 10:30, Note: text, :smile: emoji.
 
             ```
             ::fenced

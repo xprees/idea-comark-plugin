@@ -190,6 +190,40 @@ class ComponentCompletionTest : ComponentsTestBase() {
         assertEquals(" (required)  Heading shown above the content", LookupElementPresentation.renderElement(title).tailText)
     }
 
+    // ---- Values -----------------------------------------------------------------------------------------------------
+
+    fun testLiteralUnionValuesInAttributes() {
+        assertSameElements(complete("::alert{type=\"<caret>\"}\n::"), "info", "warning", "danger")
+        assertCompletes("::alert{type=\"wa<caret>\"}\n::", "::alert{type=\"warning<caret>\"}\n::")
+        assertContainsElements(complete("::alert{title=\"x\" type='<caret>'}\n::"), "danger")
+    }
+
+    fun testDefaultValueIsMarked() {
+        configure("::alert{type=\"<caret>\"}\n::")
+        myFixture.completeBasic()
+        val info = myFixture.lookupElements!!.first { it.lookupString == "info" }
+        assertEquals(" (default)", LookupElementPresentation.renderElement(info).tailText)
+    }
+
+    fun testBooleanBindingValues() {
+        assertSameElements(complete("::alert{:dismissible=\"<caret>\"}\n::"), "true", "false")
+    }
+
+    fun testNoValuesForFreeText() {
+        assertDoesntContain(complete("::alert{title=\"<caret>\"}\n::"), "info", "true")
+        assertDoesntContain(complete("::alert{type=\"info\"<caret>}\n::"), "info", "warning")
+    }
+
+    fun testLiteralUnionValuesInPropsBlock() {
+        assertSameElements(complete("::alert\n---\ntype: <caret>\n---\n::"), "info", "warning", "danger")
+        assertCompletes("::alert\n---\ntitle: Hi\ntype: da<caret>\n---\n::", "::alert\n---\ntitle: Hi\ntype: danger<caret>\n---\n::")
+    }
+
+    fun testInlineComponentValues() {
+        myFixture.addFileToProject("components/Pill.vue", "<script setup lang=\"ts\">\ndefineProps<{ tone?: 'muted' | 'loud' }>()\n</script>")
+        assertSameElements(complete("Text :pill{tone=\"<caret>\"}"), "muted", "loud")
+    }
+
     // ---- Slots ------------------------------------------------------------------------------------------------------
 
     fun testSlotNames() {
