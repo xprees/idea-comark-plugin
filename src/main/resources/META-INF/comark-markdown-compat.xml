@@ -1,2 +1,18 @@
 <idea-plugin>
+    <!--
+      Markdown plugin features that are registered per file type or checked against the exact Markdown language and therefore
+      don't reach Comark files on their own (see cz.xprees.comark.compat), and the Comark-aware Markdown preview
+      (see cz.xprees.comark.preview).
+    -->
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- The TODO index keys indexers by the substituted file type, which is "Comark" for Comark files -->
+        <todoIndexer filetype="Comark" implementationClass="org.intellij.plugins.markdown.highlighting.MarkdownTodoIndexer"/>
+        <!-- The Markdown fill handler (inherited through the dialect) rejects non-Markdown files -->
+        <codeInsight.fillParagraph language="Comark" implementationClass="cz.xprees.comark.compat.ComarkParagraphFillHandler"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="org.intellij.markdown">
+        <!-- Stands in for the JCEF preview provider to render Comark components; must come before it -->
+        <html.panel.provider implementation="cz.xprees.comark.preview.ComarkPreviewPanelProvider" order="first"/>
+    </extensions>
 </idea-plugin>
