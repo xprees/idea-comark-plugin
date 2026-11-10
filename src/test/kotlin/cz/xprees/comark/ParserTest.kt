@@ -1,6 +1,7 @@
 package cz.xprees.comark
 
 import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.psi.impl.DebugUtil
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import cz.xprees.comark.psi.ComarkBlockComponent
@@ -10,6 +11,8 @@ import cz.xprees.comark.psi.ComarkSlot
 import org.intellij.plugins.markdown.lang.MarkdownElementTypes
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownCodeFence
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownHeader
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownList
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownListItem
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownParagraph
 import java.io.File
 
@@ -103,6 +106,37 @@ class ParserTest : BasePlatformTestCase() {
         val component = parse("::card\n```yaml\ntitle: Hello\n```\n::\n").components.single()
         assertNull(component.propsBlock)
         assertNotNull(PsiTreeUtil.findChildOfType(component, MarkdownCodeFence::class.java))
+    }
+
+    /** comark SPEC/COMARK/component-nested-in-list.md: the component belongs to the list item and the list continues after it. */
+    fun testComponentInListItemStaysInTheList() {
+        val file = parse("::steps\n- **Node.js** - `22.x` or newer\n- **Terminal** - run Nuxt\n  :::callout\n  Use an even version.\n  :::\n- third\n::\n")
+        val callout = file.allComponents().single { it.componentName == "callout" }
+        val item = PsiTreeUtil.getParentOfType(callout, MarkdownListItem::class.java)
+        assertNotNull(DebugUtil.psiToString(file, true, false), item)
+        assertTrue(item!!.text.startsWith("- **Terminal**"))
+        val steps = file.components.single()
+        assertEquals(1, PsiTreeUtil.getChildrenOfTypeAsList(steps, MarkdownList::class.java).size)
+        assertEquals(3, PsiTreeUtil.findChildrenOfType(steps, MarkdownListItem::class.java).size)
+        assertNotNull(PsiTreeUtil.findChildrenOfType(callout, MarkdownParagraph::class.java).singleOrNull { it.text == "Use an even version." })
+    }
+
+    fun testComponentInNestedAndOrderedListItems() {
+        val file = parse("1. one\n2. two\n   - nested\n     ::card\n     Text\n     ::\n   - nested two\n3. three\n\nAfter\n")
+        val card = file.allComponents().single()
+        val nestedItem = PsiTreeUtil.getParentOfType(card, MarkdownListItem::class.java)!!
+        assertTrue(nestedItem.text.startsWith("- nested"))
+        assertEquals(1, PsiTreeUtil.getChildrenOfTypeAsList(file, MarkdownList::class.java).size)
+    }
+
+    fun testUnindentedComponentAfterListIsNotInIt() {
+        val file = parse("- one\n- two\n::card\nText\n::\n- three\n")
+        assertNull(PsiTreeUtil.getParentOfType(file.allComponents().single(), MarkdownListItem::class.java))
+    }
+
+    fun testComponentAfterParagraphIsNotInAList() {
+        val file = parse("- one\n\nParagraph\n  ::card\n  Text\n  ::\n")
+        assertNull(PsiTreeUtil.getParentOfType(file.allComponents().single(), MarkdownListItem::class.java))
     }
 
     fun testSlots() {
