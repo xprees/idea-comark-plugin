@@ -56,8 +56,9 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         abstract fun toAst(): List<ASTNode>
     }
 
-    private inner class MarkdownBlock(val from: Int, val to: Int, val strip: IntArray) : Block() {
-        override fun toAst(): List<ASTNode> = markdownRegion(from, to, strip)
+    /** Markdown lines [from, to); [embedded] are components inside its list items, parsed as part of the region (see [parseRegion]). */
+    private inner class MarkdownBlock(val from: Int, val to: Int, val strip: IntArray, val embedded: List<ComponentBlock>) : Block() {
+        override fun toAst(): List<ASTNode> = markdownRegion(from, to, strip, embedded)
     }
 
     private inner class ComponentBlock(
@@ -86,17 +87,18 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         }
     }
 
-    private inner class PropsBlock(val openLine: Int, val closeLine: Int) : Block() {
+    /** Props block between [openLine] and [closeLine]; the fences are `---` or a `` ```yaml [props] `` ... `` ``` `` code fence. */
+    private inner class PropsBlock(val openLine: Int, val closeLine: Int, val openLength: Int = 3, val closeLength: Int = 3) : Block() {
         override fun toAst(): List<ASTNode> {
             val open = lines[openLine]
             val close = lines[closeLine]
             val parts = ArrayList<ASTNode>()
-            parts += LeafASTNode(ComarkTypes.PROPS_FENCE_PAIR.first, open.contentStart, open.contentStart + 3)
+            parts += LeafASTNode(ComarkTypes.PROPS_FENCE_PAIR.first, open.contentStart, open.contentStart + openLength)
             val contentStart = open.next
             val contentEnd = close.start
             if (contentEnd > contentStart) parts += LeafASTNode(ComarkTypes.PROPS_CONTENT_PAIR.first, contentStart, contentEnd)
-            parts += LeafASTNode(ComarkTypes.PROPS_FENCE_PAIR.first, close.contentStart, close.contentStart + 3)
-            return listOf(assemble(ComarkTypes.PROPS_BLOCK_PAIR.first, open.contentStart, close.contentStart + 3, parts))
+            parts += LeafASTNode(ComarkTypes.PROPS_FENCE_PAIR.first, close.contentStart, close.contentStart + closeLength)
+            return listOf(assemble(ComarkTypes.PROPS_BLOCK_PAIR.first, open.contentStart, close.contentStart + closeLength, parts))
         }
     }
 
@@ -123,8 +125,12 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         var fenceLength = 0
         var l = from
 
+        // components inside list items of the current region
+        var embedded = ArrayList<ComponentBlock>()
+
         fun flush(until: Int) {
-            if (until > regionStart) blocks += MarkdownBlock(regionStart, until, stripFor(regionStart, until, container))
+            if (until > regionStart) blocks += MarkdownBlock(regionStart, until, stripFor(regionStart, until, container, embedded), embedded)
+            embedded = ArrayList()
         }
 
         while (l < to) {
@@ -136,6 +142,18 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
                 continue
             }
             val relative = line.indent - minOf(container.indent, line.indent)
+            if (!line.isBlank && relative >= 4 && l > regionStart) {
+                // four or more columns in is code or paragraph text, unless it is inside a (nested) list item's content
+                val opener = ComarkSyntax.parseOpener(text, line.contentStart, line.end)
+                if (opener != null) {
+                    val component = parseComponent(l, opener, to)
+                    if (component.closeLine >= 0 && isInListItem(regionStart, l, container, embedded, relative)) {
+                        embedded += component
+                        l = component.closeLine + 1
+                        continue
+                    }
+                }
+            }
             if (!line.isBlank && relative < 4) {
                 val fence = ComarkSyntax.fenceOpen(text, line.contentStart, line.end)
                 if (fence != null) {
@@ -146,8 +164,16 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
                 }
                 val opener = ComarkSyntax.parseOpener(text, line.contentStart, line.end)
                 if (opener != null) {
-                    flush(l)
                     val component = parseComponent(l, opener, to)
+                    if (component.closeLine >= 0 && relative >= 2 && l > regionStart &&
+                        isInListItem(regionStart, l, container, embedded, relative)
+                    ) {
+                        // `- item\n  :::callout` ... `:::`: the component is part of the list item, and the list goes on after it
+                        embedded += component
+                        l = component.closeLine + 1
+                        continue
+                    }
+                    flush(l)
                     blocks += component
                     l = if (component.closeLine >= 0) component.closeLine + 1 else to
                     regionStart = l
@@ -184,6 +210,20 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
                     props = PropsBlock(bodyStart, j)
                     bodyStart = j + 1
                     break
+                }
+            }
+        } else if (bodyStart < bodyEnd) {
+            val first = lines[bodyStart]
+            val opening = text.subSequence(first.contentStart, first.end).trimEnd().toString()
+            val closer = YAML_PROPS_FENCES[opening]
+            if (closer != null) {
+                for (j in bodyStart + 1 until bodyEnd) {
+                    val line = lines[j]
+                    if (line.indent == first.indent && text.subSequence(line.contentStart, line.end).trimEnd() == closer) {
+                        props = PropsBlock(bodyStart, j, opening.length, closer.length)
+                        bodyStart = j + 1
+                        break
+                    }
                 }
             }
         }
@@ -265,7 +305,7 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
     }
 
     /** Columns to strip from each line of [from, to): up to the container's indent, keeping code fence bodies aligned. */
-    private fun stripFor(from: Int, to: Int, container: Container): IntArray {
+    private fun stripFor(from: Int, to: Int, container: Container, embedded: List<ComponentBlock> = emptyList()): IntArray {
         val strip = IntArray(to - from)
         if (container.indent == 0) return strip
         var fenceChar = 0.toChar()
@@ -273,6 +313,11 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         var fenceStrip = 0
         for (l in from until to) {
             val line = lines[l]
+            if (embedded.any { l >= it.openLine && l <= it.closeLine }) {
+                // lines of an embedded component are replaced by a placeholder; only its opener's strip is used
+                strip[l - from] = minOf(container.indent, line.indent)
+                continue
+            }
             val own = minOf(container.indent, line.indent)
             if (fenceLength > 0) {
                 strip[l - from] = minOf(fenceStrip, line.indent)
@@ -371,29 +416,132 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         return LeafASTNode(type, token.start, token.end)
     }
 
+    /** The parse of a Markdown region: its tree in dedented offsets, the offset mapping and the embedded components' placeholders. */
+    private class RegionParse(val text: String, val tree: ASTNode, val mapping: DedentMapping, val placeholders: Map<Int, ComponentBlock>)
+
+    /**
+     * Parses lines [from, to) as Markdown with [strip] columns removed from each line. The lines of each component in [embedded] (a
+     * component inside a list item) are replaced by an empty code fence at the opener's column: a fence interrupts a paragraph and
+     * stays inside the list item, so the list structure around the component comes out as comark builds it. That fence is replaced by
+     * a [PLACEHOLDER] leaf keyed by its dedented start in [RegionParse.placeholders], and [remap] puts the component in its place.
+     */
+    private fun parseRegion(from: Int, to: Int, strip: IntArray, embedded: List<ComponentBlock>): RegionParse? {
+        val regionStart = lines[from].start
+        val regionEnd = lines[to - 1].next
+        if (regionEnd <= regionStart) return null
+        val mapping = DedentMapping(to - from + 3 * embedded.size)
+        val dedented = StringBuilder(regionEnd - regionStart + 1)
+        // The Markdown parser takes a delimiter line at the very start of its text for front matter. Only the region at the top of
+        // the document can have front matter, so any other region starting with one is parsed after a guard line break (dropped
+        // again below): its `---` stays a thematic break, as in the reference parser.
+        val guard = from > 0 && startsLikeFrontMatter(lines[from], strip[0])
+        if (guard) dedented.append('\n')
+        val fenceStarts = HashMap<Int, ComponentBlock>()
+        var next = 0
+        var l = from
+        while (l < to) {
+            val line = lines[l]
+            val skip = charsToStrip(line, strip[l - from])
+            val component = embedded.getOrNull(next)
+            if (component != null && component.openLine == l) {
+                next++
+                val close = lines[component.closeLine]
+                val pad = " ".repeat(line.indent - strip[l - from])
+                mapping.add(dedented.length, line.start + skip)
+                dedented.append(pad)
+                fenceStarts[dedented.length] = component
+                mapping.add(dedented.length, line.contentStart)
+                dedented.append("```\n").append(pad).append("``")
+                mapping.add(dedented.length, close.end - 1)
+                dedented.append('`')
+                if (close.next > close.end) dedented.append('\n')
+                l = component.closeLine + 1
+                continue
+            }
+            mapping.add(dedented.length, line.start + skip)
+            dedented.append(text, line.start + skip, line.next)
+            l++
+        }
+        val dedentedText = dedented.toString()
+        val parsed = MarkdownParser(flavour, false, CANCELLATION).parse(MarkdownElementTypes.MARKDOWN_FILE, dedentedText, false)
+        var tree = if (guard) CompositeASTNode(parsed.type, parsed.children.filter { it.endOffset > 1 }) else parsed
+        val placeholders = HashMap<Int, ComponentBlock>()
+        if (fenceStarts.isNotEmpty()) tree = replaceFences(tree, fenceStarts, placeholders)
+        return RegionParse(dedentedText, tree, mapping, placeholders)
+    }
+
+    /** [node] with the code fences starting at a key of [fenceStarts] replaced by [PLACEHOLDER] leaves, recorded in [found]. */
+    private fun replaceFences(node: ASTNode, fenceStarts: Map<Int, ComponentBlock>, found: MutableMap<Int, ComponentBlock>): ASTNode {
+        if (node.type == MarkdownElementTypes.CODE_FENCE) {
+            val component = fenceStarts[node.startOffset]
+            if (component != null) {
+                found[node.startOffset] = component
+                return LeafASTNode(PLACEHOLDER, node.startOffset, node.endOffset)
+            }
+        }
+        val children = node.children
+        if (children.isEmpty()) return node
+        var changed = false
+        val replaced = children.map { child -> replaceFences(child, fenceStarts, found).also { if (it !== child) changed = true } }
+        return if (changed) CompositeASTNode(node.type, replaced) else node
+    }
+
     /**
      * Parses lines [from, to) as Markdown with [strip] columns removed from each line and maps the tree back to the original
      * offsets. Returns the region's top-level nodes (the region root itself is dropped).
      */
-    private fun markdownRegion(from: Int, to: Int, strip: IntArray): List<ASTNode> {
-        val regionStart = lines[from].start
-        val regionEnd = lines[to - 1].next
-        if (regionEnd <= regionStart) return emptyList()
-        val mapping = DedentMapping(to - from)
-        val dedented = StringBuilder(regionEnd - regionStart)
-        for (l in from until to) {
-            val line = lines[l]
-            val skip = charsToStrip(line, strip[l - from])
-            mapping.add(dedented.length, line.start + skip)
-            dedented.append(text, line.start + skip, line.next)
-        }
-        val tree = MarkdownParser(flavour, false, CANCELLATION).parse(MarkdownElementTypes.MARKDOWN_FILE, dedented.toString(), false)
-        if (mapping.isConstantShift()) {
+    private fun markdownRegion(from: Int, to: Int, strip: IntArray, embedded: List<ComponentBlock> = emptyList()): List<ASTNode> {
+        val region = parseRegion(from, to, strip, embedded) ?: return emptyList()
+        val tree = region.tree
+        val mapping = region.mapping
+        if (embedded.isEmpty() && mapping.isConstantShift()) {
             // every line lost the same number of characters (usually none): offsets only need shifting
             val shift = mapping.shift(0)
             return tree.children.map { shiftNode(it, shift) }
         }
-        return tree.children.map { remap(it, mapping) }
+        return tree.children.map { remap(it, mapping, region.placeholders) }
+    }
+
+    /**
+     * True when a component opener on line [line], [indent] columns into [container], continues the list item that the Markdown of
+     * lines [from, line) ends with: the region's last block is a list whose last item (or an item of a list nested in it) has its
+     * content column at or before [indent] (and less than four columns before it, which would make the line code).
+     */
+    private fun isInListItem(from: Int, line: Int, container: Container, embedded: List<ComponentBlock>, indent: Int): Boolean {
+        val region = parseRegion(from, line, stripFor(from, line, container, embedded), embedded) ?: return false
+        if (embedded.any { it.openLine !in from until line } || region.placeholders.size != embedded.size) return false
+        var list = region.tree.children.lastOrNull { it.type != MarkdownTokenTypes.EOL && it.type != MarkdownTokenTypes.WHITE_SPACE }
+        var accepted = false
+        while (list != null && (list.type == MarkdownElementTypes.UNORDERED_LIST || list.type == MarkdownElementTypes.ORDERED_LIST)) {
+            val item = list.children.lastOrNull { it.type == MarkdownElementTypes.LIST_ITEM } ?: break
+            val column = contentColumn(item, region) ?: break
+            if (column > indent) break
+            if (indent < column + 4) accepted = true
+            list = item.children.lastOrNull { it.type == MarkdownElementTypes.UNORDERED_LIST || it.type == MarkdownElementTypes.ORDERED_LIST }
+        }
+        return accepted
+    }
+
+    /** Column (in the dedented region text) where the content of list [item] starts: after its marker and the spaces following it. */
+    private fun contentColumn(item: ASTNode, region: RegionParse): Int? {
+        val marker = item.children.firstOrNull { it.type == MarkdownTokenTypes.LIST_BULLET || it.type == MarkdownTokenTypes.LIST_NUMBER } ?: return null
+        val text = region.text
+        val lineStart = text.lastIndexOf('\n', marker.startOffset - 1) + 1
+        var markerEnd = marker.endOffset
+        while (markerEnd > marker.startOffset && text[markerEnd - 1] == ' ') markerEnd--
+        var content = markerEnd
+        while (content < text.length && text[content] == ' ') content++
+        val spaces = content - markerEnd
+        // an empty item, or content after five or more spaces (indented code): the content column is one past the marker
+        if (content >= text.length || text[content] == '\n' || spaces > 4) content = markerEnd + 1
+        return content - lineStart
+    }
+
+    /** True when [line], with [columns] of indentation stripped, could open front matter (`---` or `+++`, at least three). */
+    private fun startsLikeFrontMatter(line: Line, columns: Int): Boolean {
+        val start = line.start + charsToStrip(line, columns)
+        val content = text.subSequence(start, line.end).trimEnd()
+        return content.length >= 3 && (content.all { it == '-' } || content.all { it == '+' })
     }
 
     /** Characters making up the first [columns] columns of indentation (tabs count to the next multiple of 4). */
@@ -474,7 +622,8 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         return LeafASTNode(type, s, end)
     }
 
-    private fun remap(node: ASTNode, mapping: DedentMapping): ASTNode {
+    private fun remap(node: ASTNode, mapping: DedentMapping, placeholders: Map<Int, ComponentBlock> = emptyMap()): ASTNode {
+        if (node.type == PLACEHOLDER) placeholders[node.startOffset]?.let { return it.toAst().single() }
         val children = node.children
         val start = mapping.start(node.startOffset)
         if (children.isEmpty()) {
@@ -484,7 +633,7 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
             val end = mapping.end(node.endOffset)
             return if (node is LeafASTNode) mappedLeaf(node.type, start, end) else EmptyCompositeNode(node.type, start)
         }
-        val mapped = children.map { remap(it, mapping) }
+        val mapped = children.map { remap(it, mapping, placeholders) }
         return assemble(node.type, minOf(start, mapped.first().startOffset), maxOf(mapping.end(node.endOffset), mapped.last().endOffset), mapped)
     }
 
@@ -536,6 +685,17 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
     }
 
     companion object {
+        /** Stands for a component inside a list item in a region's dedented tree, until [remap] replaces it with the component. */
+        private val PLACEHOLDER = org.intellij.markdown.MarkdownElementType("COMARK_LIST_ITEM_COMPONENT", true)
+
+        /** Code fences that hold a component's props when they open its body, with their closers (comark's `blockYamlLines`). */
+        private val YAML_PROPS_FENCES = mapOf(
+            "```yaml [props]" to "```",
+            "~~~yaml [props]" to "~~~",
+            "```yml [props]" to "```",
+            "~~~yml [props]" to "~~~",
+        )
+
         private val CANCELLATION = object : CancellationToken {
             override fun checkCancelled() = ProgressManager.checkCanceled()
         }

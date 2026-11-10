@@ -20,6 +20,7 @@ class ComarkMarkdownInspectionSuppressorTest : BasePlatformTestCase() {
         myFixture.enableInspections(
             markdownInspection(ComarkMarkdownInspectionSuppressor.UNRESOLVED_LINK_LABEL),
             markdownInspection(ComarkMarkdownInspectionSuppressor.UNRESOLVED_HEADER_REFERENCE),
+            markdownInspection(ComarkMarkdownInspectionSuppressor.UNRESOLVED_FILE_REFERENCE),
         )
     }
 
@@ -77,5 +78,30 @@ class ComarkMarkdownInspectionSuppressorTest : BasePlatformTestCase() {
         assertEquals("getting-started", ComarkAnchors.slug(" Getting  Started! "))
         assertEquals("a_b-c", ComarkAnchors.slug("A_b-C"))
         assertEquals("čeština", ComarkAnchors.slug("Čeština"))
+    }
+
+    fun testLinkToHeadingWithInlineComponentUsesComarkId() {
+        val text = "## Install :badge[New]{color=\"green\"}\n\n## 1. Setup [here]{.x}\n\n## Install :badge[New]\n\n" +
+            "[a](#install-new) [b](#_1-setup-here) [c](#install-new-1) [d](#missing)\n"
+        assertEquals(listOf("missing"), reported("anchors.mdc", text))
+    }
+
+    fun testNuxtContentRouteLinksAreNotUnresolvedFiles() {
+        myFixture.addFileToProject("site/package.json", """{ "devDependencies": { "@nuxt/content": "^3.0.0" } }""")
+        myFixture.addFileToProject("site/content/1.guide/2.install.md", "# Install\n")
+        val page = myFixture.addFileToProject(
+            "site/content/index.md",
+            "# Home\n\nRead the [install guide](/guide/install#setup) or [this](/missing/logo.png).\n",
+        )
+        myFixture.configureFromExistingVirtualFile(page.virtualFile)
+        val reported = myFixture.doHighlighting()
+            .filter { it.description != null && it.severity >= HighlightSeverity.WEAK_WARNING }
+            .map { myFixture.editor.document.getText(TextRange(it.startOffset, it.endOffset)) }
+        assertFalse(reported.toString(), reported.any { it == "guide" || it == "install" })
+        assertTrue(reported.toString(), reported.any { it == "missing" || it == "logo.png" })
+    }
+
+    fun testRouteLinksOutsideNuxtContentAreStillChecked() {
+        assertNotEmpty(reported("plain.mdc", "[x](/guide/install)\n"))
     }
 }

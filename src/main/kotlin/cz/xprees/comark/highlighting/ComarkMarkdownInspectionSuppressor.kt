@@ -3,6 +3,8 @@ package cz.xprees.comark.highlighting
 import com.intellij.codeInspection.InspectionSuppressor
 import com.intellij.codeInspection.SuppressQuickFix
 import com.intellij.psi.PsiElement
+import com.intellij.psi.util.PsiTreeUtil
+import cz.xprees.comark.lang.ComarkProjectDetector
 import cz.xprees.comark.psi.ComarkFile
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownLinkDestination
 
@@ -15,6 +17,8 @@ import org.intellij.plugins.markdown.lang.psi.impl.MarkdownLinkDestination
  *   content are suppressed, so genuine reference links (`[text][ref]`) keep being checked.
  * - "Unresolved header reference": links to anchors that Comark attributes define (`{#id}`, or a heading's id computed without
  *   its trailing attributes, see [ComarkAnchors]) are unknown to the Markdown plugin.
+ * - "Unresolved file reference": in a Nuxt Content package, absolute links without a file extension (`/guide/install`) are page
+ *   routes, not file paths (`content/1.guide/2.install.md`). Links with an extension (`/images/logo.png`) are still checked.
  */
 class ComarkMarkdownInspectionSuppressor : InspectionSuppressor {
     override fun isSuppressedFor(element: PsiElement, toolId: String): Boolean = when (toolId) {
@@ -24,7 +28,18 @@ class ComarkMarkdownInspectionSuppressor : InspectionSuppressor {
         }
 
         UNRESOLVED_HEADER_REFERENCE -> element is MarkdownLinkDestination && ComarkAnchors.isComarkAnchor(element, element.text)
+        UNRESOLVED_FILE_REFERENCE -> isRouteLink(element)
         else -> false
+    }
+
+    private fun isRouteLink(element: PsiElement): Boolean {
+        val file = element.containingFile as? ComarkFile ?: return false
+        val destination = PsiTreeUtil.getParentOfType(element, MarkdownLinkDestination::class.java, false) ?: return false
+        val path = destination.text.substringBefore('#').substringBefore('?')
+        if (!path.startsWith("/") || path.startsWith("//")) return false
+        if ('.' in path.substringAfterLast('/')) return false
+        val virtualFile = file.originalFile.virtualFile ?: return false
+        return ComarkProjectDetector.getInstance(file.project).isComarkContext(virtualFile)
     }
 
     override fun getSuppressActions(element: PsiElement?, toolId: String): Array<SuppressQuickFix> = SuppressQuickFix.EMPTY_ARRAY
@@ -32,5 +47,6 @@ class ComarkMarkdownInspectionSuppressor : InspectionSuppressor {
     companion object {
         const val UNRESOLVED_LINK_LABEL = "MarkdownUnresolvedLinkLabel"
         const val UNRESOLVED_HEADER_REFERENCE = "MarkdownUnresolvedHeaderReference"
+        const val UNRESOLVED_FILE_REFERENCE = "MarkdownUnresolvedFileReference"
     }
 }
