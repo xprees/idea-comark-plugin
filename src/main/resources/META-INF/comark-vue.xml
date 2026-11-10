@@ -1,2 +1,7 @@
 <idea-plugin>
+    <!--
+      Loaded only when the Vue plugin is installed. Component discovery, completion, navigation and documentation deliberately
+      work without it (cz.xprees.comark.meta.VueSfcParser reads .vue files as text), so nothing here is required for them;
+      this file stays as the place for Vue-specific integrations.
+    -->
 </idea-plugin>
