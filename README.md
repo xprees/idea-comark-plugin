@@ -21,7 +21,8 @@ when they belong to a package that depends on Nuxt Content, Nuxt MDC or Comark (
 
 Works in JetBrains IDEs based on the IntelliJ Platform **2026.1 and newer** that bundle the Markdown plugin (IntelliJ IDEA, WebStorm,
 Rider, PyCharm, …). The plugin is built and tested against the oldest supported IDE (`platformVersion` in `gradle.properties`, which also
-gives its `since-build`) and verified against newer IDEA, WebStorm and Rider releases in CI. It declares no upper build limit.
+gives its `since-build`) and verified against the latest IDEA, WebStorm and Rider releases in CI (the full version matrix is opt-in: the
+`full-verify` pull request label or a manual run of the *Build* workflow). It declares no upper build limit.
 
 ## Which files are Comark
 
