@@ -380,20 +380,33 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         val regionEnd = lines[to - 1].next
         if (regionEnd <= regionStart) return emptyList()
         val mapping = DedentMapping(to - from)
-        val dedented = StringBuilder(regionEnd - regionStart)
+        val dedented = StringBuilder(regionEnd - regionStart + 1)
+        // The Markdown parser takes a delimiter line at the very start of its text for front matter. Only the region at the top of
+        // the document can have front matter, so any other region starting with one is parsed after a guard line break (dropped
+        // again below): its `---` stays a thematic break, as in the reference parser.
+        val guard = from > 0 && startsLikeFrontMatter(lines[from], strip[0])
+        if (guard) dedented.append('\n')
         for (l in from until to) {
             val line = lines[l]
             val skip = charsToStrip(line, strip[l - from])
             mapping.add(dedented.length, line.start + skip)
             dedented.append(text, line.start + skip, line.next)
         }
-        val tree = MarkdownParser(flavour, false, CANCELLATION).parse(MarkdownElementTypes.MARKDOWN_FILE, dedented.toString(), false)
+        val parsed = MarkdownParser(flavour, false, CANCELLATION).parse(MarkdownElementTypes.MARKDOWN_FILE, dedented.toString(), false)
+        val tree = if (guard) CompositeASTNode(parsed.type, parsed.children.filter { it.endOffset > 1 }) else parsed
         if (mapping.isConstantShift()) {
             // every line lost the same number of characters (usually none): offsets only need shifting
             val shift = mapping.shift(0)
             return tree.children.map { shiftNode(it, shift) }
         }
         return tree.children.map { remap(it, mapping) }
+    }
+
+    /** True when [line], with [columns] of indentation stripped, could open front matter (`---` or `+++`, at least three). */
+    private fun startsLikeFrontMatter(line: Line, columns: Int): Boolean {
+        val start = line.start + charsToStrip(line, columns)
+        val content = text.subSequence(start, line.end).trimEnd()
+        return content.length >= 3 && (content.all { it == '-' } || content.all { it == '+' })
     }
 
     /** Characters making up the first [columns] columns of indentation (tabs count to the next multiple of 4). */

@@ -7,6 +7,7 @@ import cz.xprees.comark.psi.ComarkBlockComponent
 import cz.xprees.comark.psi.ComarkFile
 import cz.xprees.comark.psi.ComarkPropsBlock
 import cz.xprees.comark.psi.ComarkSlot
+import org.intellij.plugins.markdown.lang.MarkdownElementTypes
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownCodeFence
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownHeader
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownParagraph
@@ -62,6 +63,27 @@ class ParserTest : BasePlatformTestCase() {
     fun testDashesLaterAreAThematicBreakNotProps() {
         val file = parse("::card\nBody\n\n---\n\nMore\n::")
         assertNull(file.components.single().propsBlock)
+    }
+
+    private fun ComarkFile.frontMatterHeaders() =
+        PsiTreeUtil.collectElements(this) { it.node.elementType == MarkdownElementTypes.FRONT_MATTER_HEADER }.toList()
+
+    fun testDashesAfterAComponentAreNotFrontMatter() {
+        val file = parse("::divider\n::\n---\n\nParagraph after\n")
+        assertEmpty(file.frontMatterHeaders())
+        assertNotNull(PsiTreeUtil.findChildrenOfType(file, MarkdownParagraph::class.java).singleOrNull { it.text == "Paragraph after" })
+    }
+
+    fun testDashesAfterASlotLineAreNotFrontMatter() {
+        val file = parse("::card\n#footer\n---\nFooter text\n::\n")
+        assertEmpty(file.frontMatterHeaders())
+        val slot = file.components.single().slots.single()
+        assertNotNull(PsiTreeUtil.findChildrenOfType(slot, MarkdownParagraph::class.java).singleOrNull { it.text == "Footer text" })
+    }
+
+    fun testFrontMatterAtTheTopIsKept() {
+        val file = parse("---\ntitle: x\n---\n\n::a\n::\n")
+        assertEquals(1, file.frontMatterHeaders().size)
     }
 
     fun testSlots() {
