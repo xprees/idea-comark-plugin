@@ -86,17 +86,18 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         }
     }
 
-    private inner class PropsBlock(val openLine: Int, val closeLine: Int) : Block() {
+    /** Props block between [openLine] and [closeLine]; the fences are `---` or a `` ```yaml [props] `` ... `` ``` `` code fence. */
+    private inner class PropsBlock(val openLine: Int, val closeLine: Int, val openLength: Int = 3, val closeLength: Int = 3) : Block() {
         override fun toAst(): List<ASTNode> {
             val open = lines[openLine]
             val close = lines[closeLine]
             val parts = ArrayList<ASTNode>()
-            parts += LeafASTNode(ComarkTypes.PROPS_FENCE_PAIR.first, open.contentStart, open.contentStart + 3)
+            parts += LeafASTNode(ComarkTypes.PROPS_FENCE_PAIR.first, open.contentStart, open.contentStart + openLength)
             val contentStart = open.next
             val contentEnd = close.start
             if (contentEnd > contentStart) parts += LeafASTNode(ComarkTypes.PROPS_CONTENT_PAIR.first, contentStart, contentEnd)
-            parts += LeafASTNode(ComarkTypes.PROPS_FENCE_PAIR.first, close.contentStart, close.contentStart + 3)
-            return listOf(assemble(ComarkTypes.PROPS_BLOCK_PAIR.first, open.contentStart, close.contentStart + 3, parts))
+            parts += LeafASTNode(ComarkTypes.PROPS_FENCE_PAIR.first, close.contentStart, close.contentStart + closeLength)
+            return listOf(assemble(ComarkTypes.PROPS_BLOCK_PAIR.first, open.contentStart, close.contentStart + closeLength, parts))
         }
     }
 
@@ -184,6 +185,20 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
                     props = PropsBlock(bodyStart, j)
                     bodyStart = j + 1
                     break
+                }
+            }
+        } else if (bodyStart < bodyEnd) {
+            val first = lines[bodyStart]
+            val opening = text.subSequence(first.contentStart, first.end).trimEnd().toString()
+            val closer = YAML_PROPS_FENCES[opening]
+            if (closer != null) {
+                for (j in bodyStart + 1 until bodyEnd) {
+                    val line = lines[j]
+                    if (line.indent == first.indent && text.subSequence(line.contentStart, line.end).trimEnd() == closer) {
+                        props = PropsBlock(bodyStart, j, opening.length, closer.length)
+                        bodyStart = j + 1
+                        break
+                    }
                 }
             }
         }
@@ -549,6 +564,14 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
     }
 
     companion object {
+        /** Code fences that hold a component's props when they open its body, with their closers (comark's `blockYamlLines`). */
+        private val YAML_PROPS_FENCES = mapOf(
+            "```yaml [props]" to "```",
+            "~~~yaml [props]" to "~~~",
+            "```yml [props]" to "```",
+            "~~~yml [props]" to "~~~",
+        )
+
         private val CANCELLATION = object : CancellationToken {
             override fun checkCancelled() = ProgressManager.checkCanceled()
         }

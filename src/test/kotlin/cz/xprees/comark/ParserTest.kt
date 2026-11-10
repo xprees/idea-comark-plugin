@@ -86,6 +86,25 @@ class ParserTest : BasePlatformTestCase() {
         assertEquals(1, file.frontMatterHeaders().size)
     }
 
+    fun testBacktickYamlPropsFenceIsAPropsBlock() {
+        val component = parse("::card\n```yaml [props]\ntitle: Hello\ncolor: primary\n```\nContent\n::\n").components.single()
+        assertEquals("title: Hello\ncolor: primary\n", component.propsBlock!!.content!!.text)
+        assertEmpty(PsiTreeUtil.findChildrenOfType(component, MarkdownCodeFence::class.java))
+        assertNotNull(PsiTreeUtil.findChildrenOfType(component, MarkdownParagraph::class.java).singleOrNull { it.text == "Content" })
+    }
+
+    fun testTildeYmlPropsFenceInNestedComponentIsAPropsBlock() {
+        val file = parse("::outer\n  :::inner\n  ~~~yml [props]\n  title: Hello\n  ~~~\n  Content\n  :::\n::\n")
+        val inner = file.allComponents().single { it.componentName == "inner" }
+        assertEquals("  title: Hello\n", inner.propsBlock!!.content!!.text)
+    }
+
+    fun testPlainYamlFenceStaysACodeFence() {
+        val component = parse("::card\n```yaml\ntitle: Hello\n```\n::\n").components.single()
+        assertNull(component.propsBlock)
+        assertNotNull(PsiTreeUtil.findChildOfType(component, MarkdownCodeFence::class.java))
+    }
+
     fun testSlots() {
         val file = parse("::card\n#header\n## Title\n\n#footer\nFooter\n::")
         val slots = file.components.single().slots
