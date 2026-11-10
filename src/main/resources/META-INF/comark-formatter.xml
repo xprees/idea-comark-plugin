@@ -1,2 +1,13 @@
 <idea-plugin>
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Reformat Code for Comark files: a port of the VS Code extension's formatter (falls back to Markdown's when disabled) -->
+        <formattingService implementation="cz.xprees.comark.format.ComarkFormattingService"/>
+        <notificationGroup id="Comark Formatter" displayType="BALLOON" bundle="messages.ComarkBundle" key="formatter.notification.group"/>
+
+        <!-- Enter: new lines in component bodies and props start where the formatter would put them -->
+        <lineIndentProvider implementation="cz.xprees.comark.format.ComarkLineIndentProvider"/>
+        <enterHandlerDelegate implementation="cz.xprees.comark.format.ComarkEnterHandlerDelegate" order="before MarkdownEnterHandler"/>
+        <!-- props blocks: ahead of the YAML plugin's Enter handling of the injected YAML -->
+        <editorActionHandler action="EditorEnter" implementationClass="cz.xprees.comark.format.ComarkPropsEnterHandler" order="first"/>
+    </extensions>
 </idea-plugin>
