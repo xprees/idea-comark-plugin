@@ -9,6 +9,7 @@
     <depends>org.intellij.plugins.markdown</depends>
     <depends optional="true" config-file="comark-yaml.xml">org.jetbrains.plugins.yaml</depends>
     <depends optional="true" config-file="comark-vue.xml">org.jetbrains.plugins.vue</depends>
+    <depends optional="true" config-file="comark-spellchecker.xml">com.intellij.modules.spellchecker</depends>
 
     <resource-bundle>messages.ComarkBundle</resource-bundle>
 

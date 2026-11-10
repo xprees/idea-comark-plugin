@@ -2,6 +2,8 @@
     <extensions defaultExtensionNs="com.intellij">
         <!-- Reformat Code for Comark files: a port of the VS Code extension's formatter (falls back to Markdown's when disabled) -->
         <formattingService implementation="cz.xprees.comark.format.ComarkFormattingService"/>
+        <!-- Code Style | Comark: the formatter's indent size (2 by default; Comark files would otherwise use Markdown's 4) -->
+        <langCodeStyleSettingsProvider implementation="cz.xprees.comark.format.ComarkCodeStyleSettingsProvider"/>
         <notificationGroup id="Comark Formatter" displayType="BALLOON" bundle="messages.ComarkBundle" key="formatter.notification.group"/>
 
         <!-- Enter: new lines in component bodies and props start where the formatter would put them -->

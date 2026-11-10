@@ -1,0 +1,115 @@
+/*
+ * Comark components in the Markdown preview. Colours are translucent or derived from the text colour, so the same rules work
+ * on the light and the dark preview background.
+ */
+.comark-component {
+  --comark-accent: rgba(99, 132, 220, 0.85);
+  margin: 1em 0;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-left: 4px solid var(--comark-accent);
+  border-radius: 6px;
+  background-color: rgba(128, 128, 128, 0.06);
+}
+
+.comark-component .comark-component {
+  margin: 0.75em 0;
+}
+
+.comark-component[data-component="tip"],
+.comark-component[data-component="success"] {
+  --comark-accent: rgba(46, 160, 67, 0.85);
+}
+
+.comark-component[data-component="warning"],
+.comark-component[data-component="caution"] {
+  --comark-accent: rgba(212, 150, 20, 0.9);
+}
+
+.comark-component[data-component="danger"],
+.comark-component[data-component="important"] {
+  --comark-accent: rgba(218, 54, 51, 0.85);
+}
+
+.comark-component-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4em;
+  padding: 0.3em 0.75em;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  font-size: 0.85em;
+}
+
+.comark-component-name {
+  font-family: monospace;
+  font-weight: 600;
+  color: var(--comark-accent);
+}
+
+.comark-component-name::before {
+  content: "::";
+  opacity: 0.6;
+}
+
+.comark-component-attrs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+}
+
+.comark-attr {
+  padding: 0 0.4em;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.95em;
+  background-color: rgba(128, 128, 128, 0.15);
+  opacity: 0.85;
+}
+
+.comark-component-props {
+  margin: 0;
+  padding: 0.4em 0.75em;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 0;
+  font-size: 0.85em;
+  background-color: rgba(128, 128, 128, 0.08);
+}
+
+.comark-component-body {
+  padding: 0.1em 0.9em;
+}
+
+.comark-component-body:empty {
+  display: none;
+}
+
+.comark-component-content {
+  margin: 0.6em 0;
+}
+
+.comark-slot {
+  margin: 0.6em 0;
+  padding-left: 0.6em;
+  border-left: 2px dashed rgba(128, 128, 128, 0.45);
+}
+
+.comark-slot-name {
+  font-family: monospace;
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.comark-slot-name .comark-component-attrs {
+  margin-left: 0.4em;
+}
+
+.comark-inline-component {
+  padding: 0 0.35em;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 999px;
+  background-color: rgba(99, 132, 220, 0.12);
+}
+
+.comark-span {
+  border-bottom: 1px dotted rgba(128, 128, 128, 0.6);
+}
