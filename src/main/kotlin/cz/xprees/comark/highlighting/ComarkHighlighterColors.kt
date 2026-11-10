@@ -2,6 +2,7 @@ package cz.xprees.comark.highlighting
 
 import com.intellij.openapi.editor.DefaultLanguageHighlighterColors
 import com.intellij.openapi.editor.HighlighterColors
+import com.intellij.openapi.editor.colors.CodeInsightColors
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.editor.colors.TextAttributesKey.createTextAttributesKey
 import org.intellij.plugins.markdown.highlighting.MarkdownHighlighterColors
@@ -81,7 +82,11 @@ object ComarkHighlighterColors {
     @JvmField
     val BINDING_BRACES: TextAttributesKey = createTextAttributesKey("COMARK_BINDING_BRACES", DefaultLanguageHighlighterColors.KEYWORD)
 
-    /** Text after a component opener's attributes, which Comark ignores. */
+    /**
+     * Text after a component opener's attributes, which Comark ignores. Shown greyed out like unused code: the
+     * "Ignored text after component opener" inspection reports it and offers the fixes, so a second, error-like style would only
+     * repeat that (it used to be shown with the bad character style as well as the inspection's warning).
+     */
     @JvmField
-    val BAD_CHARACTER: TextAttributesKey = createTextAttributesKey("COMARK_BAD_CHARACTER", HighlighterColors.BAD_CHARACTER)
+    val BAD_CHARACTER: TextAttributesKey = createTextAttributesKey("COMARK_BAD_CHARACTER", CodeInsightColors.NOT_USED_ELEMENT_ATTRIBUTES)
 }

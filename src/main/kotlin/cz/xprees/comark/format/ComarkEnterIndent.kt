@@ -31,8 +31,8 @@ import org.intellij.plugins.markdown.lang.psi.impl.MarkdownListItem
 internal object ComarkEnterIndent {
     fun isEnabledFor(file: PsiFile?): Boolean = file is ComarkFile && ComarkSettings.getInstance().formatterEnabled
 
-    /** Indentation step of [file]: its code style indent size, as used by [ComarkFormattingService]. */
-    fun tabSize(file: PsiFile): Int = CodeStyle.getIndentOptions(file).INDENT_SIZE.coerceAtLeast(0)
+    /** Indentation step of [file], as used by [ComarkFormattingService] (see [ComarkIndent]). */
+    fun tabSize(file: PsiFile): Int = ComarkIndent.indentSize(file)
 
     /**
      * Indentation for line [line] of [document] - a line just created by Enter, empty or holding the text that followed the

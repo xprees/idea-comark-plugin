@@ -453,12 +453,25 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         val children = node.children
         if (children.isEmpty()) {
             return if (node is LeafASTNode) {
-                LeafASTNode(node.type, node.startOffset + shift, node.endOffset + shift)
+                mappedLeaf(node.type, node.startOffset + shift, node.endOffset + shift)
             } else {
                 EmptyCompositeNode(node.type, node.startOffset + shift)
             }
         }
         return CompositeASTNode(node.type, children.map { shiftNode(it, shift) })
+    }
+
+    /**
+     * A leaf of a region tree at its document offsets. A closing code fence takes in the indentation stripped from its line, as the
+     * Markdown parser does for fences in list items: the Markdown plugin's fence injection (and its literal text escaper) assume the
+     * content ends at the line break before `CODE_FENCE_END`, and a separate whitespace leaf there made the injected range overrun the
+     * content ("After patch" errors for code fences indented inside components).
+     */
+    private fun mappedLeaf(type: MdType, start: Int, end: Int): ASTNode {
+        if (type != MarkdownTokenTypes.CODE_FENCE_END) return LeafASTNode(type, start, end)
+        var s = start
+        while (s > 0 && (text[s - 1] == ' ' || text[s - 1] == '\t')) s--
+        return LeafASTNode(type, s, end)
     }
 
     private fun remap(node: ASTNode, mapping: DedentMapping): ASTNode {
@@ -469,7 +482,7 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
                 return if (node is LeafASTNode) LeafASTNode(node.type, start, start) else EmptyCompositeNode(node.type, start)
             }
             val end = mapping.end(node.endOffset)
-            return if (node is LeafASTNode) LeafASTNode(node.type, start, end) else EmptyCompositeNode(node.type, start)
+            return if (node is LeafASTNode) mappedLeaf(node.type, start, end) else EmptyCompositeNode(node.type, start)
         }
         val mapped = children.map { remap(it, mapping) }
         return assemble(node.type, minOf(start, mapped.first().startOffset), maxOf(mapping.end(node.endOffset), mapped.last().endOffset), mapped)

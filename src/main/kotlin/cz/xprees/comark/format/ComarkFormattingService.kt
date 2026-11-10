@@ -37,10 +37,9 @@ import cz.xprees.comark.settings.ComarkSettings
  * - For a partial reformat only the lines up to [ComarkFormatter.MAX_PASSES] + 2 past the range are formatted: a line's result
  *   depends on at most one line below it per pass, so this gives the same result for the range and keeps a problem further down
  *   the file from blocking it.
- * - The indentation step is the file's code style indent size (`CodeStyle.getIndentOptions`). Comark has no code style of its
- *   own, so that is the Markdown language's (Settings | Editor | Code Style | Markdown, 4 unless changed), unless EditorConfig or
- *   indent detection say otherwise; VS Code likewise uses the editor's tab size rather than monarch-mdc's default of 2. The
- *   formatter always indents with spaces, like the original.
+ * - The indentation step is the Comark code style's indent size (Settings | Editor | Code Style | Comark, 2 by default like
+ *   monarch-mdc), unless EditorConfig or indent detection set one for the file ([ComarkIndent]). The formatter always indents
+ *   with spaces, like the original.
  * - Afterwards the platform's post-format processors run on the formatted ranges, as they do after model-based formatting. This
  *   keeps the Markdown plugin's table formatting for top level tables (it only visits the file's direct children, so tables
  *   inside components are left alone, as by the Markdown formatter). Its block quote processor never applies to Comark files,
@@ -64,7 +63,7 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
         val file = formattingContext.containingFile
         val ranges = formattingRanges.filter { it.startOffset <= document.textLength }
         if (ranges.isEmpty()) return
-        val indentSize = CodeStyle.getIndentOptions(file).INDENT_SIZE.coerceAtLeast(0)
+        val indentSize = ComarkIndent.indentSize(file)
 
         val edits = try {
             computeEdits(document.charsSequence, ranges, indentSize, canChangeWhiteSpaceOnly, ProgressManager::checkCanceled)

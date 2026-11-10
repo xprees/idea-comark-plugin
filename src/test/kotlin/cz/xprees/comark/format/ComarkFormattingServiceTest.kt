@@ -1,5 +1,6 @@
 package cz.xprees.comark.format
 
+import cz.xprees.comark.lang.ComarkLanguage
 import com.intellij.application.options.CodeStyle
 import com.intellij.codeInsight.actions.ReformatCodeProcessor
 import com.intellij.openapi.command.WriteCommandAction
@@ -39,10 +40,10 @@ class ComarkFormattingServiceTest : BasePlatformTestCase() {
         WriteCommandAction.runWriteCommandAction(project) { CodeStyleManager.getInstance(project).reformatText(myFixture.file, start, end) }
     }
 
-    /** Runs [action] with the Markdown indent size (which Comark files use) set to [size]. */
+    /** Runs [action] with the Comark code style indent size set to [size]. */
     private fun withIndentSize(size: Int, action: () -> Unit) {
         CodeStyle.doWithTemporarySettings(project, CodeStyle.getSettings(project)) { settings ->
-            settings.getIndentOptions(MarkdownFileType.INSTANCE).INDENT_SIZE = size
+            settings.getCommonSettings(ComarkLanguage).indentOptions!!.INDENT_SIZE = size
             action()
         }
     }
@@ -65,18 +66,25 @@ class ComarkFormattingServiceTest : BasePlatformTestCase() {
         }
     }
 
-    fun testIndentSizeComesFromTheFileCodeStyle() {
+    fun testIndentSizeComesFromTheComarkCodeStyle() {
         configure(nested)
-        // Comark files use the Markdown language's indent options (4 unless configured, e.g. by EditorConfig)
-        val defaultSize = CodeStyle.getIndentOptions(myFixture.file).INDENT_SIZE
-        assertEquals(CodeStyle.getSettings(project).getIndentOptions(MarkdownFileType.INSTANCE).INDENT_SIZE, defaultSize)
+        // Comark has its own code style (2 by default, like monarch-mdc), independent of the Markdown file type's indent options
+        assertEquals(ComarkCodeStyleSettingsProvider.DEFAULT_INDENT, ComarkIndent.indentSize(myFixture.file))
         reformat()
-        myFixture.checkResult(ComarkFormatter.format(nested, defaultSize))
+        myFixture.checkResult("::outer\ntext\n  :::inner\n  inner text\n  :::\n::\n")
         withIndentSize(4) {
             configure(nested)
-            assertEquals(4, CodeStyle.getIndentOptions(myFixture.file).INDENT_SIZE)
+            assertEquals(4, ComarkIndent.indentSize(myFixture.file))
             reformat()
             myFixture.checkResult("::outer\ntext\n    :::inner\n    inner text\n    :::\n::\n")
+        }
+    }
+
+    fun testMarkdownIndentSettingDoesNotApply() {
+        CodeStyle.doWithTemporarySettings(project, CodeStyle.getSettings(project)) { settings ->
+            settings.getIndentOptions(MarkdownFileType.INSTANCE).INDENT_SIZE = 8
+            configure(nested)
+            assertEquals(ComarkCodeStyleSettingsProvider.DEFAULT_INDENT, ComarkIndent.indentSize(myFixture.file))
         }
     }
 
