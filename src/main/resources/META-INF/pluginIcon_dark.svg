@@ -1,16 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-  <!-- Comark: a Markdown page holding a component (`::` opener and a block) -->
-  <defs>
-    <linearGradient id="comark-bg-dark" x1="4" y1="3" x2="36" y2="37" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#2DD4BF"/>
-      <stop offset="1" stop-color="#6366F1"/>
-    </linearGradient>
-  </defs>
-  <rect x="2" y="2" width="36" height="36" rx="9" fill="url(#comark-bg-dark)"/>
-  <circle cx="9.5" cy="15" r="2.5" fill="#FFFFFF"/>
-  <circle cx="9.5" cy="25" r="2.5" fill="#FFFFFF"/>
-  <circle cx="16" cy="15" r="2.5" fill="#FFFFFF"/>
-  <circle cx="16" cy="25" r="2.5" fill="#FFFFFF"/>
-  <rect x="21.5" y="10.5" width="11.5" height="19" rx="3" fill="none" stroke="#FFFFFF" stroke-width="2.4"/>
-  <path d="M25 16.5h4.5M25 21h3" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
+  <!-- Comark logo (comark docs/public/logo-dark.svg, MIT License, Copyright (c) 2026 Comark team and contributors) -->
+  <g transform="translate(2 8.92) scale(0.17308)">
+    <path stroke="#fff" stroke-width="8" d="M199 9v110H9V9h190Z"/>
+    <path fill="#fff" d="M128 51.25V32h19.937v19.25H128ZM128 96V76.75h19.937V96H128ZM158.063 51.25V32H178v19.25h-19.937Zm0 44.75V76.75H178V96h-19.937ZM30 98V30h20l20 25 20-25h20v68H90V59L70 84 50 59v39H30Z"/>
+  </g>
 </svg>

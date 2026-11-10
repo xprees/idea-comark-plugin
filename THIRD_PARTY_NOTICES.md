@@ -64,6 +64,8 @@ SOFTWARE.
 
 The block parser follows the reference implementation in [Comark](https://github.com/comarkdown/comark)
 (`packages/comark/src/plugins/components.ts`, `internal/parse/syntax/props.ts`).
+The plugin icon (`META-INF/pluginIcon.svg`, `pluginIcon_dark.svg`) is the Comark logo from `docs/public/logo-light.svg` and
+`docs/public/logo-dark.svg`, scaled to 40×40.
 
 ```
 MIT License
