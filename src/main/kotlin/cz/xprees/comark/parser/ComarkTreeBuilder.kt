@@ -142,6 +142,18 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
                 continue
             }
             val relative = line.indent - minOf(container.indent, line.indent)
+            if (!line.isBlank && relative >= 4 && l > regionStart) {
+                // four or more columns in is code or paragraph text, unless it is inside a (nested) list item's content
+                val opener = ComarkSyntax.parseOpener(text, line.contentStart, line.end)
+                if (opener != null) {
+                    val component = parseComponent(l, opener, to)
+                    if (component.closeLine >= 0 && isInListItem(regionStart, l, container, embedded, relative)) {
+                        embedded += component
+                        l = component.closeLine + 1
+                        continue
+                    }
+                }
+            }
             if (!line.isBlank && relative < 4) {
                 val fence = ComarkSyntax.fenceOpen(text, line.contentStart, line.end)
                 if (fence != null) {
