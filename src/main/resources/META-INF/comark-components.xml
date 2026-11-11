@@ -13,6 +13,8 @@
         <psi.referenceContributor language="Markdown" implementation="cz.xprees.comark.navigation.ComarkRouteReferenceContributor"/>
         <!-- Nuxt image paths (public/ and Nuxt Image directories) in image destinations and image-like component attributes -->
         <psi.referenceContributor language="Markdown" implementation="cz.xprees.comark.images.ComarkImageReferenceContributor"/>
+        <!-- Find Usages / Rename / Move of an image file (or a directory of images): its paths in Comark documents -->
+        <referencesSearch implementation="cz.xprees.comark.images.ComarkImageReferenceSearcher"/>
         <lang.elementManipulator forClass="cz.xprees.comark.psi.ComarkAttributeValue"
                                  implementationClass="cz.xprees.comark.psi.ComarkAttributeValueManipulator"/>
 
@@ -27,6 +29,11 @@
                          enabledByDefault="false" level="WEAK WARNING"
                          implementationClass="cz.xprees.comark.meta.ComarkUnknownComponentInspection"/>
     </extensions>
+
+    <projectListeners>
+        <!-- tells image references which directory a Rename renames (see ComarkImageRenameTarget) -->
+        <listener class="cz.xprees.comark.images.ComarkImageRenameTarget" topic="com.intellij.refactoring.listeners.RefactoringEventListener"/>
+    </projectListeners>
 
     <actions>
         <action id="Comark.RefreshComponents" class="cz.xprees.comark.meta.ComarkRefreshComponentsAction"/>

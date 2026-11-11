@@ -1,9 +1,13 @@
 package cz.xprees.comark.images
 
 import com.intellij.lang.injection.InjectedLanguageManager
+import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.util.TextRange
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.ElementManipulators
+import com.intellij.psi.PsiDirectory
+import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiFileSystemItem
@@ -19,10 +23,12 @@ import com.intellij.util.IncorrectOperationException
 import cz.xprees.comark.highlighting.ComarkInlineSyntax
 import cz.xprees.comark.meta.ComponentUsages
 import cz.xprees.comark.navigation.ComarkComponentReferences
+import cz.xprees.comark.psi.ComarkAttributeValue
 import cz.xprees.comark.psi.ComarkFile
 import cz.xprees.comark.psi.ComarkPropsContent
 import cz.xprees.comark.settings.ComarkSettings
 import org.intellij.plugins.markdown.lang.MarkdownElementTypes
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownLinkDestination
 
 /**
  * An image path in a Comark document (`![](/threats/x.webp)`, `{src="/x.webp"}`, `image: /x.webp`) referring to the image file the
@@ -40,10 +46,43 @@ import org.intellij.plugins.markdown.lang.MarkdownElementTypes
 class ComarkImageReference(element: PsiElement, rangeInElement: TextRange, val src: ImageSrc, val context: VirtualFile) :
     PsiReferenceBase<PsiElement>(element, rangeInElement, true), BindablePsiReference {
 
+    /** For a reference the Comark file holds itself: follows its range while earlier edits of the file shift it ([tracked]). */
+    private var marker: RangeMarker? = null
+
+    override fun getRangeInElement(): TextRange {
+        val marker = marker ?: return super.getRangeInElement()
+        return if (marker.isValid) marker.textRange else super.getRangeInElement()
+    }
+
+    /**
+     * This reference, or for one held by the Comark file (its range is absolute) a copy whose range follows edits of the document:
+     * a refactoring edits several paths of one file through the references it found before any edit.
+     */
+    fun tracked(): ComarkImageReference {
+        val file = element as? PsiFile ?: return this
+        val document = PsiDocumentManager.getInstance(file.project).getDocument(file) ?: return this
+        val range = super.getRangeInElement()
+        if (range.endOffset > document.textLength) return this
+        return ComarkImageReference(element, range, src, context).also { copy ->
+            copy.marker = document.createRangeMarker(range).apply { isGreedyToLeft = true; isGreedyToRight = true }
+        }
+    }
+
+    /**
+     * The image this reference last resolved to. A directory rename or move binds the reference after the image has moved with its
+     * directory, when the written path no longer resolves; the [VirtualFile] keeps its identity and tells where the image is now.
+     */
+    @Volatile
+    private var lastResolved: VirtualFile? = null
+
     override fun resolve(): PsiElement? {
         val image = NuxtImageDirectories.getInstance(element.project).resolve(context, src.raw)?.file ?: return null
+        lastResolved = image
         return PsiManager.getInstance(element.project).findFile(image)
     }
+
+    /** The image file this reference resolves to, or null; for searches that don't need PSI. */
+    fun resolveFile(): VirtualFile? = NuxtImageDirectories.getInstance(element.project).resolve(context, src.raw)?.file?.also { lastResolved = it }
 
     override fun isSoft(): Boolean = resolve() == null
 
@@ -52,16 +91,51 @@ class ComarkImageReference(element: PsiElement, rangeInElement: TextRange, val s
 
     override fun getVariants(): Array<Any> = emptyArray()
 
-    /** [newElementName] is the new name of the resolved image, which stays in its directory: only the last path segment changes. */
+    /**
+     * [newElementName] is the new name of the resolved image, which stays in its directory: only the last path segment changes. When
+     * the rename is of a directory holding the image ([ComarkImageRenameTarget]), its segment of the path changes instead.
+     */
     override fun handleElementRename(newElementName: String): PsiElement {
+        val renamed = ComarkImageRenameTarget.of(element.project)
+        if (renamed is PsiDirectory) return renameDirectory(renamed.virtualFile, newElementName)
         return replacePath(src.path.substringBeforeLast('/', "") + "/" + newElementName)
     }
 
-    /** Points the path at the image [element] where it is now: the path its (new) location is served under. */
+    /** Renames the segment of [directory] (not renamed yet, the image is still in it) to [newName]; any other path stays. */
+    private fun renameDirectory(directory: VirtualFile, newName: String): PsiElement {
+        val directories = NuxtImageDirectories.getInstance(element.project)
+        val image = directories.resolve(context, src.raw)?.file ?: return element
+        if (!VfsUtilCore.isAncestor(directory, image, true)) return element
+        val path = directories.pathFor(image, context) ?: return element
+        val directoryPath = directories.pathFor(directory, context)?.takeIf { path.startsWith("$it/") } ?: return element
+        return replacePath(directoryPath.substringBeforeLast('/') + "/" + newName + path.removePrefix(directoryPath))
+    }
+
+    /**
+     * Points the path at the image [element] where it is now: the path its (new) location is served under. For a renamed or moved
+     * directory holding the image ([ComarkImageReferenceSearcher] finds those references), the image's new path below it. A
+     * location no image directory serves leaves the path as written.
+     */
     override fun bindToElement(element: PsiElement): PsiElement {
         val file = (element as? PsiFileSystemItem)?.virtualFile ?: throw IncorrectOperationException("Not an image file: $element")
-        val path = NuxtImageDirectories.getInstance(element.project).pathFor(file, context) ?: return this.element
+        val directories = NuxtImageDirectories.getInstance(element.project)
+        val image = if (file.isDirectory) imageIn(file) ?: return this.element else file
+        val path = directories.pathFor(image, context) ?: return this.element
         return replacePath(path)
+    }
+
+    /**
+     * The image this reference names inside [directory], which has just been renamed or moved: the file it resolved to before, or else
+     * the file below [directory] at the end of the written path, trying the longest tail first (the directory deepest in the path).
+     */
+    private fun imageIn(directory: VirtualFile): VirtualFile? {
+        lastResolved?.takeIf { it.isValid && VfsUtilCore.isAncestor(directory, it, true) }?.let { return it }
+        val segments = src.path.removePrefix("/").split('/')
+        for (start in 1 until segments.size) {
+            val tail = segments.drop(start).joinToString("/")
+            directory.findFileByRelativePath(tail)?.takeIf { !it.isDirectory && ImagePaths.isImageFile(it) }?.let { return it }
+        }
+        return null
     }
 
     /**
@@ -119,15 +193,45 @@ object ComarkImageReferences {
         fileHosted(file).firstOrNull { offset in it.rangeInElement.startOffset..it.rangeInElement.endOffset }
 
     /**
+     * Every image reference in [file]: on image destinations and attribute values, held by the file ([fileHosted]) and on the YAML
+     * injected into its props blocks and front matter. Each written value has one reference.
+     */
+    fun all(file: ComarkFile): List<ComarkImageReference> {
+        if (!enabled(file)) return emptyList()
+        val references = ArrayList<ComarkImageReference>()
+        val injections = InjectedLanguageManager.getInstance(file.project)
+        // the YAML references live on scalars; the YAML PSI classes are optional here, so every injected element is asked
+        fun injected(host: PsiElement) {
+            if (host !is PsiLanguageInjectionHost) return
+            injections.enumerate(host) { injected, _ ->
+                PsiTreeUtil.processElements(injected) { element -> element.references.filterIsInstanceTo(references); true }
+            }
+        }
+        frontMatter(file)?.let(::injected)
+        PsiTreeUtil.processElements(file) { element ->
+            when (element) {
+                is MarkdownLinkDestination, is ComarkAttributeValue -> element.references.filterIsInstanceTo(references)
+                is ComarkPropsContent -> injected(element)
+            }
+            true
+        }
+        references += fileHosted(file)
+        return references
+    }
+
+    /**
      * Replaces [range] of [host] with [text]: through the host's manipulator when it has one (link destinations, attribute values,
      * YAML scalars), else in the leaf or the document holding it.
      */
     fun replace(host: PsiElement, range: TextRange, text: String): PsiElement {
-        if (ElementManipulators.getManipulator(host) != null) {
+        // the Markdown destination manipulator edits only the first leaf, which breaks on a destination split over several
+        // (`/_ipx/w_200&f_webp/x.png`); those are edited as text
+        val oneLeaf = host.containingFile?.findElementAt(host.textRange.startOffset)?.textRange?.contains(host.textRange) == true
+        if (oneLeaf && ElementManipulators.getManipulator(host) != null) {
             try {
                 return ElementManipulators.handleContentChange(host, range, text) ?: host
             } catch (_: IncorrectOperationException) {
-                // e.g. a destination split over several leaves: edit the text instead
+                // edit the text instead
             }
         }
         return ComarkComponentReferences.replaceText(host, range, text)
