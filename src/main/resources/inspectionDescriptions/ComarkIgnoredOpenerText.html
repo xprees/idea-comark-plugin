@@ -1,0 +1,21 @@
+<html>
+<body>
+Reports text after a block component opener's content and attributes.
+<p>
+  An opener line consists of the component name, optional <code>[content]</code> and optional <code>{attributes}</code>, in this
+  order. Comark silently drops anything that follows, so it never shows up on the rendered page.
+</p>
+<p>Example:</p>
+<pre><code>
+::alert{type="info"} Read this first
+::
+
+::badge{color="green"}[New]
+::
+</code></pre>
+<p>
+  The quick-fix removes the ignored text. When the ignored text is <code>[content]</code> written after the attributes, another
+  quick-fix moves it before them: <code>::badge[New]{color="green"}</code>.
+</p>
+</body>
+</html>

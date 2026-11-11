@@ -1,2 +1,26 @@
 <idea-plugin>
+    <!-- Component IntelliSense: discovery (cz.xprees.comark.meta), completion, navigation and documentation -->
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Registered for Markdown: Comark is a Markdown dialect, and inline component text is Markdown PSI -->
+        <completion.contributor language="Markdown"
+                                implementationClass="cz.xprees.comark.completion.ComarkComponentCompletionContributor"/>
+        <typedHandler implementation="cz.xprees.comark.completion.ComarkCompletionAutoPopupHandler"/>
+
+        <gotoDeclarationHandler implementation="cz.xprees.comark.navigation.ComarkGotoDeclarationHandler"/>
+
+        <platform.backend.documentation.targetProvider
+                implementation="cz.xprees.comark.navigation.ComarkDocumentationTargetProvider"/>
+        <platform.backend.documentation.psiTargetProvider
+                implementation="cz.xprees.comark.navigation.ComarkPsiDocumentationTargetProvider"/>
+
+        <localInspection language="Markdown" shortName="ComarkUnknownComponent"
+                         bundle="messages.ComarkBundle" key="inspection.unknown.component.display.name"
+                         groupKey="inspection.unknown.component.group"
+                         enabledByDefault="false" level="WEAK WARNING"
+                         implementationClass="cz.xprees.comark.meta.ComarkUnknownComponentInspection"/>
+    </extensions>
+
+    <actions>
+        <action id="Comark.RefreshComponents" class="cz.xprees.comark.meta.ComarkRefreshComponentsAction"/>
+    </actions>
 </idea-plugin>

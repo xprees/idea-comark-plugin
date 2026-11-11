@@ -1,2 +1,21 @@
 <idea-plugin>
+    <!-- Editor features: folding, pair matching, auto-closing, live templates, breadcrumbs and structure view (cz.xprees.comark.editor) -->
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Registered for Comark, so it hides Markdown's builder; it runs the Markdown builders itself -->
+        <lang.foldingBuilder language="Comark" implementationClass="cz.xprees.comark.editor.ComarkFoldingBuilder"/>
+
+        <!-- Component opener / closer pairs (PSI based, independent of the editor highlighter) -->
+        <codeBlockSupportHandler language="Markdown" implementationClass="cz.xprees.comark.editor.ComarkCodeBlockSupportHandler"/>
+        <highlightUsagesHandlerFactory implementation="cz.xprees.comark.editor.ComarkHighlightUsagesHandlerFactory"/>
+        <lang.braceMatcher language="Comark" implementationClass="cz.xprees.comark.editor.ComarkBraceMatcher"/>
+
+        <enterHandlerDelegate id="ComarkComponentEnterHandler" order="before MarkdownEnterHandler"
+                              implementation="cz.xprees.comark.editor.ComarkEnterHandler"/>
+
+        <defaultLiveTemplates file="/liveTemplates/Comark.xml"/>
+        <liveTemplateContext contextId="COMARK" implementation="cz.xprees.comark.editor.ComarkTemplateContextType"/>
+
+        <breadcrumbsInfoProvider implementation="cz.xprees.comark.editor.ComarkBreadcrumbsProvider"/>
+        <lang.psiStructureViewFactory language="Comark" implementationClass="cz.xprees.comark.editor.ComarkStructureViewFactory"/>
+    </extensions>
 </idea-plugin>
