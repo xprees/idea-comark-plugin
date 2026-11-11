@@ -4,6 +4,14 @@
 
 ### Added
 
+- `Prose*` components can be written without the prefix (`::accordion-item` for `ProseAccordionItem`), as Comark and Nuxt UI
+  resolve them: completion offers the short name (typing `prose-` keeps the prefix), and both names are known to the inspection,
+  navigation, Find Usages and Rename
+
+## [2026.3.5] - 2026-11-11
+
+### Added
+
 - *Read components like* setting: Nuxt Content and Nuxt Studio (remark-mdc, the default) or the comark parser
 - Nuxt image paths (`/images/hero.webp`) in images, reference definitions, image-like component attributes and props, and front
   matter (`image`, `seo.image`, `og:image`) resolve to the Nuxt Image directory and the `public/` directories of the app and its
@@ -15,9 +23,6 @@
 - The preview shows images from the Nuxt image directories (optionally from the CDN) and image props of components as thumbnails
 - *Images* settings: on/off, image directories that replace the detected ones, a CDN URL, CDN images in the preview, and the
   directories detected for the current project
-- `Prose*` components can be written without the prefix (`::accordion-item` for `ProseAccordionItem`), as Comark and Nuxt UI
-  resolve them: completion offers the short name (typing `prose-` keeps the prefix), and both names are known to the inspection,
-  navigation, Find Usages and Rename
 
 ### Fixed
 
@@ -73,6 +78,7 @@ Markdown plugin.
   comark heading ids and `{#id}` / `id` attributes resolve too
 - Components, props and slots render as labelled blocks in the built-in Markdown preview
 
-[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.2...HEAD
+[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.5...HEAD
+[2026.3.5]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.2...2026.3.5
 [2026.3.2]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.0...2026.3.2
 [2026.3.0]: https://github.com/xprees/idea-comark-plugin/commits/2026.3.0
