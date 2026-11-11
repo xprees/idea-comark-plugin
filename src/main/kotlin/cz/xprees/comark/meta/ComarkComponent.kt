@@ -45,7 +45,11 @@ enum class PropKind {
     }
 }
 
-/** A prop a component accepts. [offset] is where its name is declared in the parsed source text, or -1 when unknown. */
+/**
+ * A prop a component accepts. [offset] is where its name is declared in the parsed source text, or -1 when unknown. [file] is the
+ * TypeScript file the prop is declared in when that is not the component's own file (a props interface imported from another
+ * module); [offset] is then an offset into that file.
+ */
 class ComarkProp(
     val name: String,
     val type: String? = null,
@@ -53,6 +57,7 @@ class ComarkProp(
     val defaultValue: String? = null,
     val description: String? = null,
     val offset: Int = -1,
+    val file: VirtualFile? = null,
 ) {
     val kind: PropKind get() = PropKind.of(type)
 
@@ -74,7 +79,7 @@ class ComarkProp(
         }
 
     fun withDescription(description: String?, defaultValue: String?): ComarkProp =
-        ComarkProp(name, type, required, this.defaultValue ?: defaultValue, this.description ?: description, offset)
+        ComarkProp(name, type, required, this.defaultValue ?: defaultValue, this.description ?: description, offset, file)
 
     override fun toString(): String = "$name: $type${if (required) " (required)" else ""}"
 

@@ -119,6 +119,34 @@ object ComponentNaming {
     }
 
     /**
+     * What a usage written as [written] (`prose-alert`, `ProseAlert`, `alert`) becomes when its component's file moves to
+     * [relativePath] (relative to the `components/` directory, as for [componentNames]), or null when that path names no
+     * component. A usage that spelled out the directory prefix keeps it, one that used Nuxt Content's bare file name alias keeps
+     * using the alias, and the usage's case style is kept ([inStyleOf]).
+     */
+    fun renamedUsage(written: String, relativePath: String): String? {
+        val names = componentNames(relativePath)
+        if (names.isEmpty()) return null
+        val name = if (names.size > 1 && !spellsDirectoryPrefix(written, relativePath)) names[1] else names[0]
+        return inStyleOf(written, name)
+    }
+
+    /** [name] in the case style of [written]: kebab-case (`prose-alert`, also for all lower case), PascalCase or camelCase. */
+    fun inStyleOf(written: String, name: String): String = when {
+        written.contains('-') || written.none { it.isUpperCase() } -> kebabCase(name)
+        written.first().isUpperCase() -> pascalCase(name)
+        else -> camelCase(name)
+    }
+
+    /** True when [written] starts with the directory prefix of [relativePath] (or there is none to start with). */
+    private fun spellsDirectoryPrefix(written: String, relativePath: String): Boolean {
+        var directories = relativePath.split('/').filter { it.isNotEmpty() }.dropLast(1)
+        if (directories.firstOrNull() in OWN_DIRECTORIES) directories = directories.drop(1)
+        val prefix = looseKey(directories.joinToString(""))
+        return prefix.isEmpty() || looseKey(written).startsWith(prefix)
+    }
+
+    /**
      * Port of Nuxt's `resolveComponentNameSegments`: joins directory and file name parts, dropping a directory prefix the file
      * name already repeats (`prose/ProseAlert.vue` is `ProseAlert`, not `ProseProseAlert`).
      */

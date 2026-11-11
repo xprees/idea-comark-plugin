@@ -182,7 +182,10 @@ sealed class ComponentUsage(val componentName: String, val range: TextRange) {
  * Markdown around them ([InlineComponentSyntax]); props-block keys from the YAML text, injected or not.
  */
 object ComponentUsages {
-    /** Markdown and Comark elements whose text never contains component references. */
+    /**
+     * Markdown and Comark elements whose text never contains component references. `FRONT_MATTER_HEADER` is experimental API, as is
+     * every other way to recognise front matter (its PSI class included).
+     */
     private val NO_COMPONENTS = TokenSet.create(
         MarkdownElementTypes.CODE_SPAN,
         MarkdownElementTypes.CODE_FENCE,

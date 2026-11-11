@@ -18,9 +18,10 @@ import cz.xprees.comark.psi.ComarkFile
  * attribute or props-block key to the prop's declaration, and from a `#slot` to the `<slot name>` (or `defineSlots` member)
  * that renders it.
  *
- * A declaration handler rather than references, because inline components are not PSI elements of their own: they are text
- * inside Markdown paragraphs, which the handler can look at for any offset. Prop and slot positions come from parsing the
- * target file at navigation time, so they are right even while the `.vue` file has unsaved edits.
+ * A declaration handler rather than references for props and slots, because inline components are not PSI elements of their
+ * own: they are text inside Markdown paragraphs, which the handler can look at for any offset. Prop and slot positions come
+ * from parsing the target file at navigation time, so they are right even while the `.vue` file has unsaved edits. Component
+ * names also have references ([ComarkComponentReference]), which Find Usages and Rename use.
  */
 class ComarkGotoDeclarationHandler : GotoDeclarationHandler, DumbAware {
     override fun getGotoDeclarationTargets(sourceElement: PsiElement?, offset: Int, editor: Editor?): Array<PsiElement>? {
@@ -42,7 +43,14 @@ class ComarkGotoDeclarationHandler : GotoDeclarationHandler, DumbAware {
             val text = psiFile.viewProvider.contents
             val target = when (usage) {
                 is ComponentUsage.Prop -> info.findProp(usage.propName)?.let { declared ->
-                    source(psiFile, text, declared.offset, declared.name.length, ComarkSymbol(component, prop = component.findProp(usage.propName) ?: declared))
+                    val symbol = ComarkSymbol(component, prop = component.findProp(usage.propName) ?: declared)
+                    // props of an imported interface are declared in that TypeScript file
+                    val declaringFile = declared.file?.takeIf { it.isValid }?.let { PsiManager.getInstance(project).findFile(it) }
+                    if (declaringFile != null) {
+                        source(declaringFile, declaringFile.viewProvider.contents, declared.offset, declared.name.length, symbol)
+                    } else {
+                        source(psiFile, text, declared.offset, declared.name.length, symbol)
+                    }
                 }
 
                 is ComponentUsage.Slot -> info.findSlot(usage.slotName)?.let { declared ->

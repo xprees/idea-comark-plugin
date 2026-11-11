@@ -41,6 +41,10 @@ class ComarkPreviewPanelProvider : MarkdownHtmlPanelProvider() {
 
     override fun createHtmlPanel(): MarkdownHtmlPanel = requireDelegate().createHtmlPanel()
 
+    /**
+     * The panel the preview actually asks for. This overload is experimental API, but it is what the editor calls and what gives
+     * the JCEF panel its project and file; without the override the preview would get the delegate's file-less panel.
+     */
     override fun createHtmlPanel(project: Project, virtualFile: VirtualFile): MarkdownHtmlPanel =
         requireDelegate().createHtmlPanel(project, virtualFile)
 
