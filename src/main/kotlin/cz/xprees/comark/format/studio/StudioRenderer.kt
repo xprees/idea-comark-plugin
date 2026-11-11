@@ -18,7 +18,7 @@ object StudioRenderer {
     /** `renderMarkdown(document, { blockAttributesStyle: 'frontmatter' })`. */
     fun renderMarkdown(document: StudioDocument): String {
         val content = render(document)
-        return renderFrontmatter(document.frontmatter, content)
+        return renderFrontmatter(document.frontmatterValue, content)
     }
 
     /** `render(document, ...)`: the body, trimmed and ending with one `\n`. */
@@ -30,8 +30,14 @@ object StudioRenderer {
     }
 
     /** `renderFrontmatter(data, content)` (`internal/frontmatter.js`). */
-    fun renderFrontmatter(data: Map<String, Any?>, content: String): String {
-        if (data.isEmpty()) return StudioJs.trim(content)
+    fun renderFrontmatter(data: Any?, content: String): String {
+        val noKeys = when (data) {
+            is Map<*, *> -> data.isEmpty()
+            is List<*> -> data.isEmpty()
+            is String -> data.isEmpty()
+            else -> true // Object.keys of null, booleans and numbers is empty
+        }
+        if (!StudioJs.truthy(data) || noKeys) return StudioJs.trim(content)
         val fm = StudioJs.trim(StudioYaml.stringify(data))
         if (content.isNotEmpty()) return "---\n$fm\n---\n\n" + StudioJs.trim(content)
         return fm

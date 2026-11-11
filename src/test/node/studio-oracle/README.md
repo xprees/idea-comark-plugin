@@ -33,6 +33,14 @@ the renderer:
 - `render-random-vectors.json`: the same for 1500 trees from a seeded random generator, one vector per line. Recording twice
   gives the same trees.
 
+`record-text-vectors.mjs` (Gradle: `recordStudioTextVectors`) records `text-vectors.json` for the Kotlin port of Studio's
+text-path parse (`StudioTreeBuilder`, `StudioFormatter`): 5000 seeded random documents (3000 spliced and mutated from corpus
+lines, 1000 strings of Markdown punctuation, 1000 with random YAML front matter or component props) plus 21 pathological
+ones (markdown-it's nesting limit, long runs of delimiters, CRLF, a BOM, empty input). For each it stores the tree and front
+matter `renderMarkdown` receives (`tree`, `frontmatter`) and the text Studio writes (`text`), or `{"error": ...}` where
+Studio throws. One vector per line; recording twice gives identical bytes. `--count`, `--chars`, `--yaml`, `--seed`,
+`--mutations` and `--out` record other sets (for example a larger local fuzz run).
+
 ## What runs
 
 All versions are pinned exactly in `package.json` and `package-lock.json`: nuxt-studio 1.8.0, comark 0.7.0, js-yaml 5.5.0,
