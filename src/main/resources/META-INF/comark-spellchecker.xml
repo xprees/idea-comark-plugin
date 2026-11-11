@@ -1,0 +1,6 @@
+<idea-plugin>
+    <!-- Loaded only with the spellchecker module (optional dependency in plugin.xml) -->
+    <extensions defaultExtensionNs="com.intellij">
+        <spellchecker.support language="Comark" implementationClass="cz.xprees.comark.spellchecker.ComarkSpellcheckingStrategy"/>
+    </extensions>
+</idea-plugin>

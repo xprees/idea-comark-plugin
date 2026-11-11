@@ -1,7 +1,9 @@
 # GitHub Actions workflow for building, testing, verifying, and preparing plugin release drafts:
 # - Build the plugin ZIP with the 'buildPlugin' task and upload it as a workflow artifact.
 # - Run the 'check' task and upload test reports on failure.
-# - Run the 'verifyPlugin' task and upload Plugin Verifier reports.
+# - Run the 'verifyPlugin' task and upload Plugin Verifier reports. To save Actions minutes only the latest IDEA, WebStorm and
+#   Rider are verified by default; the full matrix (oldest supported and intermediate releases too) is opt-in: add the
+#   'full-verify' label to a pull request (applies from its next push), or run the workflow by hand with 'Full verification'.
 # - On pushes to 'master' (merged pull requests), once everything is green: tag the commit with the next version and
 #   create a draft GitHub release for that tag with the built (and, if the signing secrets exist, signed) plugin attached.
 #   Publishing the draft starts the Release workflow.
@@ -10,7 +12,7 @@
 # PLUGIN_VERSION_MINOR (Settings > Secrets and variables > Actions > Variables; unset = the values in gradle.properties),
 # the patch is the next free one for that major.minor (see build.gradle.kts).
 #
-# The workflow is triggered on pushes to the 'master' branch and on pull_request events.
+# The workflow is triggered on pushes to the 'master' branch, on pull_request events and by hand (workflow_dispatch).
 #
 # GitHub Actions reference: https://docs.github.com/actions
 #
@@ -23,6 +25,13 @@ on:
     branches: [ master ]
   # Trigger the workflow on any pull request
   pull_request:
+  # Run by hand, optionally with the full verification matrix
+  workflow_dispatch:
+    inputs:
+      full-verify:
+        description: Full verification (every IDE version in the matrix, not only the latest ones)
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -126,22 +135,31 @@ jobs:
 
   # Run plugin structure verification along with IntelliJ Plugin Verifier.
   # One job per IDE: every IDE distribution is kept both zipped and extracted in the Gradle cache, and all of them together don't
-  # fit on a hosted runner. Keep this list in sync with verify*Versions in gradle.properties (those are what a local verifyPlugin uses).
+  # fit on a hosted runner. By default only the latest IDEA, WebStorm and Rider are verified (the tests already build and run
+  # against the oldest supported platform); the full matrix runs with the 'full-verify' pull request label or the workflow_dispatch
+  # input. Keep the full list in sync with verify*Versions in gradle.properties (those are what a local verifyPlugin uses).
   verify:
     name: Verify plugin (${{ matrix.ide }} ${{ matrix.version }})
     needs: [ build ]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { ide: IDEA, version: 2026.1.5, idea: 2026.1.5 }
-          - { ide: IDEA, version: 2026.2.3, idea: 2026.2.3 }
-          - { ide: IDEA, version: 2026.3, idea: 2026.3 }
-          - { ide: WebStorm, version: 2026.1.5, webstorm: 2026.1.5 }
-          - { ide: WebStorm, version: 2026.3, webstorm: 2026.3 }
-          - { ide: Rider, version: 2026.1.5, rider: 2026.1.5 }
-          - { ide: Rider, version: 2026.2.3, rider: 2026.2.3 }
+      matrix: >-
+        ${{ fromJSON(
+          (inputs.full-verify || contains(github.event.pull_request.labels.*.name, 'full-verify'))
+          && '{"include":[
+            {"ide":"IDEA","version":"2026.1.5","idea":"2026.1.5"},
+            {"ide":"IDEA","version":"2026.2.3","idea":"2026.2.3"},
+            {"ide":"IDEA","version":"2026.3","idea":"2026.3"},
+            {"ide":"WebStorm","version":"2026.1.5","webstorm":"2026.1.5"},
+            {"ide":"WebStorm","version":"2026.3","webstorm":"2026.3"},
+            {"ide":"Rider","version":"2026.1.5","rider":"2026.1.5"},
+            {"ide":"Rider","version":"2026.2.3","rider":"2026.2.3"}]}'
+          || '{"include":[
+            {"ide":"IDEA","version":"2026.3","idea":"2026.3"},
+            {"ide":"WebStorm","version":"2026.3","webstorm":"2026.3"},
+            {"ide":"Rider","version":"2026.2.3","rider":"2026.2.3"}]}'
+        ) }}
     steps:
 
       # Free GitHub Actions Environment Disk Space

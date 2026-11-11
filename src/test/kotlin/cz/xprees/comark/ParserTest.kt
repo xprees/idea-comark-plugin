@@ -1,14 +1,18 @@
 package cz.xprees.comark
 
 import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.psi.impl.DebugUtil
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import cz.xprees.comark.psi.ComarkBlockComponent
 import cz.xprees.comark.psi.ComarkFile
 import cz.xprees.comark.psi.ComarkPropsBlock
 import cz.xprees.comark.psi.ComarkSlot
+import org.intellij.plugins.markdown.lang.MarkdownElementTypes
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownCodeFence
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownHeader
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownList
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownListItem
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownParagraph
 import java.io.File
 
@@ -62,6 +66,77 @@ class ParserTest : BasePlatformTestCase() {
     fun testDashesLaterAreAThematicBreakNotProps() {
         val file = parse("::card\nBody\n\n---\n\nMore\n::")
         assertNull(file.components.single().propsBlock)
+    }
+
+    private fun ComarkFile.frontMatterHeaders() =
+        PsiTreeUtil.collectElements(this) { it.node.elementType == MarkdownElementTypes.FRONT_MATTER_HEADER }.toList()
+
+    fun testDashesAfterAComponentAreNotFrontMatter() {
+        val file = parse("::divider\n::\n---\n\nParagraph after\n")
+        assertEmpty(file.frontMatterHeaders())
+        assertNotNull(PsiTreeUtil.findChildrenOfType(file, MarkdownParagraph::class.java).singleOrNull { it.text == "Paragraph after" })
+    }
+
+    fun testDashesAfterASlotLineAreNotFrontMatter() {
+        val file = parse("::card\n#footer\n---\nFooter text\n::\n")
+        assertEmpty(file.frontMatterHeaders())
+        val slot = file.components.single().slots.single()
+        assertNotNull(PsiTreeUtil.findChildrenOfType(slot, MarkdownParagraph::class.java).singleOrNull { it.text == "Footer text" })
+    }
+
+    fun testFrontMatterAtTheTopIsKept() {
+        val file = parse("---\ntitle: x\n---\n\n::a\n::\n")
+        assertEquals(1, file.frontMatterHeaders().size)
+    }
+
+    fun testBacktickYamlPropsFenceIsAPropsBlock() {
+        val component = parse("::card\n```yaml [props]\ntitle: Hello\ncolor: primary\n```\nContent\n::\n").components.single()
+        assertEquals("title: Hello\ncolor: primary\n", component.propsBlock!!.content!!.text)
+        assertEmpty(PsiTreeUtil.findChildrenOfType(component, MarkdownCodeFence::class.java))
+        assertNotNull(PsiTreeUtil.findChildrenOfType(component, MarkdownParagraph::class.java).singleOrNull { it.text == "Content" })
+    }
+
+    fun testTildeYmlPropsFenceInNestedComponentIsAPropsBlock() {
+        val file = parse("::outer\n  :::inner\n  ~~~yml [props]\n  title: Hello\n  ~~~\n  Content\n  :::\n::\n")
+        val inner = file.allComponents().single { it.componentName == "inner" }
+        assertEquals("  title: Hello\n", inner.propsBlock!!.content!!.text)
+    }
+
+    fun testPlainYamlFenceStaysACodeFence() {
+        val component = parse("::card\n```yaml\ntitle: Hello\n```\n::\n").components.single()
+        assertNull(component.propsBlock)
+        assertNotNull(PsiTreeUtil.findChildOfType(component, MarkdownCodeFence::class.java))
+    }
+
+    /** comark SPEC/COMARK/component-nested-in-list.md: the component belongs to the list item and the list continues after it. */
+    fun testComponentInListItemStaysInTheList() {
+        val file = parse("::steps\n- **Node.js** - `22.x` or newer\n- **Terminal** - run Nuxt\n  :::callout\n  Use an even version.\n  :::\n- third\n::\n")
+        val callout = file.allComponents().single { it.componentName == "callout" }
+        val item = PsiTreeUtil.getParentOfType(callout, MarkdownListItem::class.java)
+        assertNotNull(DebugUtil.psiToString(file, true, false), item)
+        assertTrue(item!!.text.startsWith("- **Terminal**"))
+        val steps = file.components.single()
+        assertEquals(1, PsiTreeUtil.getChildrenOfTypeAsList(steps, MarkdownList::class.java).size)
+        assertEquals(3, PsiTreeUtil.findChildrenOfType(steps, MarkdownListItem::class.java).size)
+        assertNotNull(PsiTreeUtil.findChildrenOfType(callout, MarkdownParagraph::class.java).singleOrNull { it.text == "Use an even version." })
+    }
+
+    fun testComponentInNestedAndOrderedListItems() {
+        val file = parse("1. one\n2. two\n   - nested\n     ::card\n     Text\n     ::\n   - nested two\n3. three\n\nAfter\n")
+        val card = file.allComponents().single()
+        val nestedItem = PsiTreeUtil.getParentOfType(card, MarkdownListItem::class.java)!!
+        assertTrue(nestedItem.text.startsWith("- nested"))
+        assertEquals(1, PsiTreeUtil.getChildrenOfTypeAsList(file, MarkdownList::class.java).size)
+    }
+
+    fun testUnindentedComponentAfterListIsNotInIt() {
+        val file = parse("- one\n- two\n::card\nText\n::\n- three\n")
+        assertNull(PsiTreeUtil.getParentOfType(file.allComponents().single(), MarkdownListItem::class.java))
+    }
+
+    fun testComponentAfterParagraphIsNotInAList() {
+        val file = parse("- one\n\nParagraph\n  ::card\n  Text\n  ::\n")
+        assertNull(PsiTreeUtil.getParentOfType(file.allComponents().single(), MarkdownListItem::class.java))
     }
 
     fun testSlots() {

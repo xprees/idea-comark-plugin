@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Port of the VS Code extension's snippets (snippets/markdown.code-snippets). VS Code offers "Insert Simple Block" for the prefixes
+  "block" and "::" and "Insert Data Block" for "block" and "::-"; abbreviations must be unique here, so the data block's word prefix is
+  "datablock". $SELECTION$ makes the templates usable with Surround With as well (VS Code's TM_SELECTED_TEXT).
+-->
+<templateSet group="Comark">
+  <template name="::" value="::$NAME$&#10;$SELECTION$$END$&#10;::"
+            resource-bundle="messages.ComarkBundle" key="live.template.block" toReformat="false" toShortenFQNames="false">
+    <variable name="NAME" expression="" defaultValue="" alwaysStopAt="true"/>
+    <context>
+      <option name="COMARK" value="true"/>
+    </context>
+  </template>
+
+  <template name="block" value="::$NAME$&#10;$SELECTION$$END$&#10;::"
+            resource-bundle="messages.ComarkBundle" key="live.template.block" toReformat="false" toShortenFQNames="false">
+    <variable name="NAME" expression="" defaultValue="" alwaysStopAt="true"/>
+    <context>
+      <option name="COMARK" value="true"/>
+    </context>
+  </template>
+
+  <template name="::-" value="::$NAME$&#10;---&#10;$PROPS$&#10;---&#10;$SELECTION$$END$&#10;::"
+            resource-bundle="messages.ComarkBundle" key="live.template.data.block" toReformat="false" toShortenFQNames="false">
+    <variable name="NAME" expression="" defaultValue="" alwaysStopAt="true"/>
+    <variable name="PROPS" expression="" defaultValue="" alwaysStopAt="true"/>
+    <context>
+      <option name="COMARK" value="true"/>
+    </context>
+  </template>
+
+  <template name="datablock" value="::$NAME$&#10;---&#10;$PROPS$&#10;---&#10;$SELECTION$$END$&#10;::"
+            resource-bundle="messages.ComarkBundle" key="live.template.data.block" toReformat="false" toShortenFQNames="false">
+    <variable name="NAME" expression="" defaultValue="" alwaysStopAt="true"/>
+    <variable name="PROPS" expression="" defaultValue="" alwaysStopAt="true"/>
+    <context>
+      <option name="COMARK" value="true"/>
+    </context>
+  </template>
+
+  <template name="span" value="[$SELECTION$$TEXT$]$END$"
+            resource-bundle="messages.ComarkBundle" key="live.template.span" toReformat="false" toShortenFQNames="false">
+    <variable name="TEXT" expression="" defaultValue="" alwaysStopAt="true"/>
+    <context>
+      <option name="COMARK" value="true"/>
+    </context>
+  </template>
+</templateSet>
