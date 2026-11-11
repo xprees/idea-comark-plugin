@@ -7,6 +7,8 @@
         <completion.contributor language="yaml" implementationClass="cz.xprees.comark.completion.ComarkPropsYamlCompletionContributor"/>
         <!-- images: image paths in props blocks and the front matter -->
         <psi.referenceContributor language="yaml" implementation="cz.xprees.comark.images.ComarkImageYamlReferenceContributor"/>
+        <!-- images: image path completion in props blocks and the front matter -->
+        <completion.contributor language="yaml" order="first" implementationClass="cz.xprees.comark.images.ComarkImageYamlCompletionContributor"/>
         <!-- images: missing image paths in props blocks and the front matter (the Markdown registration covers the rest) -->
         <localInspection language="yaml" shortName="ComarkMissingImageYaml"
                          bundle="messages.ComarkBundle" key="inspection.missing.image.yaml.display.name"

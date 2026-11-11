@@ -4,6 +4,9 @@
         <!-- Registered for Markdown: Comark is a Markdown dialect, and inline component text is Markdown PSI -->
         <completion.contributor language="Markdown"
                                 implementationClass="cz.xprees.comark.completion.ComarkComponentCompletionContributor"/>
+        <!-- images: Nuxt image paths in destinations, attributes and non-injected YAML; first, to filter Markdown's duplicate path variants -->
+        <completion.contributor language="Markdown" order="first"
+                                implementationClass="cz.xprees.comark.images.ComarkImageCompletionContributor"/>
         <typedHandler implementation="cz.xprees.comark.completion.ComarkCompletionAutoPopupHandler"/>
 
         <gotoDeclarationHandler implementation="cz.xprees.comark.navigation.ComarkGotoDeclarationHandler"/>

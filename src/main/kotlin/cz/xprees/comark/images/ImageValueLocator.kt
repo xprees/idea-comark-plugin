@@ -13,6 +13,12 @@ import cz.xprees.comark.parser.ComarkSyntax
 data class ImageValue(val key: String, val value: String, val range: TextRange)
 
 /**
+ * A YAML value being typed (for completion): the key path it belongs to and the text typed so far, which starts at [prefixStart].
+ * A sequence item (`- /x`) belongs to the key of its sequence.
+ */
+data class YamlValueSite(val keys: List<String>, val prefixStart: Int, val prefix: String)
+
+/**
  * Text-based search for image values in component attributes and YAML (props blocks, front matter). Used where no PSI is at hand
  * or where the YAML plugin (optional) may be missing: the preview, the missing-image inspection and the no-YAML reference fallbacks.
  * Values are not checked to be paths; callers run them through [ImagePaths.normalize].
@@ -68,6 +74,74 @@ object ImageValueLocator {
             lineStart = lineEnd + 1
         }
         return result
+    }
+
+    private val VALUE_AFTER_KEY = Regex("""^( *)((?:-[ ]+)*)("[^"]*"|'[^']*'|[^\s"'#\[{][^#]*?)[ ]*:[ ]+['"]?([^'"#\s]*)$""")
+    private val VALUE_ITEM = Regex("""^( *)((?:-[ ]+)+)['"]?([^'"#\s]*)$""")
+
+    /**
+     * The value typed at [offset] of the YAML [text] (`key: /pa|`, `- /pa|`, quoted or not) with its key path, worked out from the
+     * indentation of the lines above; null when the caret is not in a single-line scalar value. Text-based because the value being
+     * typed is often not valid YAML yet, and because the YAML plugin is optional.
+     */
+    fun yamlValueSite(text: CharSequence, offset: Int): YamlValueSite? {
+        if (offset < 0 || offset > text.length) return null
+        var lineStart = offset
+        while (lineStart > 0 && text[lineStart - 1] != '\n') lineStart--
+        val before = text.subSequence(lineStart, offset).toString()
+        val keyed = VALUE_AFTER_KEY.find(before)
+        val match = keyed ?: VALUE_ITEM.find(before) ?: return null
+        val indent = match.groupValues[1].length
+        val dashes = match.groupValues[2].isNotEmpty()
+        val own = keyed?.groupValues?.get(3)?.trim()?.removeSurrounding("\"")?.removeSurrounding("'")
+        val prefix = match.groupValues.last()
+        val keys = parentKeys(text, lineStart, indent, dashes) + listOfNotNull(own)
+        return YamlValueSite(keys, offset - prefix.length, prefix)
+    }
+
+    /**
+     * The keys of the mappings enclosing a line indented by [indent] that starts at [lineStart]: each `key:` line without a value above
+     * it and indented less (or equally, for a sequence written at its key's indentation: `gallery:` then `- /a.png`).
+     */
+    private fun parentKeys(text: CharSequence, lineStart: Int, indent: Int, dashes: Boolean): List<String> {
+        val keys = ArrayList<String>()
+        var limit = indent
+        var sameIndent = dashes
+        var end = lineStart - 1
+        while (end >= 0 && (limit > 0 || sameIndent)) {
+            var start = end
+            while (start > 0 && text[start - 1] != '\n') start--
+            var i = start
+            while (i < end && text[i] == ' ') i++
+            val lineIndent = i - start
+            val blank = i >= end || text[i] == '#'
+            if (!blank && lineIndent == 0 && (text.startsWith("---", i) || text.startsWith("...", i))) break
+            if (!blank && (lineIndent < limit || lineIndent == limit && sameIndent)) {
+                var k = i
+                var lineDashes = false
+                while (k < end && text[k] == '-' && (k + 1 == end || text[k + 1] == ' ')) {
+                    lineDashes = true
+                    k++
+                    while (k < end && text[k] == ' ') k++
+                }
+                val key = if (k < end) keyAt(text, k, end) else null
+                var v = key?.second ?: end
+                while (v < end && text[v] == ' ') v++
+                val keyOnly = key != null && (v >= end || text[v] == '#')
+                if (keyOnly && !(lineIndent == limit && lineDashes)) {
+                    keys += key!!.first
+                } else if (lineIndent == limit) {
+                    if (!lineDashes) break
+                    // a sibling item at the same indentation: keep looking for the sequence's key
+                    end = start - 1
+                    continue
+                }
+                limit = lineIndent
+                sameIndent = lineDashes
+            }
+            end = start - 1
+        }
+        return keys.asReversed()
     }
 
     /** Handles one line; returns the indent of the key whose block scalar (`|`, `>`) the next lines belong to, or -1. */
