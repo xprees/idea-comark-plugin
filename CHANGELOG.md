@@ -15,6 +15,9 @@
 - The preview shows images from the Nuxt image directories (optionally from the CDN) and image props of components as thumbnails
 - *Images* settings: on/off, image directories that replace the detected ones, a CDN URL, CDN images in the preview, and the
   directories detected for the current project
+- `Prose*` components can be written without the prefix (`::accordion-item` for `ProseAccordionItem`), as Comark and Nuxt UI
+  resolve them: completion offers the short name (typing `prose-` keeps the prefix), and both names are known to the inspection,
+  navigation, Find Usages and Rename
 
 ### Fixed
 

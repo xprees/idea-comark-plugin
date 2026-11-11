@@ -35,6 +35,7 @@ class ComarkComponentReferenceSearcher : QueryExecutorBase<PsiReference, Referen
         val names = ComarkComponentService.getInstance(project).index().components
             .filter { it.file == virtualFile }
             .flatMap { it.allNames }
+            .let { names -> names + names.mapNotNull(ComponentNaming::proseShortName) }
         if (names.isEmpty()) return
         val scope = parameters.effectiveSearchScope
         val files = when (scope) {
