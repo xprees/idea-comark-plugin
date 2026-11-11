@@ -14,6 +14,8 @@
 - Markdown plugin compatibility (HTML blocks, TODOs, Fill Paragraph) and components in the Markdown preview
 - Code style page for Comark (indent 2 by default) and spellchecking of component content and attribute values
 - Comark logo as the plugin icon and as the file icon of `.mdc` files
+- Nuxt Content route links (`/guide/install#setup`) resolve to their content files: Go to Declaration, anchors in the target page
+  and route completion
 
 ### Fixed
 
