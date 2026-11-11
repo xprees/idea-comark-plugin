@@ -9,6 +9,7 @@ import cz.xprees.comark.psi.ComarkFile
 import cz.xprees.comark.psi.ComarkPropsBlock
 import cz.xprees.comark.psi.ComarkSlot
 import org.intellij.plugins.markdown.lang.MarkdownElementTypes
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownCodeBlock
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownCodeFence
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownHeader
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownList
@@ -137,6 +138,31 @@ class ParserTest : BasePlatformTestCase() {
     fun testComponentAfterParagraphIsNotInAList() {
         val file = parse("- one\n\nParagraph\n  ::card\n  Text\n  ::\n")
         assertNull(PsiTreeUtil.getParentOfType(file.allComponents().single(), MarkdownListItem::class.java))
+    }
+
+    /** CommonMark partial tabs: inside a component at column 2, a tab-indented line is 2 columns in, so a paragraph. */
+    fun testTabIndentedContentInSpaceIndentedComponentIsAParagraph() {
+        val file = parse("::outer\n  :::inner\n\tSome text\n  :::\n::\n")
+        val inner = file.allComponents().single { it.componentName == "inner" }
+        val tree = DebugUtil.psiToString(file, true, false)
+        assertNull(tree, PsiTreeUtil.findChildOfType(inner, MarkdownCodeBlock::class.java))
+        assertEquals(tree, "Some text", PsiTreeUtil.findChildOfType(inner, MarkdownParagraph::class.java)?.text?.trim())
+    }
+
+    fun testTabIndentedCodeStaysCodeWhenFarEnoughIn() {
+        val file = parse("::outer\n  :::inner\n  \tcode\n  :::\n::\n")
+        assertNotNull(DebugUtil.psiToString(file, true, false), PsiTreeUtil.findChildOfType(file, MarkdownCodeBlock::class.java))
+    }
+
+    /** Past markdown-it's default nesting depth openers are text, so thousands of nested or unclosed components can't overflow. */
+    fun testDeeplyNestedComponentsDoNotOverflow() {
+        val file = parse((1..3000).joinToString("") { "::a\n" } + "x\n")
+        assertEquals(100, file.allComponents().size)
+    }
+
+    fun testManyUnclosedComponentsDoNotOverflow() {
+        val file = parse((1..2500).joinToString("") { "::note\nText $it\n\n" })
+        assertEquals(100, file.allComponents().size)
     }
 
     fun testSlots() {
