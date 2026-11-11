@@ -29,7 +29,7 @@ gives its `since-build`) and verified against the latest IDEA, WebStorm and Ride
 | File | Comark when |
 |---|---|
 | `*.mdc` | always |
-| `*.md` | *Auto* (default): a `package.json` in the file's directory or above depends on `@nuxt/content`, `@nuxtjs/mdc`, `comark`, `@comark/*`, `docus` or `@nuxt/ui-pro`; *All .md files*; or never. Files matching an exclusion pattern are never Comark |
+| `*.md` | *Auto* (default): the file is in a content directory of a package whose `package.json` (in the file's directory or above) depends on `@nuxt/content`, `@nuxtjs/mdc`, `comark`, `@comark/*`, `docus` or `@nuxt/ui-pro`. Content directories are any `content/` directory below the package (layers and nested apps included, not `node_modules`), the `cwd` of collection sources in `content.config.ts` and the `base` of Nuxt Content 2 `fs` sources in `nuxt.config.ts`; `README.md`, `CHANGELOG.md` and other Markdown files elsewhere stay plain Markdown. *Nuxt Content config* in the settings points at the configuration to use instead (for a config file in another place or with another name); the `content/` directory next to it and its sources are then Comark, with or without a `package.json`. Or *All .md files*, or never. Files matching an exclusion pattern are never Comark |
 
 The setting lives in *Settings › Languages & Frameworks › Comark*, together with exclusion patterns: globs, one per line, matched
 like `.gitignore` entries against the path relative to the project directory (`CHANGELOG.md` or `legacy` match a name at any level,
