@@ -2,6 +2,7 @@ package cz.xprees.comark.parser
 
 import com.intellij.psi.tree.IElementType
 import cz.xprees.comark.lang.ComarkLanguage
+import cz.xprees.comark.psi.ComarkAttributeValueElementType
 import cz.xprees.comark.psi.ComarkComponentNameElementType
 import cz.xprees.comark.psi.ComarkPropsContentElementType
 import org.intellij.markdown.MarkdownElementType
@@ -64,7 +65,7 @@ object ComarkTypes {
     val ATTR_RBRACE_PAIR = token("ATTR_RBRACE")
     val ATTR_NAME_PAIR = token("ATTR_NAME")
     val ATTR_EQ_PAIR = token("ATTR_EQ")
-    val ATTR_VALUE_PAIR = token("ATTR_VALUE")
+    val ATTR_VALUE_PAIR = token("ATTR_VALUE", ComarkAttributeValueElementType())
     val ATTR_ID_PAIR = token("ATTR_ID")
     val ATTR_CLASS_PAIR = token("ATTR_CLASS")
     val PROPS_FENCE_PAIR = token("PROPS_FENCE")

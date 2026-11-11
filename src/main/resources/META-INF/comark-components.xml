@@ -11,6 +11,10 @@
         <referencesSearch implementation="cz.xprees.comark.navigation.ComarkComponentReferenceSearcher"/>
         <!-- Nuxt Content page routes in link destinations (/guide/install) resolve to their content files -->
         <psi.referenceContributor language="Markdown" implementation="cz.xprees.comark.navigation.ComarkRouteReferenceContributor"/>
+        <!-- Nuxt image paths (public/ and Nuxt Image directories) in image destinations and image-like component attributes -->
+        <psi.referenceContributor language="Markdown" implementation="cz.xprees.comark.images.ComarkImageReferenceContributor"/>
+        <lang.elementManipulator forClass="cz.xprees.comark.psi.ComarkAttributeValue"
+                                 implementationClass="cz.xprees.comark.psi.ComarkAttributeValueManipulator"/>
 
         <platform.backend.documentation.targetProvider
                 implementation="cz.xprees.comark.navigation.ComarkDocumentationTargetProvider"/>

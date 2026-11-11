@@ -5,6 +5,8 @@ import com.intellij.codeInspection.SuppressQuickFix
 import com.intellij.psi.ElementManipulators
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
+import cz.xprees.comark.images.ComarkImageReference
+import cz.xprees.comark.images.NuxtImageDirectories
 import cz.xprees.comark.lang.ComarkProjectDetector
 import cz.xprees.comark.navigation.ComarkContentRoutes
 import cz.xprees.comark.psi.ComarkFile
@@ -24,6 +26,10 @@ import org.intellij.plugins.markdown.lang.psi.impl.MarkdownLinkDestination
  *   [cz.xprees.comark.navigation.ComarkRouteReference], while the Markdown plugin's own file references on them never do; routes
  *   that match no content file may still exist (custom pages, collection prefixes). Neither is reported. Links with an extension
  *   (`/images/logo.png`) are still checked.
+ *   Absolute image paths (`![](/threats/x.webp)`) are served from Nuxt's public and Nuxt Image directories, which the Markdown plugin
+ *   doesn't know: they resolve through [cz.xprees.comark.images.ComarkImageReference], and in Nuxt projects missing ones are left
+ *   to the missing-image inspection, so the Markdown plugin's warning is dropped there. Outside Nuxt projects only paths that resolve
+ *   (through configured image directories) are suppressed; relative paths are always checked.
  */
 class ComarkMarkdownInspectionSuppressor : InspectionSuppressor {
     override fun isSuppressedFor(element: PsiElement, toolId: String): Boolean = when (toolId) {
@@ -33,7 +39,7 @@ class ComarkMarkdownInspectionSuppressor : InspectionSuppressor {
         }
 
         UNRESOLVED_HEADER_REFERENCE -> element is MarkdownLinkDestination && ComarkAnchors.isComarkAnchor(element, element.text)
-        UNRESOLVED_FILE_REFERENCE -> isRouteLink(element)
+        UNRESOLVED_FILE_REFERENCE -> isRouteLink(element) || isNuxtImagePath(element)
         else -> false
     }
 
@@ -43,6 +49,12 @@ class ComarkMarkdownInspectionSuppressor : InspectionSuppressor {
         ComarkContentRoutes.parseRouteLink(destination.text, ElementManipulators.getValueTextRange(destination)) ?: return false
         val virtualFile = file.originalFile.virtualFile ?: return false
         return ComarkProjectDetector.getInstance(file.project).isComarkContext(virtualFile)
+    }
+
+    private fun isNuxtImagePath(element: PsiElement): Boolean {
+        val destination = PsiTreeUtil.getParentOfType(element, MarkdownLinkDestination::class.java, false) ?: return false
+        val reference = destination.references.filterIsInstance<ComarkImageReference>().firstOrNull() ?: return false
+        return NuxtImageDirectories.getInstance(element.project).isNuxt(reference.context) || reference.resolve() != null
     }
 
     override fun getSuppressActions(element: PsiElement?, toolId: String): Array<SuppressQuickFix> = SuppressQuickFix.EMPTY_ARRAY

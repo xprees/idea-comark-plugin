@@ -1,6 +1,11 @@
 package cz.xprees.comark.images
 
+import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiReferenceService
+import com.intellij.psi.util.parents
+import cz.xprees.comark.psi.ComarkFile
 import com.intellij.testFramework.VfsTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import cz.xprees.comark.lang.ComarkProjectDetector
@@ -89,6 +94,27 @@ abstract class NuxtImagesTestBase : BasePlatformTestCase() {
         val file = directories().resolve(context, raw)?.file ?: return null
         val root = myFixture.tempDirFixture.getFile("")!!.path
         return file.path.removePrefix("$root/")
+    }
+
+    /** The image references at [offset] of the open file: on the elements around it, the file itself, or injected YAML. */
+    protected fun imageRefsAt(offset: Int): List<ComarkImageReference> {
+        val file = myFixture.file
+        val injected = InjectedLanguageManager.getInstance(project).findInjectedElementAt(file, offset)
+        val start = injected ?: file.findElementAt(offset) ?: return emptyList()
+        val local = if (injected == null) offset
+        else injected.textRange.startOffset + offset - InjectedLanguageManager.getInstance(project).injectedToHost(injected, injected.textRange.startOffset)
+        return start.parents(withSelf = true).takeWhile { it !is PsiFile }.flatMap { element ->
+            element.references.filterIsInstance<ComarkImageReference>()
+                .filter { it.rangeInElement.shiftRight(element.textRange.startOffset).containsOffset(local) }
+        }.toList() + if (injected == null && file is ComarkFile) {
+            file.getReferences(PsiReferenceService.Hints(null, offset)).filterIsInstance<ComarkImageReference>()
+        } else emptyList()
+    }
+
+    /** Every image reference of the open file, injected YAML included. */
+    protected fun imageRefs(): List<ComarkImageReference> {
+        val file = myFixture.file
+        return (0 until file.textLength).flatMap(::imageRefsAt).distinctBy { it.element to it.rangeInElement }
     }
 
     private fun le32(value: Int) = byteArrayOf(value.toByte(), (value shr 8).toByte(), (value shr 16).toByte(), (value shr 24).toByte())

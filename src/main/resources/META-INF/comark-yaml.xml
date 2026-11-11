@@ -5,5 +5,7 @@
         <multiHostInjector implementation="cz.xprees.comark.editor.yaml.ComarkPropsYamlInjector"/>
         <!-- components: prop key completion inside props blocks injected as YAML -->
         <completion.contributor language="yaml" implementationClass="cz.xprees.comark.completion.ComarkPropsYamlCompletionContributor"/>
+        <!-- images: image paths in props blocks and the front matter -->
+        <psi.referenceContributor language="yaml" implementation="cz.xprees.comark.images.ComarkImageYamlReferenceContributor"/>
     </extensions>
 </idea-plugin>
