@@ -208,7 +208,7 @@ tasks.register<Exec>("recordStudioOracle") {
 }
 tasks.register<Exec>("recordStudioVectors") {
     group = "verification"
-    description = "Records src/test/testData/studio/yaml-vectors.json and render-vectors.json from js-yaml and comark under Node."
+    description = "Records src/test/testData/studio/yaml-vectors.json, render-vectors.json and render-random-vectors.json from js-yaml and comark under Node."
     dependsOn(installStudioOracle)
     workingDir = studioOracleDir.asFile
     commandLine("node", "record-vectors.mjs")
