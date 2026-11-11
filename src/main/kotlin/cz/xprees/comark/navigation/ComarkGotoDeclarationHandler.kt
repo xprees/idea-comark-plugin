@@ -42,7 +42,14 @@ class ComarkGotoDeclarationHandler : GotoDeclarationHandler, DumbAware {
             val text = psiFile.viewProvider.contents
             val target = when (usage) {
                 is ComponentUsage.Prop -> info.findProp(usage.propName)?.let { declared ->
-                    source(psiFile, text, declared.offset, declared.name.length, ComarkSymbol(component, prop = component.findProp(usage.propName) ?: declared))
+                    val symbol = ComarkSymbol(component, prop = component.findProp(usage.propName) ?: declared)
+                    // props of an imported interface are declared in that TypeScript file
+                    val declaringFile = declared.file?.takeIf { it.isValid }?.let { PsiManager.getInstance(project).findFile(it) }
+                    if (declaringFile != null) {
+                        source(declaringFile, declaringFile.viewProvider.contents, declared.offset, declared.name.length, symbol)
+                    } else {
+                        source(psiFile, text, declared.offset, declared.name.length, symbol)
+                    }
                 }
 
                 is ComponentUsage.Slot -> info.findSlot(usage.slotName)?.let { declared ->
