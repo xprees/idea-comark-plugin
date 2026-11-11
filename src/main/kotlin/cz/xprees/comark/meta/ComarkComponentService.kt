@@ -4,6 +4,8 @@ import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.ControlFlowException
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.event.DocumentEvent
 import com.intellij.openapi.editor.event.DocumentListener
@@ -34,6 +36,7 @@ import com.intellij.psi.util.CachedValuesManager
 import com.intellij.util.concurrency.annotations.RequiresReadLock
 import cz.xprees.comark.settings.ComarkSettings
 import java.io.IOException
+import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -144,7 +147,14 @@ class ComarkComponentService(private val project: Project) : Disposable {
             load = { loadText(it, MAX_SFC_SIZE) },
         )
         val modulesStamp = typeModuleTracker.modificationCount
-        val value = VueSfcParser.parse(text, modules)
+        val value = try {
+            VueSfcParser.parse(text, modules)
+        } catch (e: Exception) {
+            // one malformed (or half-typed) component must not take component support down in every Comark file
+            if (e is ControlFlowException || e is CancellationException) throw e
+            LOG.warn("Comark: cannot parse component ${file.path}", e)
+            SfcInfo.EMPTY
+        }
         sfcCache[file] = ParsedSfc(stamp, modules.dependencies, if (modules.consulted) modulesStamp else -1, value)
         typeDependencies += modules.dependencies.keys
         return value
@@ -244,76 +254,115 @@ class ComarkComponentService(private val project: Project) : Disposable {
 
     // ---- Index ------------------------------------------------------------------------------------------------------
 
-    private fun buildIndex(files: DiscoveredFiles): ComponentIndex {
+    /**
+     * The components being merged by one [buildIndex]: indexed by file and by the [ComponentNaming.lookupKey] of every name, so
+     * that matching a metadata record costs a map lookup instead of a scan of all components.
+     */
+    private class IndexBuilder {
         val components = ArrayList<ComarkComponent>()
         val byFile = HashMap<VirtualFile, Int>()
+        private val byKey = HashMap<String, MutableList<Int>>()
+
+        /** Directories relative metadata paths without an app of their own are resolved against, computed once per build. */
+        var remoteBases: Collection<VirtualFile>? = null
+
+        fun add(component: ComarkComponent): Int {
+            val index = components.size
+            components += component
+            component.file?.let { byFile[it] = index }
+            indexNames(component, index)
+            return index
+        }
+
+        fun replace(index: Int, component: ComarkComponent) {
+            components[index] = component
+            component.file?.let { byFile[it] = index }
+            indexNames(component, index)
+        }
+
+        /** Indices of the components one of whose names has the lookup key [key], in the order they were added. */
+        fun withKey(key: String): List<Int> = byKey[key].orEmpty()
+
+        private fun indexNames(component: ComarkComponent, index: Int) {
+            for (name in component.allNames) {
+                val indices = byKey.getOrPut(ComponentNaming.lookupKey(name)) { ArrayList(1) }
+                if (index !in indices) {
+                    indices += index
+                    indices.sort()
+                }
+            }
+        }
+    }
+
+    private fun buildIndex(files: DiscoveredFiles): ComponentIndex {
+        val builder = IndexBuilder()
         for (vue in files.vueFiles) {
             ProgressManager.checkCanceled()
             val names = ComponentNaming.componentNames(vue.relativePath)
             if (names.isEmpty()) continue
             val info = sfcInfo(vue.file) ?: SfcInfo.EMPTY
-            byFile[vue.file] = components.size
-            components += ComarkComponent(
-                name = names.first(),
-                aliases = names.drop(1),
-                description = info.description,
-                props = info.props,
-                slots = info.slots,
-                source = ComponentSource.VUE_FILE,
-                file = vue.file,
-                root = vue.root,
+            builder.add(
+                ComarkComponent(
+                    name = names.first(),
+                    aliases = names.drop(1),
+                    description = info.description,
+                    props = info.props,
+                    slots = info.slots,
+                    source = ComponentSource.VUE_FILE,
+                    file = vue.file,
+                    root = vue.root,
+                ),
             )
         }
         for (meta in files.metaFiles) {
             val records = cachedParse(meta.file, metaCache, MAX_META_SIZE) { ComponentMetaParser.parse(it) } ?: continue
             for (record in records) {
                 ProgressManager.checkCanceled()
-                merge(record, ComponentSource.COMPONENT_META, meta.root, components, byFile)
+                merge(record, ComponentSource.COMPONENT_META, meta.root, builder)
             }
         }
         val settings = ComarkSettings.getInstance()
         if (settings.componentMetadataUrl.isNotBlank()) {
-            for (record in ComarkRemoteMetadata.getInstance().records(settings.componentMetadataUrl, settings.componentMetadataCacheMinutes)) {
+            val records = ComarkRemoteMetadata.getInstance().records(settings.componentMetadataUrl, settings.componentMetadataCacheMinutes)
+            if (records.isNotEmpty()) builder.remoteBases = LinkedHashSet<VirtualFile>().apply {
+                builder.components.mapNotNullTo(this) { it.root }
+                addAll(topLevelContentRoots())
+            }
+            for (record in records) {
                 ProgressManager.checkCanceled()
-                merge(record, ComponentSource.REMOTE, null, components, byFile)
+                merge(record, ComponentSource.REMOTE, null, builder)
             }
         }
         val known = files.vueFiles.mapTo(HashSet()) { it.file }
         sfcCache.keys.retainAll(known)
         metaCache.keys.retainAll(files.metaFiles.mapTo(HashSet()) { it.file })
         typeDependencies.retainAll(sfcCache.values.flatMapTo(HashSet()) { it.dependencies.keys })
-        return ComponentIndex(components)
+        return ComponentIndex(builder.components)
     }
 
-    /** Adds [record] to [components], merging it into the component of the same file (or the same name in the same app). */
-    private fun merge(
-        record: MetaComponentRecord,
-        source: ComponentSource,
-        root: VirtualFile?,
-        components: MutableList<ComarkComponent>,
-        byFile: MutableMap<VirtualFile, Int>,
-    ) {
-        val file = resolveFile(record, root, components)
-        val existing = file?.let { byFile[it] } ?: components.indices.firstOrNull { i ->
-            val candidate = components[i]
-            sameApp(candidate, root) && candidate.allNames.any { ComponentNaming.lookupKey(it) == ComponentNaming.lookupKey(record.name) }
-        }
+    /** Adds [record] to the [builder], merging it into the component of the same file (or the same name in the same app). */
+    private fun merge(record: MetaComponentRecord, source: ComponentSource, root: VirtualFile?, builder: IndexBuilder) {
+        val components = builder.components
+        val file = resolveFile(record, root, builder.remoteBases.orEmpty())
+        val existing = file?.let { builder.byFile[it] }
+            ?: builder.withKey(ComponentNaming.lookupKey(record.name)).firstOrNull { sameApp(components[it], root) }
         if (existing != null) {
-            components[existing] = merged(components[existing], record, source)
-            if (file != null) byFile[file] = existing
+            builder.replace(existing, merged(components[existing], record, source))
+            if (file != null) builder.byFile[file] = existing
             return
         }
-        if (file != null) byFile[file] = components.size
-        components += ComarkComponent(
-            name = record.name,
-            description = record.description,
-            documentation = record.documentation,
-            docsUrl = record.docsUrl,
-            props = record.props,
-            slots = record.slots,
-            source = source,
-            file = file,
-            root = root,
+        builder.add(
+            ComarkComponent(
+                name = record.name,
+                description = record.description,
+                documentation = record.documentation,
+                docsUrl = record.docsUrl,
+                props = record.props,
+                slots = record.slots,
+                source = source,
+                file = file,
+                root = root,
+            ),
         )
     }
 
@@ -346,17 +395,15 @@ class ComarkComponentService(private val project: Project) : Disposable {
         )
     }
 
-    /** The `.vue` file a metadata record describes: its absolute path, or its path relative to the Nuxt app / content roots. */
-    private fun resolveFile(record: MetaComponentRecord, root: VirtualFile?, components: List<ComarkComponent>): VirtualFile? {
-        val bases = LinkedHashSet<VirtualFile>()
-        root?.let(bases::add)
-        if (root == null) {
-            components.mapNotNullTo(bases) { it.root }
-            bases += topLevelContentRoots()
-        }
+    /**
+     * The `.vue` file a metadata record describes: its absolute path, or its path relative to the Nuxt app [root] (for a record
+     * without an app, relative to [remoteBases]: the app and content roots).
+     */
+    private fun resolveFile(record: MetaComponentRecord, root: VirtualFile?, remoteBases: Collection<VirtualFile>): VirtualFile? {
+        val bases = if (root != null) listOf(root) else remoteBases
         for (path in listOfNotNull(record.fullPath, record.filePath)) {
             val normalized = path.replace('\\', '/')
-            if (normalized.startsWith("/") || Regex("^[A-Za-z]:/").containsMatchIn(normalized)) {
+            if (normalized.startsWith("/") || WINDOWS_ABSOLUTE_PATH.containsMatchIn(normalized)) {
                 (root?.fileSystem?.findFileByPath(normalized) ?: LocalFileSystem.getInstance().findFileByPath(normalized))
                     ?.takeIf { !it.isDirectory }?.let { return it }
             } else {
@@ -453,6 +500,8 @@ class ComarkComponentService(private val project: Project) : Disposable {
         private const val NUXT_BUILD_DIRECTORY = ".nuxt"
         private const val MAX_SFC_SIZE = 4L * 1024 * 1024
         private const val MAX_META_SIZE = 128L * 1024 * 1024
+        private val WINDOWS_ABSOLUTE_PATH = Regex("^[A-Za-z]:/")
+        private val LOG = logger<ComarkComponentService>()
 
         private val APP_ROOT_MARKERS = listOf("nuxt.config.ts", "nuxt.config.js", "nuxt.config.mjs", "nuxt.config.mts", "package.json")
 

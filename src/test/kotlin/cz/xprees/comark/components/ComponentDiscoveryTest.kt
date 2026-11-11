@@ -70,6 +70,66 @@ class ComponentDiscoveryTest : ComponentsTestBase() {
         assertEquals(listOf("href", "target"), proseA.props.map { it.name })
     }
 
+    fun testModuleComponentFromRealComponentMetaIsCompleted() {
+        myFixture.addFileToProject("package.json", """{ "dependencies": { "@nuxt/content": "^3.0.0" } }""")
+        myFixture.addFileToProject("components/content/Local.vue", "<template><div/></template>")
+        val module = File("src/test/testData/components/component-meta-deduplicated.mjs").readText()
+        myFixture.addFileToProject(".nuxt/component-meta.mjs", module.replace("components/content/Alert.vue", "node_modules/ui/Alert.vue"))
+        assertTrue(index().components.any { it.source == ComponentSource.COMPONENT_META })
+        assertEquals(listOf("title", "open"), index().find("alert")!!.props.map { it.name })
+    }
+
+    fun testUnsavedHalfTypedDefineModelKeepsCompletionWorking() {
+        val vue = myFixture.addFileToProject("components/content/Alert.vue", ALERT)
+        myFixture.addFileToProject("components/Badge.vue", BADGE)
+        myFixture.openFileInEditor(vue.virtualFile)
+        val document = myFixture.editor.document
+        WriteCommandAction.runWriteCommandAction(project) {
+            document.setText("<script setup lang=\"ts\">\nconst model = defineModel('\n</script>\n<template><slot/></template>\n")
+        }
+        configure("::<caret>")
+        myFixture.completeBasic()
+        assertContainsElements(myFixture.lookupElementStrings.orEmpty(), "badge", "alert")
+    }
+
+    fun testIndexRebuildAfterVueKeystroke() {
+        myFixture.addFileToProject("package.json", """{ "dependencies": { "@nuxt/content": "^3.0.0" } }""")
+        val vues = (0 until 400).map { i -> myFixture.addFileToProject("components/content/group${i % 20}/Widget$i.vue", ALERT) }
+        val json = buildString {
+            append("{")
+            for (i in 0 until 800) {
+                if (i > 0) append(",")
+                append("\"UModule$i\": {\"pascalName\": \"UModule$i\", \"filePath\": \"node_modules/@nuxt/ui/dist/runtime/components/Module$i.vue\", ")
+                append("\"meta\": {\"props\": [{\"name\": \"color\", \"type\": \"string\"}], \"slots\": []}}")
+            }
+            append("}")
+        }
+        myFixture.addFileToProject(".nuxt/component-meta.json", json)
+        index()
+        val document = FileDocumentManager.getInstance().getDocument(vues[0].virtualFile)!!
+        val times = ArrayList<Long>()
+        repeat(5) {
+            WriteCommandAction.runWriteCommandAction(project) { document.insertString(document.textLength, " ") }
+            val start = System.nanoTime()
+            val size = index().components.size
+            times += (System.nanoTime() - start) / 1_000_000
+            assertTrue(size >= 1200)
+        }
+        assertTrue("index rebuild after one keystroke in a .vue file took $times ms", times.max() < 300)
+    }
+
+    fun testEditedTypeDependencyStillInvalidatesTheIndex() {
+        myFixture.addFileToProject("types/alert.ts", "export interface AlertProps { title: string }")
+        myFixture.addFileToProject(
+            "components/content/Alert.vue",
+            "<script setup lang=\"ts\">\nimport type { AlertProps } from '../../types/alert'\ndefineProps<AlertProps>()\n</script>\n",
+        )
+        assertEquals(listOf("title"), index().find("alert")!!.props.map { it.name })
+        val types = FileDocumentManager.getInstance().getDocument(myFixture.findFileInTempDir("types/alert.ts"))!!
+        WriteCommandAction.runWriteCommandAction(project) { types.setText("export interface AlertProps { title: string; icon?: string }") }
+        assertEquals(listOf("title", "icon"), index().find("alert")!!.props.map { it.name })
+    }
+
     fun testMetaWithoutVueFiles() {
         myFixture.addFileToProject("apps/docs/.nuxt/component-meta.mjs", File("src/test/testData/components/component-meta.mjs").readText())
         val index = index()
