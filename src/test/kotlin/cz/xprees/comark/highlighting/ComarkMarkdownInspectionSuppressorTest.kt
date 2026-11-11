@@ -104,4 +104,14 @@ class ComarkMarkdownInspectionSuppressorTest : BasePlatformTestCase() {
     fun testRouteLinksOutsideNuxtContentAreStillChecked() {
         assertNotEmpty(reported("plain.mdc", "[x](/guide/install)\n"))
     }
+
+    fun testIdsGivenAsAttributesAndPropsAreAnchors() {
+        val text = "Read [this part]{id=\"part\"} first.\n\n::alert{id=note}\n::\n\n::card\n---\nid: 'intro' # top\n---\nText\n::\n\n" +
+            "[a](#part) [b](#note) [c](#intro) [d](#missing)\n"
+        assertEquals(listOf("missing"), reported("ids.mdc", text))
+    }
+
+    fun testLiteralBracesInsideSpanDefineNoAnchor() {
+        assertEquals(listOf("x"), reported("span-anchor.mdc", "See [docs {#x}] here.\n\n[x](#x)\n"))
+    }
 }

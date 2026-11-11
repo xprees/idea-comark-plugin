@@ -45,8 +45,12 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
 
     // ---- Structure --------------------------------------------------------------------------------------------------
 
-    /** Where nested content lives: [indent] is the opener's column, children have up to that much indentation stripped. */
-    private class Container(val indent: Int) {
+    /**
+     * Where nested content lives: [indent] is the opener's column, children have up to that much indentation stripped. [depth] is
+     * the component nesting depth; past [MAX_NESTING] openers are text, like markdown-it's `maxNesting`, which also keeps the
+     * recursive parse (and the PSI built from it) from overflowing the stack on thousands of nested or unclosed components.
+     */
+    private class Container(val indent: Int, val depth: Int = 0) {
         companion object {
             val TOP = Container(0)
         }
@@ -144,9 +148,9 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
             val relative = line.indent - minOf(container.indent, line.indent)
             if (!line.isBlank && relative >= 4 && l > regionStart) {
                 // four or more columns in is code or paragraph text, unless it is inside a (nested) list item's content
-                val opener = ComarkSyntax.parseOpener(text, line.contentStart, line.end)
+                val opener = openerAt(line, container)
                 if (opener != null) {
-                    val component = parseComponent(l, opener, to)
+                    val component = parseComponent(l, opener, to, container)
                     if (component.closeLine >= 0 && isInListItem(regionStart, l, container, embedded, relative)) {
                         embedded += component
                         l = component.closeLine + 1
@@ -162,9 +166,9 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
                     l++
                     continue
                 }
-                val opener = ComarkSyntax.parseOpener(text, line.contentStart, line.end)
+                val opener = openerAt(line, container)
                 if (opener != null) {
-                    val component = parseComponent(l, opener, to)
+                    val component = parseComponent(l, opener, to, container)
                     if (component.closeLine >= 0 && relative >= 2 && l > regionStart &&
                         isInListItem(regionStart, l, container, embedded, relative)
                     ) {
@@ -197,11 +201,14 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         return blocks
     }
 
-    private fun parseComponent(openLine: Int, opener: ComarkSyntax.Opener, limit: Int): ComponentBlock {
+    private fun openerAt(line: Line, container: Container): ComarkSyntax.Opener? =
+        if (container.depth >= MAX_NESTING) null else ComarkSyntax.parseOpener(text, line.contentStart, line.end)
+
+    private fun parseComponent(openLine: Int, opener: ComarkSyntax.Opener, limit: Int, parent: Container): ComponentBlock {
         val markers = opener.markerCount
         val closeLine = findClose(openLine, markers, limit)
         val bodyEnd = if (closeLine >= 0) closeLine else limit
-        val container = Container(lines[openLine].indent)
+        val container = Container(lines[openLine].indent, parent.depth + 1)
         var bodyStart = openLine + 1
         var props: PropsBlock? = null
         if (bodyStart < bodyEnd && isPropsFence(lines[bodyStart])) {
@@ -429,7 +436,7 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         val regionStart = lines[from].start
         val regionEnd = lines[to - 1].next
         if (regionEnd <= regionStart) return null
-        val mapping = DedentMapping(to - from + 3 * embedded.size)
+        val mapping = DedentMapping(3 * (to - from) + 3 * embedded.size)
         val dedented = StringBuilder(regionEnd - regionStart + 1)
         // The Markdown parser takes a delimiter line at the very start of its text for front matter. Only the region at the top of
         // the document can have front matter, so any other region starting with one is parsed after a guard line break (dropped
@@ -459,7 +466,19 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
                 continue
             }
             mapping.add(dedented.length, line.start + skip)
-            dedented.append(text, line.start + skip, line.next)
+            val tabColumns = partialTab(line, strip[l - from])
+            if (tabColumns > 0) {
+                // a tab straddling the stripped columns: the columns left past them become spaces (CommonMark's partial tabs), all
+                // mapped onto the tab itself
+                val tab = line.start + skip
+                val spacesStart = dedented.length
+                repeat(tabColumns) { dedented.append(' ') }
+                if (tabColumns >= 2) mapping.add(spacesStart + tabColumns - 1, tab)
+                mapping.add(dedented.length, tab + 1)
+                dedented.append(text, tab + 1, line.next)
+            } else {
+                dedented.append(text, line.start + skip, line.next)
+            }
             l++
         }
         val dedentedText = dedented.toString()
@@ -542,6 +561,28 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         val start = line.start + charsToStrip(line, columns)
         val content = text.subSequence(start, line.end).trimEnd()
         return content.length >= 3 && (content.all { it == '-' } || content.all { it == '+' })
+    }
+
+    /**
+     * Columns of a tab that straddles the first [columns] columns of [line]'s indentation and lie past them (0 if no tab does):
+     * [charsToStrip] keeps such a tab, which would otherwise count as a full tab stop of indentation.
+     */
+    private fun partialTab(line: Line, columns: Int): Int {
+        var col = 0
+        var i = line.start
+        while (i < line.end && col < columns) {
+            when (text[i]) {
+                ' ' -> col++
+                '\t' -> {
+                    val width = 4 - col % 4
+                    if (col + width > columns) return col + width - columns
+                    col += width
+                }
+                else -> return 0
+            }
+            i++
+        }
+        return 0
     }
 
     /** Characters making up the first [columns] columns of indentation (tabs count to the next multiple of 4). */
@@ -685,6 +726,9 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
     }
 
     companion object {
+        /** Component nesting depth past which openers are plain text (markdown-it's default `maxNesting`). */
+        private const val MAX_NESTING = 100
+
         /** Stands for a component inside a list item in a region's dedented tree, until [remap] replaces it with the component. */
         private val PLACEHOLDER = org.intellij.markdown.MarkdownElementType("COMARK_LIST_ITEM_COMPONENT", true)
 
