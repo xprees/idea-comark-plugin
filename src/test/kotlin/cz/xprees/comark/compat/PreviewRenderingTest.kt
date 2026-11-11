@@ -108,6 +108,85 @@ class PreviewRenderingTest : BasePlatformTestCase() {
         assertTrue(html, html.contains("href=\"https://example.com\""))
     }
 
+    fun testComponentInListItemIsRenderedAsComponent() {
+        val text = "::steps\n- **Node.js** - `22.x` or newer\n- **Terminal** - run Nuxt\n  :::callout\n  Use an even version.\n  :::\n- third\n::\n"
+        val html = preview(text)
+        assertTrue(html, html.contains("""data-component="callout""""))
+        assertFalse("component markers rendered as text: $html", html.contains(":::"))
+        val item = html.indexOf("Terminal")
+        val callout = html.indexOf("""data-component="callout"""")
+        assertTrue("callout inside the second list item: $html", callout in item..html.indexOf("third"))
+        assertTrue(html, html.indexOf("</li>", item) > callout)
+        assertEquals(":::callout\n  Use an even version.\n  :::", sourceOf(html, text, """<div class="comark-component" data-component="callout""""))
+        assertEquals("Use an even version.", sourceOf(html, text, "<p").trim())
+    }
+
+    fun testTopLevelListItemComponent() {
+        val text = "1. Install\n   ::code-group\n   ```bash\n   npm i\n   ```\n   ::\n2. Run\n"
+        val html = preview(text)
+        assertTrue(html, html.contains("""data-component="code-group""""))
+        assertFalse("component markers rendered as text: $html", html.contains("::code-group"))
+        assertFalse("closer rendered as text: $html", html.contains(">::</p>"))
+        val component = html.indexOf("""data-component="code-group"""")
+        assertTrue("fence inside the component: $html", html.indexOf("<pre", component) in component..html.indexOf("Run"))
+        assertTrue(html, html.indexOf("</li>") > component)
+        assertEquals("::code-group\n   ```bash\n   npm i\n   ```\n   ::", sourceOf(html, text, """<div class="comark-component""""))
+        assertEquals(text.substring(0, text.indexOf("2.")).trimEnd(), sourceOf(html, text, "<li").trimEnd())
+    }
+
+    fun testDuplicateHeadingsGetUniqueIds() {
+        val text = "## Usage\n\nFirst\n\n::note\nBetween\n::\n\n## Usage\n\nSecond\n\n## Usage\n"
+        fun ids(html: String) = Regex("""<h\d id="([^"]+)"""").findAll(html).map { it.groupValues[1] }.toList()
+        val plainIds = ids(page(myFixture.configureByText("plain.md", text)))
+        val comarkIds = ids(page(myFixture.configureByText("doc.mdc", text)))
+        assertEquals(listOf("usage", "usage-1", "usage-2"), plainIds)
+        assertEquals(plainIds, comarkIds)
+    }
+
+    fun testLinkDefinitionsDoNotLeakIntoUnclosedFence() {
+        val text = "[ref]: https://example.com\n\n::note\nhi\n::\n\n```js\nconst a = 1\n"
+        val html = preview(text)
+        val code = html.substringAfter("<code")
+        assertFalse("link definition rendered inside the code block: $code", code.contains("[ref]: https:"))
+        val fenceStart = text.indexOf("```js")
+        for (m in Regex("""md-src-pos=["'](\d+)\.\.(\d+)["']""").findAll(code)) {
+            assertTrue("code span range ${m.value} lies before the fence (offset $fenceStart)", m.groupValues[1].toInt() >= fenceStart)
+            assertTrue("range ${m.value} past the document end", m.groupValues[2].toInt() <= text.length)
+        }
+    }
+
+    fun testReferenceLinkForms() {
+        val text = "::card\nA [full][Ref  One], [collapsed][], [short], ![img][pic], [missing][nope] and [span]{.x}\n::\n\n" +
+            "[ref one]: https://example.com/one \"One\"\n[collapsed]: <https://example.com/two>\n[short]: /three\n[pic]: /p.png\n[span]: /no\n"
+        val html = preview(text)
+        assertTrue(html, html.contains("href=\"https://example.com/one\""))
+        assertTrue(html, html.contains("title=\"One\""))
+        assertTrue(html, html.contains("href=\"https://example.com/two\""))
+        assertTrue(html, html.contains("/three\""))
+        assertTrue(html, html.contains("/p.png"))
+        assertTrue("undefined reference stays text: $html", html.contains("[missing][nope]"))
+        assertTrue(html, html.contains("""<span class="comark-span" title="{.x}">"""))
+        assertFalse(html, html.contains("href=\"/no\""))
+        assertTrue(sourceOf(html, text, "<a").startsWith("[full]"))
+    }
+
+    fun testPreviewOfLargeDocumentWithLinkDefinitions() {
+        val sb = StringBuilder()
+        for (i in 0 until 1150) sb.append("::card\nSome **text** and [link][ref${i % 400}]\n::\n\n")
+        for (i in 0 until 400) sb.append("[ref$i]: https://example.com/$i \"Title $i\"\n")
+        val comark = myFixture.configureByText("perf.mdc", sb.toString())
+        val plain = myFixture.addFileToProject("perf.md", sb.toString())
+        fun measure(file: PsiFile): Long {
+            page(file)
+            val start = System.nanoTime()
+            page(file)
+            return (System.nanoTime() - start) / 1_000_000
+        }
+        val comarkTime = measure(comark)
+        val plainTime = measure(plain)
+        assertTrue("Comark preview ${comarkTime}ms vs plain Markdown ${plainTime}ms", comarkTime < plainTime * 10 + 500)
+    }
+
     fun testUnclosedAndEmpty() {
         assertTrue(preview("::divider\n::\n").contains("""data-component="divider""""))
         assertTrue(preview("::unclosed\ntext\n").contains("text"))

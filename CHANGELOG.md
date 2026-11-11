@@ -25,6 +25,10 @@
 ### Fixed
 
 - Code fences indented inside components no longer log errors from Markdown's fence language injection
+- Preview: components inside list items render as components instead of raw `::` text
+- Preview: large documents with many link reference definitions render quickly again (references resolved once, not per block)
+- Preview: repeated headings get unique ids across components (`usage`, `usage-1`), so in-page anchors reach every heading
+- Preview: link reference definitions no longer show up inside an unclosed code fence or HTML block, with correct scroll positions
 - `.nuxt/component-meta.mjs` written by current nuxt-component-meta versions (a deduplicated module with string tables and
   shared objects) is read; before, its components (module components such as Nuxt UI / Docus prose components) were missing
 - A half-typed `defineModel('` in a component no longer breaks completion, documentation and navigation in all Comark files, and

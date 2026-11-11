@@ -13,6 +13,7 @@ import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.CancellationToken
 import org.intellij.markdown.parser.MarkdownParser
+import java.util.Locale
 
 /**
  * Rewrites the inline Comark syntax of a Markdown snippet into inline HTML before the snippet is rendered for the preview:
@@ -21,14 +22,16 @@ import org.intellij.markdown.parser.MarkdownParser
  *   `<span class="comark-inline-component">`, whose content stays Markdown (inline HTML doesn't stop inline parsing);
  * - spans `[text]{attrs}` become `<span class="comark-span">`;
  * - attribute groups that style the preceding element (`**bold**{.red}`, `[link](url){target=_blank}`) or the whole
- *   paragraph / heading (`{...}` ending a line) are dropped, as they only affect the rendered page.
+ *   paragraph / heading (`{...}` ending a line) are dropped, as they only affect the rendered page;
+ * - reference links (`[text][label]`, `[text][]`, `[label]`) whose label is in [linkReferences] become inline links, so a
+ *   snippet resolves the references to definitions elsewhere in the document.
  *
  * Only text that Markdown treats as inline content is rewritten: code spans, inline HTML, autolinks, link destinations and every
  * non-paragraph block (code, HTML blocks, link definitions, front matter) are left alone, which is decided from an
  * intellij-markdown parse of the snippet. The rules mirror comark's `comark_inline_component`, `comark_inline_span` and
  * `comark_inline_props` (components.ts, attributes.ts). This is preview-only: the editor's inline parsing is untouched.
  */
-internal class InlineComarkRewriter(private val text: String) {
+internal class InlineComarkRewriter(private val text: String, private val linkReferences: Map<String, String> = emptyMap()) {
     /** The rewritten snippet and the mapping from its offsets to the offsets of the original snippet. */
     class Result(val text: String, val mapping: OffsetMapping)
 
@@ -38,9 +41,12 @@ internal class InlineComarkRewriter(private val text: String) {
     /** Characters that may be rewritten: inside an inline content holder and outside code, HTML and link targets. */
     private val inline = BooleanArray(text.length)
 
+    /** Reference links whose label is in [linkReferences], by the offset where their rewrite starts. */
+    private val references = HashMap<Int, Match>()
+
     fun rewrite(): Result {
         if (!mayContainSyntax()) return Result(text, OffsetMapping().apply { copy(0, text.length) })
-        markInlineContent(MarkdownParser(ComarkFlavour.INSTANCE, true, CancellationToken.NonCancellable).buildMarkdownTreeFromString(text), inHolder = false)
+        markInlineContent(parse(text), inHolder = false)
         val closers = ArrayDeque<Closer>()
         var copiedFrom = 0
         var i = 0
@@ -75,7 +81,7 @@ internal class InlineComarkRewriter(private val text: String) {
             val limit = closer?.at ?: lineEnd(i)
             val match = when (text[i]) {
                 ':' -> inlineComponent(i, limit)
-                '[' -> span(i, limit)
+                '[' -> span(i, limit) ?: references[i]?.takeIf { closer == null || (it.closer?.at ?: it.continueAt) <= closer.at }
                 '{' -> droppedAttributes(i, limit)
                 else -> null
             }
@@ -100,7 +106,8 @@ internal class InlineComarkRewriter(private val text: String) {
     /** [openHtml] replaces the text up to [continueAt]; [closer] closes the element later. */
     private class Match(val openHtml: String, val continueAt: Int, val closer: Closer? = null)
 
-    private fun mayContainSyntax(): Boolean = text.indexOf(':') >= 0 || text.indexOf('{') >= 0
+    private fun mayContainSyntax(): Boolean =
+        text.indexOf(':') >= 0 || text.indexOf('{') >= 0 || (linkReferences.isNotEmpty() && text.indexOf(']') >= 0)
 
     private fun lineEnd(from: Int): Int {
         val end = text.indexOf('\n', from)
@@ -176,7 +183,28 @@ internal class InlineComarkRewriter(private val text: String) {
             for (k in node.startOffset until minOf(node.endOffset, inline.size)) inline[k] = true
             return
         }
+        if (holder && (type == MarkdownElementTypes.FULL_REFERENCE_LINK || type == MarkdownElementTypes.SHORT_REFERENCE_LINK)) {
+            referenceRewrite(node)
+        }
         for (child in node.children) markInlineContent(child, holder)
+    }
+
+    /**
+     * Records the rewrite of the reference link [node] into an inline link when its label is defined: `[text][label]` and
+     * `[text][]` get the label part replaced by `(destination "title")`, `[label]` gets it inserted after the label. Undefined
+     * labels are left alone and render as text, as they do in Markdown.
+     */
+    private fun referenceRewrite(node: ASTNode) {
+        val linkText = node.children.firstOrNull { it.type == MarkdownElementTypes.LINK_TEXT }
+        val label = node.children.firstOrNull { it.type == MarkdownElementTypes.LINK_LABEL }
+        val labelText = label?.let { text.substring(it.startOffset, it.endOffset) }
+        val name = if (labelText == null || normalizeLabel(labelText).isEmpty()) linkText ?: return else label
+        val target = linkReferences[normalizeLabel(text.substring(name.startOffset, name.endOffset))] ?: return
+        if (linkText != null) {
+            references[linkText.endOffset] = Match(target, node.endOffset)
+        } else if (label != null) {
+            references[node.startOffset] = Match("[", node.startOffset + 1, Closer(label.endOffset - 1, node.endOffset, "]$target"))
+        }
     }
 
     companion object {
@@ -207,6 +235,48 @@ internal class InlineComarkRewriter(private val text: String) {
             GFMElementTypes.INLINE_MATH,
             GFMElementTypes.BLOCK_MATH,
         )
+
+        private fun parse(markdown: String): ASTNode =
+            MarkdownParser(ComarkFlavour.INSTANCE, true, CancellationToken.NonCancellable).buildMarkdownTreeFromString(markdown)
+
+        /** A link label as Markdown compares them: brackets removed, whitespace collapsed, case ignored. */
+        private fun normalizeLabel(label: String): String =
+            label.removePrefix("[").removeSuffix("]").trim().split(WHITESPACE).joinToString(" ").lowercase(Locale.ROOT)
+
+        private val WHITESPACE = Regex("""\s+""")
+
+        /**
+         * `<url>` without its brackets when the URL can be written bare: the GFM autolink inside a bracketed destination of an inline
+         * link breaks the Markdown renderer's link target.
+         */
+        private fun bareDestination(destination: String): String {
+            if (!destination.startsWith('<') || !destination.endsWith('>')) return destination
+            val url = destination.substring(1, destination.length - 1)
+            return if (url.isNotEmpty() && url.none { it.isWhitespace() || it in "()<>\\" }) url else destination
+        }
+
+        /**
+         * The link reference definitions in [definitions] (Markdown holding only definitions), as the inline link target that
+         * replaces a reference to each: normalised label to `(destination "title")`, destination and title as written. The first
+         * definition of a label wins, as in Markdown.
+         */
+        fun linkReferences(definitions: String): Map<String, String> {
+            if (definitions.isBlank()) return emptyMap()
+            val references = HashMap<String, String>()
+            fun collect(node: ASTNode) {
+                if (node.type != MarkdownElementTypes.LINK_DEFINITION) {
+                    node.children.forEach(::collect)
+                    return
+                }
+                fun part(type: IElementType) = node.children.firstOrNull { it.type == type }?.let { definitions.substring(it.startOffset, it.endOffset) }
+                val label = part(MarkdownElementTypes.LINK_LABEL) ?: return
+                val destination = part(MarkdownElementTypes.LINK_DESTINATION)?.let(::bareDestination) ?: return
+                val title = part(MarkdownElementTypes.LINK_TITLE)
+                references.putIfAbsent(normalizeLabel(label), if (title == null) "($destination)" else "($destination $title)")
+            }
+            collect(parse(definitions))
+            return references
+        }
 
         fun escape(value: String): String = buildString(value.length) {
             for (c in value) {
