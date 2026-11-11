@@ -100,6 +100,12 @@ kotlin {
     // Java 21 bytecode runs on every supported IDE (2026.1 ships a Java 21 runtime, 2026.2+ run Java 25). Code compiled against a
     // 2026.2+ IDE must therefore avoid the platform's inline Kotlin helpers, which are built for Java 25.
     jvmToolchain(21)
+    compilerOptions {
+        // Classes inherit the JVM default methods of platform interfaces instead of getting generated overrides for every one of
+        // them: those would "override" deprecated and experimental platform methods the code never touches (the verifier reports
+        // DynamicPluginListener.checkUnloadPlugin, pluginsLoaded, beforePluginsLoaded otherwise).
+        jvmDefault.set(org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode.NO_COMPATIBILITY)
+    }
 }
 
 intellijPlatform {
