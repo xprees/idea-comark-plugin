@@ -6,6 +6,8 @@ import com.intellij.psi.ElementManipulators
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import cz.xprees.comark.images.ComarkImageReference
+import cz.xprees.comark.images.ComarkImageReferences
+import cz.xprees.comark.images.ImagePaths
 import cz.xprees.comark.images.NuxtImageDirectories
 import cz.xprees.comark.lang.ComarkProjectDetector
 import cz.xprees.comark.navigation.ComarkContentRoutes
@@ -28,7 +30,8 @@ import org.intellij.plugins.markdown.lang.psi.impl.MarkdownLinkDestination
  *   (`/images/logo.png`) are still checked.
  *   Absolute image paths (`![](/threats/x.webp)`) are served from Nuxt's public and Nuxt Image directories, which the Markdown plugin
  *   doesn't know: they resolve through [cz.xprees.comark.images.ComarkImageReference], and in Nuxt projects missing ones are left
- *   to the missing-image inspection, so the Markdown plugin's warning is dropped there. Outside Nuxt projects only paths that resolve
+ *   to the missing-image inspection, so the Markdown plugin's warning is dropped there. Paths under a Nuxt Image `image.alias` are remote
+ *   images and are not reported either. Outside Nuxt projects only paths that resolve
  *   (through configured image directories) are suppressed; relative paths are always checked.
  */
 class ComarkMarkdownInspectionSuppressor : InspectionSuppressor {
@@ -53,8 +56,19 @@ class ComarkMarkdownInspectionSuppressor : InspectionSuppressor {
 
     private fun isNuxtImagePath(element: PsiElement): Boolean {
         val destination = PsiTreeUtil.getParentOfType(element, MarkdownLinkDestination::class.java, false) ?: return false
-        val reference = destination.references.filterIsInstance<ComarkImageReference>().firstOrNull() ?: return false
+        val reference = destination.references.filterIsInstance<ComarkImageReference>().firstOrNull()
+            ?: return isImageAlias(destination)
         return NuxtImageDirectories.getInstance(element.project).isNuxt(reference.context) || reference.resolve() != null
+    }
+
+    /** True for a path under a Nuxt Image `image.alias` (`/unsplash/photo.jpg`): a remote image, which has no image reference. */
+    private fun isImageAlias(destination: MarkdownLinkDestination): Boolean {
+        val file = destination.containingFile
+        if (!ComarkImageReferences.enabled(file)) return false
+        val context = ComarkImageReferences.contextOf(file) ?: return false
+        val roots = NuxtImageDirectories.getInstance(file.project).forFile(context)?.takeIf { it.aliases.isNotEmpty() } ?: return false
+        val value = ElementManipulators.getValueTextRange(destination).substring(destination.text)
+        return ImagePaths.normalize(value, roots.baseURL, roots.cdnURL, roots.aliases)?.remoteUrl != null
     }
 
     override fun getSuppressActions(element: PsiElement?, toolId: String): Array<SuppressQuickFix> = SuppressQuickFix.EMPTY_ARRAY

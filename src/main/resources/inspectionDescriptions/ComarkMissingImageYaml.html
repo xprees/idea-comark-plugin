@@ -1,0 +1,23 @@
+<html>
+<body>
+Reports site-absolute image paths in the front matter and in component props blocks of Comark documents that no image directory
+of the Nuxt project serves.
+<p>
+  Checked are values of image-like keys: <code>image</code>, <code>cover</code>, <code>thumbnail</code>, <code>og:image</code>,
+  <code>seo.image</code>, <code>image.src</code>, <code>heroImage</code>, ...
+  A path is found in <code>public/</code> of the app and its layers, in the Nuxt Image directory (<code>image.dir</code>),
+  or in the image directories configured in <b>Settings | Languages &amp; Frameworks | Comark</b>.
+</p>
+<p>Example:</p>
+<pre><code>---
+image: /threats/phising.webp
+---
+</code></pre>
+<!-- tooltip end -->
+<p>
+  Remote URLs, <code>image.alias</code> paths and relative paths are not checked, and neither are documents outside detected Nuxt projects.
+  The quick fix replaces the path with the closest existing image path.
+  Paths in Markdown images and component attributes are checked by <b>Missing Nuxt image</b>.
+</p>
+</body>
+</html>

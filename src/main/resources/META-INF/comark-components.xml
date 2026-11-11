@@ -28,6 +28,12 @@
                          groupKey="inspection.unknown.component.group"
                          enabledByDefault="false" level="WEAK WARNING"
                          implementationClass="cz.xprees.comark.meta.ComarkUnknownComponentInspection"/>
+        <!-- site-absolute image paths no image directory serves, in detected Nuxt projects (YAML values: comark-yaml.xml) -->
+        <localInspection language="Markdown" shortName="ComarkMissingImage"
+                         bundle="messages.ComarkBundle" key="inspection.missing.image.display.name"
+                         groupKey="inspection.unknown.component.group"
+                         enabledByDefault="true" level="WEAK WARNING"
+                         implementationClass="cz.xprees.comark.images.ComarkMissingImageInspection"/>
     </extensions>
 
     <projectListeners>
