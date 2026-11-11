@@ -21,6 +21,9 @@
         <lang.elementManipulator forClass="cz.xprees.comark.psi.ComarkAttributeValue"
                                  implementationClass="cz.xprees.comark.psi.ComarkAttributeValueManipulator"/>
 
+        <!-- images: thumbnail, sizes and directory of Nuxt image paths; first, so an image prop value documents the image -->
+        <platform.backend.documentation.targetProvider order="first"
+                implementation="cz.xprees.comark.images.ComarkImageDocumentationTargetProvider"/>
         <platform.backend.documentation.targetProvider
                 implementation="cz.xprees.comark.navigation.ComarkDocumentationTargetProvider"/>
         <platform.backend.documentation.psiTargetProvider
