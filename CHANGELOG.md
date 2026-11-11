@@ -13,6 +13,7 @@
 - Component completion, navigation and documentation from Vue components and nuxt-component-meta
 - Markdown plugin compatibility (HTML blocks, TODOs, Fill Paragraph) and components in the Markdown preview
 - Code style page for Comark (indent 2 by default) and spellchecking of component content and attribute values
+- Comark logo as the plugin icon and as the file icon of `.mdc` files
 
 ### Fixed
 
