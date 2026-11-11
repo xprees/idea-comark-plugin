@@ -1,5 +1,6 @@
 package cz.xprees.comark.settings
 
+import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.BoundSearchableConfigurable
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.DialogPanel
@@ -8,7 +9,10 @@ import com.intellij.ui.dsl.builder.bind
 import com.intellij.ui.dsl.builder.bindIntValue
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
+import com.intellij.ui.dsl.builder.Cell
 import com.intellij.ui.dsl.builder.panel
+import com.intellij.ui.dsl.builder.selected
+import javax.swing.JRadioButton
 import cz.xprees.comark.ComarkBundle
 import cz.xprees.comark.lang.ComarkExclusions
 import cz.xprees.comark.lang.ComarkProjectDetector
@@ -20,10 +24,19 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
 
     override fun createPanel(): DialogPanel = panel {
         group(ComarkBundle.message("settings.group.files")) {
+            lateinit var auto: Cell<JRadioButton>
             buttonsGroup(ComarkBundle.message("settings.mode.label")) {
                 row {
-                    radioButton(ComarkBundle.message("settings.mode.auto"), ComarkSettings.Mode.AUTO)
+                    auto = radioButton(ComarkBundle.message("settings.mode.auto"), ComarkSettings.Mode.AUTO)
                         .comment(ComarkBundle.message("settings.mode.auto.comment"))
+                }
+                indent {
+                    row(ComarkBundle.message("settings.content.config")) {
+                        textFieldWithBrowseButton(FileChooserDescriptorFactory.singleFile())
+                            .align(AlignX.FILL)
+                            .bindText(settings::contentConfigPath)
+                            .comment(ComarkBundle.message("settings.content.config.comment"))
+                    }.enabledIf(auto.selected)
                 }
                 row { radioButton(ComarkBundle.message("settings.mode.always"), ComarkSettings.Mode.ALWAYS) }
                 row { radioButton(ComarkBundle.message("settings.mode.never"), ComarkSettings.Mode.NEVER) }
@@ -77,8 +90,9 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
     override fun apply() {
         val modeBefore = settings.mode
         val excludedBefore = settings.excludedPatterns
+        val configBefore = settings.contentConfigPath
         super.apply()
-        if (settings.mode != modeBefore || settings.excludedPatterns != excludedBefore) {
+        if (settings.mode != modeBefore || settings.excludedPatterns != excludedBefore || settings.contentConfigPath != configBefore) {
             // Which Markdown files are Comark just changed: drop cached decisions and re-parse open files in every project.
             for (project in ProjectManager.getInstance().openProjects) {
                 if (!project.isDisposed) ComarkProjectDetector.getInstance(project).invalidate()

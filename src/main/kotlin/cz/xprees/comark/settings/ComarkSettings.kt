@@ -29,6 +29,7 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         var componentMetadataUrl: String = ""
         var componentMetadataCacheMinutes: Int = 30
         var excludedPatterns: String = ""
+        var contentConfigPath: String = ""
     }
 
     private var state = State()
@@ -73,6 +74,16 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         get() = state.excludedPatterns
         set(value) {
             state.excludedPatterns = value.trim()
+        }
+
+    /**
+     * In [Mode.AUTO]: the Nuxt Content configuration (`content.config.ts`, or a `nuxt.config.ts` with Nuxt Content 2 sources) to use
+     * instead of the ones found next to `package.json` files; absolute, or relative to the project directory. Empty: discover them.
+     */
+    var contentConfigPath: String
+        get() = state.contentConfigPath
+        set(value) {
+            state.contentConfigPath = value.trim()
         }
 
     override fun getState(): State = state

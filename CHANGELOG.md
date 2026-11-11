@@ -7,8 +7,10 @@ Markdown plugin.
 
 ### Added
 
-- `.mdc` files are always Comark; `.md` files are Comark in packages that depend on Nuxt Content, Nuxt MDC, Comark, Docus or Nuxt
-  UI Pro (or always, or never), with exclusion patterns for files and directories that should stay plain Markdown
+- `.mdc` files are always Comark; `.md` files are Comark in the content directories (`content/`, collection sources of
+  `content.config.ts`) of packages that depend on Nuxt Content, Nuxt MDC, Comark, Docus or Nuxt UI Pro, so `README.md` and other
+  Markdown files stay plain Markdown (or all `.md` files, or none), with a setting for the Nuxt Content configuration file and
+  exclusion patterns for files and directories
 - Parsing of block components and nested components, YAML props blocks (`---` and `` ```yaml [props] ``), named slots,
   attributes, inline components, spans and bindings, following the comark reference parser (components inside list items stay
   in the list, as in comark)
