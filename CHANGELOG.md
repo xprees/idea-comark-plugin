@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.3.8] - 2026-11-11
+
 ### Added
 
 - `Prose*` components can be written without the prefix (`::accordion-item` for `ProseAccordionItem`), as Comark and Nuxt UI
@@ -78,7 +80,8 @@ Markdown plugin.
   comark heading ids and `{#id}` / `id` attributes resolve too
 - Components, props and slots render as labelled blocks in the built-in Markdown preview
 
-[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.5...HEAD
+[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.8...HEAD
+[2026.3.8]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.5...2026.3.8
 [2026.3.5]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.2...2026.3.5
 [2026.3.2]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.0...2026.3.2
 [2026.3.0]: https://github.com/xprees/idea-comark-plugin/commits/2026.3.0
