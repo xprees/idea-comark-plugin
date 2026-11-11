@@ -54,6 +54,7 @@ class ComarkFormattingModelBuilder : FormattingModelBuilder {
         } catch (_: ComarkFormatterException) {
             lines
         }
+        val protected = ComarkFormatterControl.protectedLines(file, text)
         val blocks = ArrayList<LineBlock>()
         var lineStart = 0
         for ((i, line) in lines.withIndex()) {
@@ -64,7 +65,8 @@ class ComarkFormattingModelBuilder : FormattingModelBuilder {
                 val wanted = formatted.getOrElse(i) { line }.takeWhile { it == ' ' || it == '\t' }
                 val columns = wanted.length
                 // a block from the line start keeps the line as it is: already right, or tabs in code the model cannot write
-                blocks += if (wanted == indent || wanted.any { it != ' ' }) {
+                // lines between formatter off/on markers are kept the same way
+                blocks += if (wanted == indent || wanted.any { it != ' ' } || protected?.get(i) == true) {
                     LineBlock(TextRange(lineStart, lineStart + line.length), Indent.getNoneIndent(), columns)
                 } else {
                     LineBlock(TextRange(lineStart + indentLength, lineStart + line.length), Indent.getSpaceIndent(columns), columns)

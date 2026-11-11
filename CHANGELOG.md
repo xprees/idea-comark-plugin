@@ -30,6 +30,8 @@
 - Preview: repeated headings get unique ids across components (`usage`, `usage-1`), so in-page anchors reach every heading
 - Preview: link reference definitions no longer show up inside an unclosed code fence or HTML block, with correct scroll positions
 - Enter inside a component nested in a list item no longer inserts a list bullet into the component body
+- Reformat Code and Auto-Indent Lines honour *Code Style › Formatter › Do not format* entries and formatter markers
+  (`<!-- @formatter:off -->` … `<!-- @formatter:on -->`, or `[//]: # (@formatter:off)` comments, custom and regular expression tags)
 - Code › Auto-Indent Lines (and other indentation adjustments, such as indenting pasted text) use the Comark formatter's
   indentation instead of flattening nested components
 - Reformat Code keeps components inside list items in the list item, and no longer changes Markdown content: tabs in code fences,

@@ -51,6 +51,8 @@ Markdown plugin offers (preview, structure view, lists, tables, header anchors, 
 *Settings › Languages & Frameworks › Comark*: which `.md` files are Comark, whether Reformat Code uses the Comark formatter (otherwise
 the Markdown one), component completion, an optional component metadata URL and its cache time.
 *Settings › Editor › Code Style › Comark*: indentation used by the formatter and Enter.
+The platform's formatter controls apply: *Code Style › Formatter › Do not format* entries, and formatter markers in comments
+(`<!-- @formatter:off -->` … `<!-- @formatter:on -->` or `[//]: # (@formatter:off)`) leave those files or lines as they are.
 
 ## Known limitations
 

@@ -54,7 +54,8 @@ import cz.xprees.comark.settings.ComarkSettings
 class ComarkFormattingService : AbstractDocumentFormattingService() {
     override fun getFeatures(): Set<FormattingService.Feature> = FEATURES
 
-    override fun canFormat(file: PsiFile): Boolean = file is ComarkFile && ComarkSettings.getInstance().formatterEnabled
+    override fun canFormat(file: PsiFile): Boolean =
+        file is ComarkFile && ComarkSettings.getInstance().formatterEnabled && ComarkFormatterControl.isFormattingAllowed(file)
 
     override fun formatDocument(
         document: Document,
@@ -70,7 +71,7 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
         PsiDocumentManager.getInstance(file.project).commitDocument(document)
         val structure = ComarkDocumentStructure.of(file)
 
-        val edits = try {
+        val allEdits = try {
             computeEdits(
                 document.charsSequence, ranges, indentSize, canChangeWhiteSpaceOnly, ProgressManager::checkCanceled,
                 structure,
@@ -78,6 +79,13 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
         } catch (e: ComarkFormatterException) {
             reportFailure(document, formattingContext, e)
             return
+        }
+        // lines between formatter off/on markers stay as they are
+        val protected = ComarkFormatterControl.protectedLines(file, document.charsSequence)
+        val edits = if (protected == null) allEdits else allEdits.filter { edit ->
+            val first = document.getLineNumber(edit.start)
+            val last = document.getLineNumber(maxOf(edit.start, edit.end - 1).coerceAtMost(document.textLength))
+            protected.nextSetBit(first).let { it < 0 || it > last }
         }
         val markers = ranges.map { document.createRangeMarker(it).apply { isGreedyToRight = true } }
         try {
