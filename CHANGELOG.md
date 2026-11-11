@@ -8,7 +8,9 @@
   bundled Markdown plugin (block components, nested components, YAML props blocks, slots, attributes)
 - Settings page: which Markdown files are Comark, formatter and component completion options
 - Syntax highlighting, inline Comark highlighting, colour settings and syntax inspections
-- Formatter (port of the VS Code extension's) for Reformat Code, with matching indentation on Enter
+- Formatter (port of the VS Code extension's) for Reformat Code, with matching indentation on Enter. Ported from
+  `@nuxtlabs/monarch-mdc` 0.10.0; the Comark VS Code extension 0.6.2 (`Nuxt.mdc`) ships monarch-mdc 0.9.0, whose formatter
+  gives identical output on the whole 58,766-case comparison corpus (the two versions differ only in syntax highlighting rules)
 - Folding, `::` pair matching, YAML in props blocks, live templates, auto-closing, breadcrumbs, structure view
 - Component completion, navigation and documentation from Vue components and nuxt-component-meta
 - Markdown plugin compatibility (HTML blocks, TODOs, Fill Paragraph) and components in the Markdown preview

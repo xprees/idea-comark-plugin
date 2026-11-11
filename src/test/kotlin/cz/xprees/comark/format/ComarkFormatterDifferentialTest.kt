@@ -9,7 +9,8 @@ import java.io.File
 
 /**
  * Checks that [ComarkFormatter] produces byte-identical output to the JavaScript formatter it is ported from
- * (`@nuxtlabs/monarch-mdc` 0.10.0).
+ * (`@nuxtlabs/monarch-mdc` 0.10.0). The Comark VS Code extension 0.6.2 ships monarch-mdc 0.9.0, whose formatter produces the same
+ * output on the whole generated corpus (58,766 cases); the two versions differ only in the Monaco syntax highlighting rules.
  *
  * - `formatter/upstream`: monarch-mdc's own test suite (`tests/content/{input,output}`, MIT, see the LICENSE there), tabSize 2.
  * - `formatter/differential/cases.json`: input/expected pairs recorded by running the JavaScript formatter under Node. They are
