@@ -3,6 +3,7 @@ package cz.xprees.comark.format.studio
 import cz.xprees.comark.format.studio.StudioRewriteReason.ADJACENT_LISTS
 import cz.xprees.comark.format.studio.StudioRewriteReason.COMPONENT_IN_LIST_ITEM
 import cz.xprees.comark.format.studio.StudioRewriteReason.COMPONENT_NAMED_A
+import cz.xprees.comark.format.studio.StudioRewriteReason.DROPPED_BLOCK
 import cz.xprees.comark.format.studio.StudioRewriteReason.ESCAPED_BRACE
 import cz.xprees.comark.format.studio.StudioRewriteReason.FENCE_FILENAME_BRACKET
 import cz.xprees.comark.format.studio.StudioRewriteReason.FENCE_HIGHLIGHTS
@@ -20,10 +21,13 @@ import cz.xprees.comark.format.studio.StudioRewriteReason.LINK_REFERENCE_DEFINIT
 import cz.xprees.comark.format.studio.StudioRewriteReason.MULTILINE_HEADING
 import cz.xprees.comark.format.studio.StudioRewriteReason.MULTILINE_PROP
 import cz.xprees.comark.format.studio.StudioRewriteReason.NESTED_TASK_LIST
+import cz.xprees.comark.format.studio.StudioRewriteReason.NESTING_LIMIT
 import cz.xprees.comark.format.studio.StudioRewriteReason.NOT_IDEMPOTENT
+import cz.xprees.comark.format.studio.StudioRewriteReason.PROPS_COMMENT
 import cz.xprees.comark.format.studio.StudioRewriteReason.RAW_HTML
 import cz.xprees.comark.format.studio.StudioRewriteReason.REFERENCE_LINK
 import cz.xprees.comark.format.studio.StudioRewriteReason.TABLE_ALIGNMENT
+import cz.xprees.comark.format.studio.StudioRewriteReason.UNCLOSED_ATTRIBUTES
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -65,6 +69,57 @@ class StudioSafetyTest {
         assertKept("::a\nx\n::\n", COMPONENT_NAMED_A)
         assertKept("::outer\n    ::inner\n    text\n    ::\n::\n", INDENTED_COMPONENT)
         assertKept("::card\n---\nkey: [\n---\nBody\n::\n", INVALID_YAML)
+        assertKept("::card\n---\n# the card title\ntitle: Hello # shown on top\n---\nBody\n::\n", PROPS_COMMENT)
+        assertKept("::card\n---\nitems:\n  # first\n  - a\n---\n::\n", PROPS_COMMENT)
+        assertKept("::card\n```yaml [props]\ntitle: Hi # note\n```\nText\n::\n", PROPS_COMMENT)
+        assertKept("See [docs]{ for more details.\n", UNCLOSED_ATTRIBUTES)
+        assertKept("A [word]{.big and more text\n", UNCLOSED_ATTRIBUTES)
+        assertKept("Call :badge{color=\"red\" now please\n", UNCLOSED_ATTRIBUTES)
+        assertKept("text :span{a=1\n", UNCLOSED_ATTRIBUTES)
+        assertKept("[x]{[x]{[x]{\n", UNCLOSED_ATTRIBUTES)
+        assertKept(">".repeat(120) + " hello\n", NESTING_LIMIT)
+        assertKept("> - ".repeat(3000) + "x\n", NESTING_LIMIT)
+        assertKept((0 until 300).joinToString("") { "  ".repeat(it) + "- a\n" }, NESTING_LIMIT)
+        assertKept("Text\n\n1.\n", DROPPED_BLOCK)
+    }
+
+    @Test
+    fun leavesClosedAttributesAndPlainPropsAlone() {
+        assertEquals(listOf(emptySet<StudioRewriteReason>()), reasons("A [word]{.big} closed and **b**{.c} fine\n"))
+        assertEquals(listOf(emptySet<StudioRewriteReason>()), reasons("::card\n---\ntitle: 'a # b'\n---\nBody\n::\n"))
+    }
+
+    @Test
+    fun keepsTreesTooDeepToRenderWithoutDependingOnTheStack() {
+        val deep = "*".repeat(1750) + "x" + "*".repeat(1750) + "\n"
+        assertNull(StudioFormatter.format(deep))
+        assertKept(deep, NESTING_LIMIT)
+        // 400 nested strong elements in a paragraph: deeper than MAX_TREE_DEPTH by one
+        assertNull(StudioFormatter.format("*".repeat(800) + "x" + "*".repeat(800) + "\n"))
+        assertNotNull(StudioFormatter.format("*".repeat(798) + "x" + "*".repeat(798) + "\n"))
+        // the result does not depend on the thread's stack
+        for (stack in listOf(256L * 1024, 16L * 1024 * 1024)) {
+            var result: String? = "unset"
+            val thread = Thread(null, { result = StudioFormatter.format(deep) }, "small-stack", stack)
+            thread.start()
+            thread.join()
+            assertNull(result)
+        }
+    }
+
+    @Test
+    fun keepsDroppedBlocksSoTheirNeighboursDoNotMerge() {
+        val text = "- y\n\n1.\n\n".repeat(10) + "- z\n"
+        val result = StudioFormatter.formatPreserving(text)!!
+        assertEquals(text, result.text)
+        assertEquals(List(10) { setOf(DROPPED_BLOCK) }, result.kept.map { it.reasons })
+        assertEquals(result.text, StudioFormatter.formatPreserving(result.text)!!.text)
+        // only the dropped item is kept, not the blocks before it or a valid front matter
+        val head = "---\ntitle: a\n---\n\n# Head\n\nPara\n\n1. \n- y\n"
+        val kept = StudioFormatter.formatPreserving(head)!!
+        assertEquals(listOf("1. "), kept.kept.map { it.source })
+        assertEquals("---\ntitle: a\n---\n\n# Head\n\nPara\n\n1. \n\n- y\n", kept.text)
+        assertEquals(kept.text, StudioFormatter.formatPreserving(kept.text)!!.text)
     }
 
     @Test
@@ -87,6 +142,10 @@ class StudioSafetyTest {
         assertEquals(listOf(setOf(FRONTMATTER_COMMENT), emptySet()), reasons("---\ntitle: a # the title\n---\n\ntext\n"))
         // a `#` inside a quoted or block scalar is no comment
         assertEquals(listOf(emptySet<StudioRewriteReason>(), emptySet()), reasons("---\ntitle: 'a #b'\nx: |\n  # not a comment\n---\n\ntext\n"))
+        // a quote inside a plain scalar opens no quoted scalar, so the comment after it counts
+        assertEquals(listOf(setOf(FRONTMATTER_COMMENT), emptySet()), reasons("---\nauthors: Smith,'Jones # main author\n---\n\nText\n"))
+        assertEquals(listOf(setOf(FRONTMATTER_COMMENT), emptySet()), reasons("---\na: x -'y # c\n---\n\nText\n"))
+        assertEquals(listOf(emptySet<StudioRewriteReason>(), emptySet()), reasons("---\na: x#y\nb: \"q # not\"\n---\n\nText\n"))
     }
 
     @Test

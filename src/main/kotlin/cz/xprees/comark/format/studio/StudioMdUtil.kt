@@ -259,13 +259,13 @@ internal object StudioMdUtil {
         companion object {
             private val protocolPattern = Regex("^([a-zA-Z0-9.+-]+:)")
             private val portPattern = Regex(":[0-9]*\\z")
-            private val simplePathPattern = Regex("^(//?(?!/)[^?\\s]*)(\\?[^\\s]*)?\\z")
+            private val simplePathPattern = Regex("^(//?(?!/)[^?${StudioJs.RE_S_CHARS}]*)(\\?[^${StudioJs.RE_S_CHARS}]*)?\\z")
             private val autoEscape = listOf('\'', '{', '}', '|', '\\', '^', '`', '<', '>', '"', ' ', '\r', '\n', '\t')
             private val nonHostChars = listOf('%', '/', '?', ';', '#') + autoEscape
             private val hostEndingChars = listOf('/', '?', '#')
             private const val HOSTNAME_MAX_LEN = 255
             private val hostnamePartPattern = Regex("^[+a-z0-9A-Z_-]{0,63}\\z")
-            private val hostnamePartStart = Regex("^([+a-z0-9A-Z_-]{0,63})(.*)$", RegexOption.DOT_MATCHES_ALL)
+            private val hostnamePartStart = Regex("^([+a-z0-9A-Z_-]{0,63})(${StudioJs.RE_DOT}*)\\z")
             private val hostlessProtocol = setOf("javascript", "javascript:")
             private val slashedProtocol = setOf("http", "https", "ftp", "gopher", "file", "http:", "https:", "ftp:", "gopher:", "file:")
             private val authPattern = Regex("^//[^@/]+@[^@/]+")

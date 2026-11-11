@@ -25,6 +25,17 @@ object StudioYamlLoader {
         return if (docs.isEmpty()) JsUndefined else docs[0]
     }
 
+    /**
+     * Whether [source] has a YAML comment, as the parser sees it: a `#` it skips as a comment (after a separating space, or
+     * after a block scalar header), never one inside a quoted, plain or block scalar. A dump of the loaded value loses
+     * these. `false` when [source] does not parse.
+     */
+    fun hasComment(source: String): Boolean = try {
+        Parser(source).also { it.parse() }.commentSeen
+    } catch (_: StudioYamlException) {
+        false
+    }
+
     // ---- events -----------------------------------------------------------------------------------------------------
 
     private const val NO_RANGE = -1
@@ -113,6 +124,8 @@ object StudioYamlLoader {
         var directives = ArrayList<Pair<String, String>>()
         var tagHandlers = HashMap<String, String>()
         val events = ArrayList<Event>()
+        /** Set when a comment is skipped (not undone by backtracking: a backtracked attempt skips the same comment). */
+        var commentSeen = false
 
         fun c(i: Int): Int = if (i >= 0 && i < input.length) input[i].code else -1
 
@@ -206,6 +219,7 @@ object StudioYamlLoader {
                     ch = c(++position)
                 }
                 if (allowComments && hasSeparation && ch == 35) {
+                    commentSeen = true
                     do {
                         ch = c(++position)
                     } while (!isEol(ch) && ch != 0)
@@ -451,7 +465,10 @@ object StudioYamlLoader {
                 hadWhitespace = true
                 position++
             }
-            if (hadWhitespace && c(position) == 35) skipUntilLineEnd()
+            if (hadWhitespace && c(position) == 35) {
+                commentSeen = true
+                skipUntilLineEnd()
+            }
             if (isEol(c(position))) consumeLineBreak() else if (c(position) != 0) throwError("a line break is expected")
             var contentIndent = if (detectedIndent) indent else -1
             var maxLeadingIndent = 0

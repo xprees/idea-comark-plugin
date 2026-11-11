@@ -886,7 +886,7 @@ internal object StudioMdInline {
         return if (m.lookingAt()) m.end() else -1
     }
 
-    private const val JS_S = "[\\t\\n\\u000B\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]"
+    private const val JS_S = StudioJs.RE_S
     private const val ATTR_NAME = "[a-zA-Z_:][a-zA-Z0-9:._-]*"
     private const val ATTR_VALUE = "(?:[^\"'=<>`\\x00-\\x20]+|'[^']*'|\"[^\"]*\")"
     private const val ATTRIBUTE = "(?:$JS_S+$ATTR_NAME(?:$JS_S*=$JS_S*$ATTR_VALUE)?)"
@@ -894,8 +894,8 @@ internal object StudioMdInline {
     const val CLOSE_TAG = "</[A-Za-z][A-Za-z0-9\\-]*$JS_S*>"
     private val OPEN_CLOSE = java.util.regex.Pattern.compile("(?:$OPEN_TAG|$CLOSE_TAG)")
 
-    private val LINK_OPEN = Regex("^<a[>\\s]", RegexOption.IGNORE_CASE)
-    private val LINK_CLOSE = Regex("^</a\\s*>", RegexOption.IGNORE_CASE)
+    private val LINK_OPEN = Regex("^<a(?:>|${StudioJs.RE_S})", RegexOption.IGNORE_CASE)
+    private val LINK_CLOSE = Regex("^</a${StudioJs.RE_S}*>", RegexOption.IGNORE_CASE)
 
     /** comark `html_inline` (`internal/parse/html/html_inline_rule.js`) */
     private fun htmlInline(state: MdStateInline, silent: Boolean): Boolean {
@@ -1039,13 +1039,14 @@ internal object StudioMdInline {
         if (state.ch(start) != 0x7b) return false
         if (state.ch(start + 1) == 0x7b || state.ch(start - 1) == 0x7b || state.ch(start - 1) == 0x24) return false
         val search = StudioComarkSyntax.searchProps(state.src, start) ?: return false
-        val end = search.second
+        val end = search.end
         if (end == start) return false
         state.pos = end
         if (silent) return true
         val token = state.push("mdc_inline_props", "span", 0)
-        token.attrs = search.first.map { MdAttr(it.first, it.second) }.toMutableList()
+        token.attrs = search.props.map { MdAttr(it.first, it.second) }.toMutableList()
         token.hidden = true
+        token.unclosedProps = !search.closed
         return true
     }
 }

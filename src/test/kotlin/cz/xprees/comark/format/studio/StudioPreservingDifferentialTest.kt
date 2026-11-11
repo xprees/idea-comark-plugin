@@ -38,14 +38,14 @@ class StudioPreservingDifferentialTest {
             report("block-wise rendering differs from Studio ($label, of ${succeeded.size})", failures)
             assertEquals(label, emptyList<String>(), failures)
         }
-        assertEquals(438, corpus.count { it.studio != null })
+        assertEquals(446, corpus.count { it.studio != null })
         assertEquals(4400, vectors.count { it.studio != null })
     }
 
     /** With no classified block, formatPreserving is Studio's text path exactly. */
     @Test
     fun unclassifiedDocumentsComeOutAsStudioWritesThem() {
-        val expected = mapOf("corpus" to Triple(472, 317, 155), "random documents" to Triple(5021, 2900, 2120))
+        val expected = mapOf("corpus" to Triple(480, 311, 169), "random documents" to Triple(5021, 2749, 2271))
         for ((label, docs) in listOf("corpus" to corpus, "random documents" to vectors)) {
             val results = docs.map { it to StudioFormatter.formatPreserving(it.input) }
             val unclassified = results.filter { (_, r) -> r != null && r.kept.isEmpty() }
@@ -104,7 +104,7 @@ class StudioPreservingDifferentialTest {
         }
         report("kept blocks not verbatim, or blocks not in order (of $checked documents with kept blocks)", failures)
         assertEquals(emptyList<String>(), failures)
-        assertEquals(2275, checked)
+        assertEquals(2440, checked)
     }
 
     /**
@@ -137,23 +137,23 @@ class StudioPreservingDifferentialTest {
             }
             println("Studio text path not idempotent ($label): ${tally.values.sum()} $tally")
             tallies[label] = tally
-            assertEquals(label, if (label == "corpus") 81 else 732, total)
+            assertEquals(label, if (label == "corpus") 83 else 732, total)
         }
         assertEquals(emptyList<String>(), unflagged)
         assertEquals(
             mapOf(
                 "corpus" to mapOf(
-                    "ADJACENT_LISTS" to 3, "COMPONENT_IN_LIST_ITEM" to 6, "COMPONENT_NAMED_A" to 14, "FENCE_IN_LIST_ITEM" to 1,
-                    "INDENTED_COMPONENT" to 8, "INLINE_CODE_WITH_BACKTICK" to 1, "INLINE_COMPONENT_OBJECT_PROPS" to 1,
-                    "MULTILINE_HEADING" to 10, "MULTILINE_PROP" to 9, "NESTED_TASK_LIST" to 14, "NOT_IDEMPOTENT" to 4, "RAW_HTML" to 9,
-                    "TABLE_ALIGNMENT" to 1,
+                    "ADJACENT_LISTS" to 3, "COMPONENT_IN_LIST_ITEM" to 6, "COMPONENT_NAMED_A" to 14, "DROPPED_BLOCK" to 1,
+                    "FENCE_IN_LIST_ITEM" to 1, "INDENTED_COMPONENT" to 8, "INLINE_CODE_WITH_BACKTICK" to 1,
+                    "INLINE_COMPONENT_OBJECT_PROPS" to 1, "MULTILINE_HEADING" to 10, "MULTILINE_PROP" to 9, "NESTED_TASK_LIST" to 14,
+                    "NOT_IDEMPOTENT" to 4, "RAW_HTML" to 10, "TABLE_ALIGNMENT" to 1,
                 ),
                 "random documents" to mapOf(
-                    "ADJACENT_LISTS" to 15, "COMPONENT_IN_LIST_ITEM" to 15, "COMPONENT_NAMED_A" to 60, "ESCAPED_BRACE" to 15,
-                    "FENCE_IN_LIST_ITEM" to 4, "FOOTNOTE" to 2, "FRONTMATTER_COMMENT" to 6, "HTML_COMMENT" to 25, "INDENTED_COMPONENT" to 9,
-                    "INLINE_CODE_WITH_BACKTICK" to 7, "INLINE_COMPONENT_OBJECT_PROPS" to 6, "LINK_REFERENCE_DEFINITION" to 1,
-                    "MULTILINE_HEADING" to 177, "MULTILINE_PROP" to 4, "NESTED_TASK_LIST" to 11, "NOT_IDEMPOTENT" to 251, "RAW_HTML" to 123,
-                    "TABLE_ALIGNMENT" to 1,
+                    "ADJACENT_LISTS" to 15, "COMPONENT_IN_LIST_ITEM" to 15, "COMPONENT_NAMED_A" to 60, "DROPPED_BLOCK" to 16,
+                    "ESCAPED_BRACE" to 15, "FENCE_IN_LIST_ITEM" to 4, "FOOTNOTE" to 2, "FRONTMATTER_COMMENT" to 6, "HTML_COMMENT" to 24,
+                    "INDENTED_COMPONENT" to 9, "INLINE_CODE_WITH_BACKTICK" to 7, "INLINE_COMPONENT_OBJECT_PROPS" to 6,
+                    "LINK_REFERENCE_DEFINITION" to 1, "MULTILINE_HEADING" to 174, "MULTILINE_PROP" to 4, "NESTED_TASK_LIST" to 11,
+                    "NOT_IDEMPOTENT" to 221, "PROPS_COMMENT" to 3, "RAW_HTML" to 123, "TABLE_ALIGNMENT" to 1, "UNCLOSED_ATTRIBUTES" to 15,
                 ),
             ),
             tallies,
@@ -176,22 +176,22 @@ class StudioPreservingDifferentialTest {
         assertEquals(
             mapOf(
                 "corpus" to mapOf(
-                    "ADJACENT_LISTS" to 14, "COMPONENT_IN_LIST_ITEM" to 12, "COMPONENT_NAMED_A" to 20,
+                    "ADJACENT_LISTS" to 14, "COMPONENT_IN_LIST_ITEM" to 12, "COMPONENT_NAMED_A" to 20, "DROPPED_BLOCK" to 13,
                     "ESCAPED_BRACE" to 2, "FENCE_HIGHLIGHTS" to 9, "FENCE_IN_LIST_ITEM" to 1, "FOOTNOTE" to 4,
-                    "FRONTMATTER_COMMENT" to 2, "HEADING_ID" to 3, "HTML_COMMENT" to 10, "INDENTED_COMPONENT" to 13,
+                    "FRONTMATTER_COMMENT" to 3, "HEADING_ID" to 3, "HTML_COMMENT" to 10, "INDENTED_COMPONENT" to 13,
                     "INLINE_CODE_WITH_BACKTICK" to 1, "INLINE_COMPONENT_OBJECT_PROPS" to 1, "INVALID_YAML" to 36,
                     "LINK_REFERENCE_DEFINITION" to 5, "MULTILINE_HEADING" to 16, "MULTILINE_PROP" to 10,
-                    "NESTED_TASK_LIST" to 19, "NOT_IDEMPOTENT" to 16, "RAW_HTML" to 81, "REFERENCE_LINK" to 2,
-                    "TABLE_ALIGNMENT" to 3,
+                    "NESTED_TASK_LIST" to 19, "NESTING_LIMIT" to 2, "NOT_IDEMPOTENT" to 16, "PROPS_COMMENT" to 12,
+                    "RAW_HTML" to 86, "REFERENCE_LINK" to 2, "TABLE_ALIGNMENT" to 3, "UNCLOSED_ATTRIBUTES" to 5,
                 ),
                 "random documents" to mapOf(
-                    "ADJACENT_LISTS" to 45, "COMPONENT_IN_LIST_ITEM" to 48, "COMPONENT_NAMED_A" to 96,
+                    "ADJACENT_LISTS" to 45, "COMPONENT_IN_LIST_ITEM" to 48, "COMPONENT_NAMED_A" to 96, "DROPPED_BLOCK" to 95,
                     "ESCAPED_BRACE" to 67, "FENCE_HIGHLIGHTS" to 26, "FENCE_IN_LIST_ITEM" to 7, "FOOTNOTE" to 20,
-                    "FRONTMATTER_COMMENT" to 43, "HEADING_ID" to 11, "HTML_COMMENT" to 168, "INDENTED_COMPONENT" to 64,
+                    "FRONTMATTER_COMMENT" to 21, "HEADING_ID" to 11, "HTML_COMMENT" to 168, "INDENTED_COMPONENT" to 64,
                     "INLINE_CODE_WITH_BACKTICK" to 25, "INLINE_COMPONENT_OBJECT_PROPS" to 7, "INVALID_YAML" to 621,
                     "LINK_REFERENCE_DEFINITION" to 36, "MULTILINE_HEADING" to 258, "MULTILINE_PROP" to 4,
-                    "NESTED_TASK_LIST" to 17, "NOT_IDEMPOTENT" to 470, "RAW_HTML" to 746, "REFERENCE_LINK" to 9,
-                    "TABLE_ALIGNMENT" to 9,
+                    "NESTED_TASK_LIST" to 17, "NESTING_LIMIT" to 4, "NOT_IDEMPOTENT" to 378, "PROPS_COMMENT" to 11,
+                    "RAW_HTML" to 746, "REFERENCE_LINK" to 9, "TABLE_ALIGNMENT" to 9, "UNCLOSED_ATTRIBUTES" to 230,
                 ),
             ),
             tallies,
@@ -217,7 +217,7 @@ class StudioPreservingDifferentialTest {
         }
         report("formatPreserving not idempotent (of $count)", failures)
         assertTrue(failures.joinToString("\n"), failures.all { it.startsWith("LEADING_THEMATIC_BREAK ") })
-        assertEquals(5, failures.size)
-        assertEquals(5492, count)
+        assertEquals(4, failures.size)
+        assertEquals(5500, count)
     }
 }

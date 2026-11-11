@@ -18,7 +18,7 @@ class StudioFormatterDifferentialTest {
     @Test
     fun formatsTheOracleCorpusLikeStudio() {
         val verdicts = cases.map { it["name"].asString to compareText(it["input"].asString, it["text"]) }
-        assertTally("Studio text path T(x), oracle corpus", verdicts, mapOf(Outcome.MATCH to 438, Outcome.BOTH_FAIL to 34))
+        assertTally("Studio text path T(x), oracle corpus", verdicts, mapOf(Outcome.MATCH to 446, Outcome.BOTH_FAIL to 34))
     }
 
     @Test

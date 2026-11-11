@@ -27,8 +27,8 @@ internal object StudioComarkSyntax {
         if (remaining.startsWith("{")) {
             val p = searchProps(remaining, 0)
             if (p != null) {
-                props = p.first
-                val after = StudioJs.trim(remaining.substring(minOf(p.second, remaining.length)))
+                props = p.props
+                val after = StudioJs.trim(remaining.substring(minOf(p.end, remaining.length)))
                 if (after.isNotEmpty()) unparsed = after
             }
         } else if (remaining.isNotEmpty()) {
@@ -67,13 +67,17 @@ internal object StudioComarkSyntax {
     private val BRACKETS = mapOf('[' to ']', '{' to '}', '(' to ')')
     private val QUOTES = mapOf('\'' to '\'', '"' to '"', '`' to '`')
     private val KEY_RE = Regex("^:?[a-zA-Z_][a-zA-Z0-9_-]*\\z")
-    private val QUOTED_RE = Regex("^(['\"`]).*\\1\\z")
+    private val QUOTED_RE = Regex("^(['\"`])${StudioJs.RE_DOT}*\\1\\z")
 
     /**
-     * comark `searchProps(content, index)`: the props and the index after them, or null for `{{`. The scan may end past
-     * the end of [content] (JavaScript indexes past the end read `undefined`); callers clamp.
+     * [searchProps]' result: the props, the index after them ([end]; it may lie past the end of the content, where
+     * JavaScript indexes read `undefined`; callers clamp), and whether a closing `}` ended the scan ([closed]; not comark:
+     * when it is false, comark read everything up to the end of the content as props).
      */
-    fun searchProps(content: String, start: Int): Pair<List<Pair<String, String>>, Int>? {
+    class PropsSearch(val props: List<Pair<String, String>>, val end: Int, val closed: Boolean)
+
+    /** comark `searchProps(content, index)`, or null for `{{`. */
+    fun searchProps(content: String, start: Int): PropsSearch? {
         fun at(i: Int): Char? = if (i >= 0 && i < content.length) content[i] else null
         if (at(start) != '{') throw StudioParseException("Invalid props, expected `{` but got '${at(start)}'")
         val props = ArrayList<Pair<String, String>>()
@@ -135,12 +139,14 @@ internal object StudioComarkSyntax {
             }
         }
 
+        var closed = false
         while (index < content.length) {
             val c = content[index]
             if (c == '\\') {
                 index += 2
             } else if (c == '}') {
                 index += 1
+                closed = true
                 break
             } else if (c == ' ') {
                 index += 1
@@ -178,7 +184,7 @@ internal object StudioComarkSyntax {
         val unquoted = props.map { (k, v) ->
             if (QUOTED_RE.matches(v) && v.length >= 2) k to v.substring(1, v.length - 1) else k to v
         }
-        return unquoted to index
+        return PropsSearch(unquoted, index, closed)
     }
 
     /** comark `kebabCase` (`splitByCase`, then lower-case and join with `-`) */

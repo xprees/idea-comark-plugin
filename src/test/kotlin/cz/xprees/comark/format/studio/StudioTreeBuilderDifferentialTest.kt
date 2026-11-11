@@ -17,7 +17,7 @@ class StudioTreeBuilderDifferentialTest {
     @Test
     fun buildsTheOracleTrees() {
         val verdicts = cases.map { it["name"].asString to compareTree(it["input"].asString, it["comarkTree"], it["frontmatter"]) }
-        assertTally("Studio text-path trees, oracle corpus", verdicts, mapOf(Outcome.MATCH to 438, Outcome.BOTH_FAIL to 34))
+        assertTally("Studio text-path trees, oracle corpus", verdicts, mapOf(Outcome.MATCH to 446, Outcome.BOTH_FAIL to 34))
     }
 
     @Test

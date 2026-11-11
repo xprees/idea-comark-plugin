@@ -36,8 +36,33 @@ object StudioTreeBuilder {
         val (content, data) = parseFrontmatter(text)
         val tokens = StudioMarkdownIt.parse(content)
         val nodes = postProcess(TokenProcessor().document(tokens))
+        if (treeDepth(nodes) > MAX_TREE_DEPTH) throw StudioUnsupportedException("nesting too deep for this port")
         val frontmatter = documentFrontmatter(data)
         return StudioDocument(frontmatter = frontmatter, nodes = nodes, frontmatterValue = data)
+    }
+
+    /**
+     * The deepest element nesting this port renders. markdown-it bounds block and inline-rule nesting at 100 levels, but
+     * not emphasis or inline HTML, so `*` runs or nested tags can build trees as deep as the input is long. comark renders
+     * them recursively: Studio fails on them past a depth that depends on the JavaScript stack (somewhere between 1000 and
+     * 2000 nested `strong`s in Node 22), and so would this port, at a depth that depends on the thread's stack. Instead, a
+     * tree deeper than this is not formatted ([StudioFormatter.format] returns null, and [StudioSafety] keeps the block
+     * with [StudioRewriteReason.NESTING_LIMIT]), which keeps the result independent of the stack size.
+     */
+    const val MAX_TREE_DEPTH = 400
+
+    /** The element nesting depth of [nodes] (1 for a single element without element children), computed without recursion. */
+    fun treeDepth(nodes: List<StudioNode>): Int {
+        var max = 0
+        val stack = ArrayDeque<Pair<StudioNode, Int>>()
+        for (n in nodes) stack.addLast(n to 1)
+        while (stack.isNotEmpty()) {
+            val (node, depth) = stack.removeLast()
+            if (node !is StudioElement) continue
+            if (depth > max) max = depth
+            for (child in node.children) stack.addLast(child to depth + 1)
+        }
+        return max
     }
 
     /** `autoUnwrap`, the alert and shiki plugins, then Studio's `unbindComarkTree`; one output node per input node. */
@@ -99,12 +124,13 @@ object StudioTreeBuilder {
             val nextStart = groups.getOrNull(index + 1)?.let { g -> tokens.subList(g.start, g.end).mapNotNull { it.map?.get(0) }.minOrNull() }
                 ?: lines.size
             var end = maxOf(nextStart, start + 1)
-            while (end > start + 1 && StudioJs.trim(lines.getOrElse(end - 1) { "" }).isEmpty()) end--
+            // markdown-it's blank line: spaces and tabs only (a line of U+00A0 is content)
+            while (end > start + 1 && lines.getOrElse(end - 1) { "" }.all { it == ' ' || it == '\t' }) end--
             val groupNodes = nodes.subList(at, at + group.nodes.size)
             at += group.nodes.size
             segments += StudioSegment(start, end, lines.subList(start, minOf(end, lines.size)).joinToString("\n"), groupTokens, groupNodes)
         }
-        return StudioSegmentedDocument(text, frontmatter, content, segments, env.propsYamlErrors.toList())
+        return StudioSegmentedDocument(text, frontmatter, content, segments, env.propsYamlErrors.toList(), env.propsYamlComments.toList(), env.nestingLimitLines.toList())
     }
 
     private fun normalizeNewlines(s: String): String {
@@ -641,7 +667,7 @@ object StudioTreeBuilder {
         is StudioComment -> node.text ?: "undefined"
     }
 
-    private val WS_RUN = Regex("[\\t\\n\\u000B\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]+")
+    private val WS_RUN = Regex("${StudioJs.RE_S}+")
     private val NON_WORD = Regex("[^A-Za-z0-9_-]+")
     private val DASHES = Regex("-{2,}")
     private val EDGE_DASHES = Regex("^-+|-+\\z")
@@ -825,7 +851,7 @@ object StudioTreeBuilder {
 
 /** markdown-exit's `Parser#parse` with comark's core rules and parse hook: tokens for one Markdown document. */
 internal object StudioMarkdownIt {
-    private val TASK_RE = Regex("^(\\[[ xX]])[\\t\\n\\u000B\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]+")
+    private val TASK_RE = Regex("^(\\[[ xX]])${StudioJs.RE_S}+")
 
     fun parse(input: String, env: MdEnv = MdEnv()): List<MdToken> {
         var src = input
@@ -971,7 +997,7 @@ internal class StudioSegment(val startLine: Int, val endLine: Int, val source: S
 
 /**
  * [StudioTreeBuilder.buildSegmented]: the [content] after the front matter (newlines normalized to `\n` as markdown-it
- * does), its [segments], and the content lines of props blocks whose YAML did not load.
+ * does), its [segments], and the content lines of props blocks whose YAML did not load or has comments.
  */
 internal class StudioSegmentedDocument(
     val text: String,
@@ -979,6 +1005,8 @@ internal class StudioSegmentedDocument(
     val content: String,
     val segments: List<StudioSegment>,
     val propsYamlErrorLines: List<Int>,
+    val propsYamlCommentLines: List<Int> = emptyList(),
+    val nestingLimitLines: List<Int> = emptyList(),
 ) {
     /** Content line [line] as a line of [text] (counting `\r\n`, `\r` and `\n` as one line break each). */
     fun sourceLine(line: Int): Int = line + (frontmatter?.contentLine ?: 0)
