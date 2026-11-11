@@ -19,6 +19,17 @@ identical bytes.
 Options: `--out <file>` and `--repo <root>`. Recording stops if the installed nuxt-studio files do not match the published
 1.8.0 hashes, unless you pass `--allow-other-studio`.
 
+`record-vectors.mjs` (Gradle: `recordStudioVectors`) records two smaller files next to `oracle.json` for the Kotlin port of
+the renderer:
+
+- `yaml-vectors.json`: js-yaml 5.5.0 `dump(value, { indent: 2, lineWidth: -1 })` and comark's `stringifyYaml(value)` for
+  about 2000 values (numeric-looking strings, YAML 1.1 booleans and nulls, dates, indicators, multi-line strings, unicode,
+  numbers, empty and nested collections), each at the root, as a mapping value, as a sequence item and, for strings, as a key.
+  `StudioYamlTest` checks `StudioYaml` against it.
+- `render-vectors.json`: comark `renderMarkdown(tree, { blockAttributesStyle: 'frontmatter' })` for hand-made trees with
+  attribute values the parsed corpus does not contain (numbers, booleans, `null`, objects, bindings, `$` html markers, odd
+  `ol` starts). `StudioRenderVectorsTest` checks `StudioRenderer` against it.
+
 ## What runs
 
 All versions are pinned exactly in `package.json` and `package-lock.json`: nuxt-studio 1.8.0, comark 0.7.0, js-yaml 5.5.0,
