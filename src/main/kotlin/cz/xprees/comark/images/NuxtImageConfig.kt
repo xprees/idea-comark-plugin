@@ -23,6 +23,8 @@ data class NuxtConfigInfo(
     val extends: List<String> = emptyList(),
     /** `modules` lists `@nuxt/image`. */
     val hasImageModule: Boolean = false,
+    /** `future.compatibilityVersion` (4 opts a Nuxt 3 project into the Nuxt 4 layout). */
+    val compatibilityVersion: Int? = null,
 )
 
 /**
@@ -35,6 +37,9 @@ internal object NuxtImageConfig {
     private val IMAGE_MODULE = Regex("""['"`]@nuxt/image(?:-edge)?['"`]""")
     private val NUXT_IMAGE_DEPENDENCY = Regex(""""@nuxt/image(?:-edge)?"\s*:""")
     private val NUXT_DEPENDENCY = Regex(""""(?:nuxt|nuxt3|nuxt-nightly|@nuxt/content)"\s*:""")
+    private val NUXT_VERSION = Regex(""""(?:nuxt|nuxt3|nuxt-nightly)"\s*:\s*"([^"]*)"""")
+    private val LEADING_NUMBER = Regex("""^\s*(\d+)""")
+    private val MAJOR = Regex("""(\d+)""")
     private val LOCAL_EXTENDS = listOf("./", "../", "/", "~/", "~~/", "@/", "@@/")
 
     fun parse(text: String): NuxtConfigInfo {
@@ -44,6 +49,7 @@ internal object NuxtImageConfig {
         val dir = entries["dir"]?.let(::objectBody)?.let(::entries).orEmpty()
         val image = entries["image"]?.let(::objectBody)?.let(::entries).orEmpty()
         val app = entries["app"]?.let(::objectBody)?.let(::entries).orEmpty()
+        val future = entries["future"]?.let(::objectBody)?.let(::entries).orEmpty()
         val aliases = image["alias"]?.let(::objectBody)?.let(::entries).orEmpty().mapNotNull { (key, value) ->
             val url = scalar(value)?.takeIf { "://" in it } ?: return@mapNotNull null
             "/" + key.trimStart('/') to url
@@ -61,6 +67,7 @@ internal object NuxtImageConfig {
             cdnURL = scalar(app["cdnURL"])?.takeIf { it.trim('/').isNotEmpty() },
             extends = extends,
             hasImageModule = entries["modules"]?.let(IMAGE_MODULE::containsMatchIn) == true,
+            compatibilityVersion = future["compatibilityVersion"]?.let(LEADING_NUMBER::find)?.groupValues?.get(1)?.toIntOrNull(),
         )
     }
 
@@ -69,6 +76,13 @@ internal object NuxtImageConfig {
 
     /** True when a `package.json` text lists Nuxt (or Nuxt Content, which implies it) as a dependency. */
     fun manifestIsNuxt(manifest: CharSequence) = NUXT_DEPENDENCY.containsMatchIn(manifest)
+
+    /**
+     * The major Nuxt version a `package.json` text depends on (`"nuxt": "^4.1.0"` gives 4), or null when it has no `nuxt` dependency
+     * or the range names no version (`latest`, `workspace:*`).
+     */
+    fun manifestNuxtMajor(manifest: CharSequence): Int? =
+        NUXT_VERSION.find(manifest)?.groupValues?.get(1)?.let(MAJOR::find)?.groupValues?.get(1)?.toIntOrNull()
 
     /** [text] without `//` and `/* */` comments; string literals (which may contain `//`, as in URLs) are kept intact. */
     fun stripComments(text: String): String {

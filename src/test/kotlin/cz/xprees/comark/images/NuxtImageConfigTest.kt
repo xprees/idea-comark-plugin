@@ -96,6 +96,17 @@ class NuxtImageConfigTest {
         assertFalse(NuxtImageConfig.manifestIsNuxt("""{ "dependencies": { "vue": "^3.0.0" } }"""))
     }
 
+    @Test
+    fun nuxtVersions() {
+        assertEquals(4, NuxtImageConfig.manifestNuxtMajor("""{ "dependencies": { "nuxt": "^4.1.0" } }"""))
+        assertEquals(3, NuxtImageConfig.manifestNuxtMajor("""{ "devDependencies": { "nuxt": "~3.15.0" } }"""))
+        assertEquals(4, NuxtImageConfig.manifestNuxtMajor("""{ "dependencies": { "nuxt": "npm:nuxt-nightly@4x" } }"""))
+        assertNull(NuxtImageConfig.manifestNuxtMajor("""{ "dependencies": { "nuxt": "latest" } }"""))
+        assertNull(NuxtImageConfig.manifestNuxtMajor("""{ "dependencies": { "@nuxt/content": "^3.0.0" } }"""))
+        assertEquals(4, NuxtImageConfig.parse("export default defineNuxtConfig({ future: { compatibilityVersion: 4 } })").compatibilityVersion)
+        assertNull(NuxtImageConfig.parse("export default defineNuxtConfig({ future: { typescriptBundlerResolution: true } })").compatibilityVersion)
+    }
+
     // ---- ImagePaths -------------------------------------------------------------------------------------------------
 
     private fun path(raw: String, base: String? = null, cdn: String? = null) = ImagePaths.normalize(raw, base, cdn)?.path
@@ -121,6 +132,14 @@ class NuxtImageConfigTest {
         assertEquals("/threats/a.webp", path("/_ipx/_/threats/a.webp"))
         assertEquals("/threats/a.webp", path("https://cdn.example.com/docs/_ipx/s_100x50/threats/a.webp?v=2", "/docs/", "https://cdn.example.com"))
         assertEquals("/threats/a.webp", path("//cdn.example.com/threats/a.webp", cdn = "//cdn.example.com"))
+    }
+
+    @Test
+    fun ipxOfRemoteSourcesIsNoLocalPath() {
+        assertNull(path("/_ipx/w_400/https://images.unsplash.com/photo.jpg"))
+        assertNull(path("/_ipx/_/http://host/x.jpg"))
+        assertNull(path("/_ipx/_//host/x.jpg"))
+        assertNull(path("https://cdn.example.com/_ipx/w_400/https://host/x.jpg", cdn = "https://cdn.example.com"))
     }
 
     @Test

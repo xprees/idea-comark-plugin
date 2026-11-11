@@ -5,6 +5,7 @@ import com.intellij.codeInspection.LocalQuickFix
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.lang.injection.InjectedLanguageManager
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
@@ -47,7 +48,7 @@ class ComarkMissingImageInspection : LocalInspectionTool() {
                 if (reference !is ComarkImageReference || reference.resolveFile() != null) continue
                 // build output (`/_nuxt/…`) is generated, not served from an image directory
                 if (reference.src.path.startsWith("/_nuxt/")) continue
-                val fixes = closest(reference.src.path, directories.listImages(context))?.let { arrayOf<LocalQuickFix>(ComarkReplaceImagePathFix(it)) }
+                val fixes = directories.closestImage(context, reference.src.path)?.let { arrayOf<LocalQuickFix>(ComarkReplaceImagePathFix(it)) }
                     ?: LocalQuickFix.EMPTY_ARRAY
                 holder.registerProblem(
                     reference.element, reference.rangeInElement,
@@ -78,6 +79,7 @@ class ComarkMissingImageInspection : LocalInspectionTool() {
             var best: String? = null
             var bestDistance = limit + 1
             for (entry in images) {
+                ProgressManager.checkCanceled()
                 if (abs(entry.path.length - path.length) >= bestDistance) continue
                 val distance = EditDistance.levenshtein(path, entry.path, true)
                 if (distance < bestDistance) {

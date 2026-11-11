@@ -201,4 +201,29 @@ class ComarkImageCompletionTest : NuxtImagesTestBase() {
         assertNull(ComarkImageThumbnails.svgSize("<svg width=\"100%\">"))
         assertNull(ComarkImageThumbnails.webpSize(ByteArray(30)))
     }
+
+    fun testThumbnailsAreSubsampledAndHugeImagesRefused() {
+        val thumbnails = ComarkImageThumbnails.getInstance()
+        val large = image("site/public/large.png", 2000, 1000)
+        val thumbnail = thumbnails.thumbnail(large, 16)!!
+        assertEquals(Dimension(16, 8), Dimension(thumbnail.width, thumbnail.height))
+        assertSame(thumbnail, thumbnails.thumbnail(large, 16))
+
+        // a 20000 x 20000 PNG header: refused from its size alone, never decoded
+        fun chunk(type: String, data: ByteArray): ByteArray {
+            val body = type.toByteArray() + data
+            val crc = java.util.zip.CRC32().apply { update(body) }.value
+            return be32(data.size) + body + be32(crc.toInt())
+        }
+        val header = be32(20000) + be32(20000) + byteArrayOf(8, 6, 0, 0, 0)
+        val signature = byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 0x1a, 10)
+        val huge = VfsTestUtil.createFile(
+            myFixture.tempDirFixture.getFile("")!!, "site/public/huge.png", signature + chunk("IHDR", header) + chunk("IEND", ByteArray(0)),
+        )
+        assertEquals(Dimension(20000, 20000), thumbnails.dimensions(huge))
+        assertNull(thumbnails.thumbnail(huge, 16))
+        assertSame(ComarkImageThumbnails.GENERIC, thumbnails.icon(huge))
+    }
+
+    private fun be32(value: Int) = byteArrayOf((value shr 24).toByte(), (value shr 16).toByte(), (value shr 8).toByte(), value.toByte())
 }

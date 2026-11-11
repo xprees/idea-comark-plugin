@@ -32,7 +32,12 @@ import kotlin.math.roundToInt
 class ComarkImageThumbnails {
     private class Entry(val stamp: Long, val icon: Icon?, val dimension: Dimension?, val dimensionKnown: Boolean)
 
+    private class Preview(val stamp: Long, val image: BufferedImage?)
+
     private val entries = ConcurrentHashMap<String, Entry>()
+
+    /** [thumbnail]s by size and URL: documentation asks again on every hover. */
+    private val previews = ConcurrentHashMap<String, Preview>()
 
     /** The cached thumbnail icon of [file], without decoding anything; null when it has not been made yet (or cannot be). */
     fun cachedIcon(file: VirtualFile): Icon? = entries[file.url]?.takeIf { it.stamp == file.modificationStamp }?.icon
@@ -40,7 +45,7 @@ class ComarkImageThumbnails {
     /** A 16px picture of [file], or the generic image icon when it cannot be decoded. Reads the file the first time. */
     fun icon(file: VirtualFile): Icon {
         cachedIcon(file)?.let { return it }
-        val icon = thumbnail(file, JBUIScale.scale(ICON_SIZE))?.let(::squareIcon)
+        val icon = decode(file, JBUIScale.scale(ICON_SIZE))?.let(::squareIcon)
         update(file) { old -> Entry(file.modificationStamp, icon ?: GENERIC, old?.dimension, old?.dimensionKnown == true) }
         return icon ?: GENERIC
     }
@@ -58,11 +63,47 @@ class ComarkImageThumbnails {
         return dimension
     }
 
-    /** [file] scaled down to fit [maxPx] x [maxPx] (never scaled up), or null when ImageIO cannot decode it. Not cached. */
+    /**
+     * [file] scaled down to fit [maxPx] x [maxPx] (never scaled up), or null when ImageIO cannot decode it or it is too large to
+     * decode. Cached per file version and size.
+     */
     fun thumbnail(file: VirtualFile, maxPx: Int = 240): BufferedImage? {
+        val key = "$maxPx ${file.url}"
+        previews[key]?.takeIf { it.stamp == file.modificationStamp }?.let { return it.image }
+        val image = decode(file, maxPx)
+        if (previews.size > MAX_PREVIEWS) previews.clear()
+        previews[key] = Preview(file.modificationStamp, image)
+        return image
+    }
+
+    /** Drops every cached picture (tests). */
+    fun clear() {
+        entries.clear()
+        previews.clear()
+    }
+
+    /**
+     * Decodes [file] at about the size it is shown: the header gives the pixel size first, images above [MAX_PIXELS] are refused,
+     * and larger ones are subsampled while decoding, so a huge image never gets a full-resolution raster for a 16px icon.
+     */
+    private fun decode(file: VirtualFile, maxPx: Int): BufferedImage? {
         if (!file.isValid || file.isDirectory || file.extension?.lowercase() !in DECODABLE || file.length > MAX_DECODE_BYTES) return null
         val image = try {
-            ImageIO.read(ByteArrayInputStream(file.contentsToByteArray()))
+            ImageIO.createImageInputStream(ByteArrayInputStream(file.contentsToByteArray()))?.use { input ->
+                val reader = ImageIO.getImageReaders(input).asSequence().firstOrNull() ?: return null
+                try {
+                    reader.input = input
+                    val width = reader.getWidth(0)
+                    val height = reader.getHeight(0)
+                    if (width <= 0 || height <= 0 || width.toLong() * height > MAX_PIXELS) return null
+                    // twice the target size keeps the final bilinear scaling smooth
+                    val step = max(1, max(width, height) / (maxPx * 2))
+                    val param = reader.defaultReadParam.apply { if (step > 1) setSourceSubsampling(step, step, 0, 0) }
+                    reader.read(0, param)
+                } finally {
+                    reader.dispose()
+                }
+            }
         } catch (e: Exception) {
             if (e is com.intellij.openapi.progress.ProcessCanceledException) throw e
             thisLogger().debug("cannot decode ${file.path}", e)
@@ -70,9 +111,6 @@ class ComarkImageThumbnails {
         } ?: return null
         return scale(image, maxPx)
     }
-
-    /** Drops every cached picture (tests). */
-    fun clear() = entries.clear()
 
     private fun update(file: VirtualFile, entry: (Entry?) -> Entry) {
         if (entries.size > MAX_ENTRIES) entries.clear() // a plain bound is enough: entries are cheap to make again
@@ -109,6 +147,8 @@ class ComarkImageThumbnails {
         private const val ICON_SIZE = 16
         private const val MAX_ENTRIES = 2000
         private const val MAX_DECODE_BYTES = 16L * 1024 * 1024
+        private const val MAX_PIXELS = 100L * 1000 * 1000
+        private const val MAX_PREVIEWS = 32
         private const val WEBP_HEADER = 30
         private const val SVG_HEADER = 4096
         private val DECODABLE = setOf("png", "jpg", "jpeg", "gif", "bmp")

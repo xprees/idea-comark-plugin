@@ -2,6 +2,7 @@ package cz.xprees.comark.images
 
 import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.openapi.editor.RangeMarker
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
@@ -184,7 +185,12 @@ object ComarkImageReferences {
         // lets the resolver notice changed settings (and bump its tracker) before the cache is consulted
         contextOf(file)?.let(NuxtImageDirectories.getInstance(file.project)::forFile)
         return CachedValuesManager.getCachedValue(file) {
-            CachedValueProvider.Result.create(computeFileHosted(file), file, NuxtImageDirectories.getInstance(file.project).tracker)
+            // whether YAML is injected (so the YAML references take the front matter and props blocks) depends on dumb mode too:
+            // injectors that are not dumb-aware are skipped while indexing
+            CachedValueProvider.Result.create(
+                computeFileHosted(file), file, NuxtImageDirectories.getInstance(file.project).tracker,
+                DumbService.getInstance(file.project).modificationTracker,
+            )
         }
     }
 

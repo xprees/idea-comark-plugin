@@ -2,6 +2,7 @@ package cz.xprees.comark.images
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.progress.ProgressManager
@@ -21,6 +22,7 @@ import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
+import com.intellij.psi.PsiManager
 import cz.xprees.comark.lang.NuxtPaths
 import cz.xprees.comark.settings.ComarkSettings
 import java.util.concurrent.ConcurrentHashMap
@@ -89,9 +91,10 @@ data class ImageEntry(val path: String, val file: VirtualFile, val dir: ImageDir
  * (recursively). Directories are tried in this order:
  * 1. when [ComarkSettings.imageDirectories] lists any, only those (project-relative or absolute; missing ones are skipped);
  * 2. otherwise, for each layer using Nuxt Image (`@nuxt/image` in a `package.json` or `modules`), its image directory
- * `resolve(srcDir, image.dir || dir.public || 'public')`, `srcDir` being the configured one, else `app/` when it exists, else the
- * layer;
- * 3. then each layer's public directory `resolve(layer, dir.public || 'public')`.
+ * `resolve(srcDir, image.dir || dir.public || 'public')`, `srcDir` being the configured one, else in Nuxt 4 `app/` when Nuxt would
+ * pick it (see [NuxtPaths.sourceRoot]), else the layer;
+ * 3. then each layer's public directory `dir.public || 'public'`, resolved against the layer in Nuxt 4 and against `srcDir` in
+ * Nuxt 3. The version comes from `future.compatibilityVersion` or the `nuxt` dependency of the app (else of the layer).
  *
  * Paths may carry the CDN URL ([ComarkSettings.imageCdnUrl], else `app.cdnURL`), `app.baseURL` and `/_ipx/<modifiers>` prefixes;
  * `image.alias` paths are remote and never resolve. The configuration is read as text (see [NuxtImageConfig]) and cached until a
@@ -104,12 +107,18 @@ class NuxtImageDirectories(private val project: Project) : Disposable {
         fun isValid() = dependencies.all { (file, stamp) -> file.isValid && file.modificationStamp == stamp }
     }
 
-    private class Listing(val roots: ImageRoots, val tracker: Long, val structure: Long, val entries: List<ImageEntry>)
+    private class Listing(val roots: ImageRoots, val tracker: Long, val structure: Long, val entries: List<ImageEntry>) {
+        /** Per missing path: the closest existing one ("" for none), see [closestImage]. */
+        val closest = ConcurrentHashMap<String, String>()
+    }
 
     private class Layer(val dir: VirtualFile, val config: NuxtConfigInfo, val manifest: CharSequence?, val depth: Int)
 
     /** Counts invalidations: configuration, settings or directory layout changes. */
     val tracker = SimpleModificationTracker()
+
+    /** Counts files created, deleted, moved or renamed inside a listed image directory, for [listImages]. */
+    private val structure = SimpleModificationTracker()
 
     /** Per directory: the path of its Nuxt root ("" for none). */
     private val rootOf = ConcurrentHashMap<String, String>()
@@ -126,6 +135,7 @@ class NuxtImageDirectories(private val project: Project) : Disposable {
         project.messageBus.connect(this).subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
             override fun after(events: List<VFileEvent>) {
                 if (events.any(::affects)) invalidate()
+                else if (listings.isNotEmpty() && events.any(::changesListing)) structure.incModificationCount()
             }
         })
     }
@@ -173,11 +183,22 @@ class NuxtImageDirectories(private val project: Project) : Disposable {
      * Every image the documents like [context] can use, in directory priority order; a path in several directories is listed once,
      * from the directory that wins.
      */
-    fun listImages(context: VirtualFile): List<ImageEntry> {
-        val roots = forFile(context) ?: return emptyList()
+    fun listImages(context: VirtualFile): List<ImageEntry> = listing(context)?.entries.orEmpty()
+
+    /**
+     * The image path of [context]'s project closest to the missing [path] (see [ComarkMissingImageInspection.closest]), remembered
+     * until the images change: highlighting asks again on every pass.
+     */
+    fun closestImage(context: VirtualFile, path: String): String? {
+        val listing = listing(context) ?: return null
+        return listing.closest.getOrPut(path) { ComarkMissingImageInspection.closest(path, listing.entries).orEmpty() }.ifEmpty { null }
+    }
+
+    private fun listing(context: VirtualFile): Listing? {
+        val roots = forFile(context) ?: return null
         val count = tracker.modificationCount
-        val structure = VirtualFileManager.VFS_STRUCTURE_MODIFICATIONS.modificationCount
-        listings[roots.nuxtRoot]?.takeIf { it.tracker == count && it.structure == structure && it.roots == roots }?.let { return it.entries }
+        val structure = structure.modificationCount
+        listings[roots.nuxtRoot]?.takeIf { it.tracker == count && it.structure == structure && it.roots == roots }?.let { return it }
         val entries = LinkedHashMap<String, ImageEntry>()
         val fileSystem = context.fileSystem
         for (dir in roots.dirs) {
@@ -194,9 +215,7 @@ class NuxtImageDirectories(private val project: Project) : Disposable {
                 }
             })
         }
-        val result = entries.values.toList()
-        listings[roots.nuxtRoot] = Listing(roots, count, structure, result)
-        return result
+        return Listing(roots, count, structure, entries.values.toList()).also { listings[roots.nuxtRoot] = it }
     }
 
     /** True when [context] belongs to a Nuxt project (and images are enabled). */
@@ -214,11 +233,28 @@ class NuxtImageDirectories(private val project: Project) : Disposable {
         return forFile(start)?.dirs?.joinToString(" > ") { it.label }.orEmpty()
     }
 
-    /** Drops every cached result and restarts highlighting. */
+    /**
+     * Drops every cached result, the PSI caches that hold image references and restarts highlighting. Call on the EDT or in a write
+     * action; elsewhere the PSI caches are dropped later on the EDT.
+     */
     fun invalidate() {
         clear()
         tracker.incModificationCount()
+        dropPsiCaches()
         if (!project.isDisposed) DaemonCodeAnalyzer.getInstance(project).restart("Comark image directories changed")
+    }
+
+    /**
+     * Image references of Markdown destinations and YAML scalars come from reference providers, whose results the platform caches
+     * until the next PSI change; [ComarkImageReferences.create] reads the settings and the configuration, so those caches go too.
+     */
+    private fun dropPsiCaches() {
+        val application = ApplicationManager.getApplication()
+        if (application.isWriteAccessAllowed || application.isDispatchThread) {
+            if (!project.isDisposed) PsiManager.getInstance(project).dropPsiCaches()
+        } else {
+            application.invokeLater({ PsiManager.getInstance(project).dropPsiCaches() }, project.disposed)
+        }
     }
 
     override fun dispose() = clear()
@@ -238,6 +274,8 @@ class NuxtImageDirectories(private val project: Project) : Disposable {
         if (!first) {
             clear()
             tracker.incModificationCount()
+            // PSI caches cannot be dropped in the read actions forFile runs in, and later would be in the middle of highlighting;
+            // the settings page invalidates (and drops them) on apply
         }
     }
 
@@ -322,14 +360,22 @@ class NuxtImageDirectories(private val project: Project) : Disposable {
                 dirs += ImageDir(dir.path, ImageDirKind.OVERRIDE, root.path, entry, true)
             }
         } else if (isNuxt) {
-            for ((layer, image) in layers.values.zip(nuxtImage)) {
-                if (!image) continue
-                val srcDir = NuxtPaths.sourceRoot(layer.dir, layer.config.srcDir)
+            // the app's Nuxt version decides for its layers too; a layer's own only when the app's is unknown
+            val appNuxt4 = nuxt4(rootLayer)
+            val layerNuxt4 = layers.values.map { appNuxt4 ?: nuxt4(it) }
+            val srcDirs = layers.values.zip(layerNuxt4) { layer, nuxt4 -> NuxtPaths.sourceRoot(layer.dir, layer.config.srcDir, nuxt4) }
+            for ((index, layer) in layers.values.withIndex()) {
+                if (!nuxtImage[index]) continue
                 val configured = layer.config.imageDir ?: rootLayer.config.imageDir.takeIf { layer !== rootLayer }
-                dirs += dir(root, layer, NuxtPaths.resolve(srcDir, configured ?: layer.config.publicDir ?: PUBLIC), ImageDirKind.IMAGE)
+                dirs += dir(root, layer, NuxtPaths.resolve(srcDirs[index], configured ?: layer.config.publicDir ?: PUBLIC), ImageDirKind.IMAGE)
             }
-            for (layer in layers.values) {
-                dirs += dir(root, layer, NuxtPaths.resolve(layer.dir.path, layer.config.publicDir ?: PUBLIC), ImageDirKind.PUBLIC)
+            for ((index, layer) in layers.values.withIndex()) {
+                // Nuxt 4 serves `dir.public` from the layer root, Nuxt 3 from its srcDir. With an unknown version, an inferred `app/`
+                // srcDir means Nuxt 4 (Nuxt 3 never infers it); an explicit srcDir leaves both possible, so both are listed.
+                val public = layer.config.publicDir ?: PUBLIC
+                val nuxt4 = layerNuxt4[index] ?: true.takeIf { layer.config.srcDir.isNullOrBlank() }
+                if (nuxt4 != false) dirs += dir(root, layer, NuxtPaths.resolve(layer.dir.path, public), ImageDirKind.PUBLIC)
+                if (nuxt4 != true) dirs += dir(root, layer, NuxtPaths.resolve(srcDirs[index], public), ImageDirKind.PUBLIC)
             }
         }
         // an image directory that is also a public one stays first in the order, but keeps knowing it is public
@@ -349,6 +395,17 @@ class NuxtImageDirectories(private val project: Project) : Disposable {
             nuxtImage = nuxtImage.any { it },
             isNuxt = isNuxt,
         )
+    }
+
+    /**
+     * True when [layer] uses the Nuxt 4 layout (`future.compatibilityVersion: 4`, or a `nuxt` dependency of version 4 or later), false
+     * for Nuxt 3, null when neither says.
+     */
+    private fun nuxt4(layer: Layer): Boolean? {
+        val compatibility = layer.config.compatibilityVersion
+        if (compatibility != null && compatibility >= 4) return true
+        val major = layer.manifest?.let(NuxtImageConfig::manifestNuxtMajor)
+        return major?.let { it >= 4 } ?: compatibility?.let { false }
     }
 
     private fun dir(root: VirtualFile, layer: Layer, path: String, kind: ImageDirKind): ImageDir {
@@ -372,23 +429,42 @@ class NuxtImageDirectories(private val project: Project) : Disposable {
     private fun affects(event: VFileEvent): Boolean {
         val path = event.path
         if (isGenerated(path)) return false
+        // VFS_CHANGES is application-wide: other projects' files never change this project's results
+        if (!isRelevant(path) && structuralPaths(event).none(::isRelevant)) return false
         val name = path.substringAfterLast('/')
         if (name == MANIFEST || NuxtPaths.NUXT_CONFIG.matches(name)) return true
-        val paths = when (event) {
-            is VFileCreateEvent, is VFileDeleteEvent -> listOf(path)
-            is VFileMoveEvent -> listOf(path, event.oldPath)
-            is VFileCopyEvent -> listOf(event.newParent.path + "/" + event.newChildName)
-            is VFilePropertyChangeEvent -> if (event.isRename) listOf(path, event.file.parent?.path + "/" + event.oldValue) else return false
-            else -> return false
-        }
-        return paths.any { changed ->
+        return structuralPaths(event).any { changed ->
             val changedName = changed.substringAfterLast('/')
             changedName == NuxtPaths.NUXT_4_SOURCE_DIRECTORY || changed.substringBeforeLast('/').endsWith("/$LAYERS") ||
                     watched.any { NuxtPaths.isUnder(it, changed) }
         }
     }
 
+    /** True when [path] is in this project: below its directory, a Nuxt root found for it, or a watched layer or directory. */
+    private fun isRelevant(path: String): Boolean {
+        val base = project.guessProjectDir()?.path
+        if (base != null && NuxtPaths.isUnder(path, base)) return true
+        return rootOf.values.any { it.isNotEmpty() && NuxtPaths.isUnder(path, it) } ||
+                watched.any { NuxtPaths.isUnder(path, it) || NuxtPaths.isUnder(it, path) }
+    }
+
+    /** True when [event] adds, removes or renames a file inside a directory some cached listing walked. */
+    private fun changesListing(event: VFileEvent): Boolean {
+        val paths = structuralPaths(event)
+        if (paths.isEmpty()) return false
+        return listings.values.any { listing -> listing.roots.dirs.any { dir -> paths.any { NuxtPaths.isUnder(it, dir.path) } } }
+    }
+
     companion object {
+        /** The paths a create, delete, move, copy or rename [event] adds or removes (old and new); empty for other events. */
+        private fun structuralPaths(event: VFileEvent): List<String> = when (event) {
+            is VFileCreateEvent, is VFileDeleteEvent -> listOf(event.path)
+            is VFileMoveEvent -> listOf(event.path, event.oldPath)
+            is VFileCopyEvent -> listOf(event.newParent.path + "/" + event.newChildName)
+            is VFilePropertyChangeEvent -> if (event.isRename) listOf(event.path, event.file.parent?.path + "/" + event.oldValue) else emptyList()
+            else -> emptyList()
+        }
+
         private const val MANIFEST = "package.json"
         private const val LAYERS = "layers"
         private const val PUBLIC = "public"

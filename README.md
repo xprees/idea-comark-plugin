@@ -65,7 +65,8 @@ them. In Comark files the plugin resolves a path starting with `/` against these
 2. Otherwise, for the app and each of its layers, the Nuxt Image directory when the app uses `@nuxt/image` (in `package.json` or
    `modules`): `image.dir` of `nuxt.config`, relative to the layer's `srcDir` (`srcDir`, `app/` in Nuxt 4 layouts, or the layer
    root), defaulting to the public directory.
-3. Then the public directory of the app and each layer: `dir.public` of `nuxt.config`, defaulting to `public/`.
+3. Then the public directory of the app and each layer: `dir.public` of `nuxt.config`, defaulting to `public/`, next to `app/`
+   in Nuxt 4 and inside `srcDir` in Nuxt 3. The version comes from `future.compatibilityVersion` or the `nuxt` dependency.
 
 Layers are the app itself first, then `layers/*` with a `nuxt.config`, then local `extends` entries (remote layers and packages
 are not read). An app that is itself a layer of an outer app resolves through the outer app. Before matching, the plugin removes

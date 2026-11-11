@@ -6,7 +6,10 @@ import com.intellij.codeInspection.LocalInspectionTool
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiFile
+import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.util.parents
+import com.intellij.testFramework.DumbModeTestUtils
+import com.intellij.testFramework.PlatformTestUtil
 import cz.xprees.comark.highlighting.ComarkMarkdownInspectionSuppressor
 import cz.xprees.comark.psi.ComarkAttributeValue
 import cz.xprees.comark.psi.ComarkFile
@@ -118,6 +121,33 @@ class ComarkImageReferenceTest : NuxtImagesTestBase() {
         val hosted = ComarkImageReferences.fileHosted(myFixture.file as ComarkFile)
         assertEquals(listOf("/logo.png\"}"), hosted.map { myFixture.editor.document.text.substring(it.rangeInElement.startOffset, it.rangeInElement.endOffset + 2) })
         assertEquals(3, imageRefs().size)
+    }
+
+    fun testFileHostedReferencesAreRecomputedAfterDumbMode() {
+        configure("---\nimage: /logo.png\n---\n\n# Page\n")
+        PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue() // a pending re-parse would replace the file
+        val file = myFixture.file as ComarkFile
+        // while indexing, YAML is not injected (its injectors are not dumb-aware), so the file holds the reference itself
+        val whileIndexing = DumbModeTestUtils.computeInDumbModeSynchronously(project) { ComarkImageReferences.fileHosted(file).size }
+        assertEquals(1, whileIndexing)
+        assertEmpty(ComarkImageReferences.fileHosted(file))
+        assertEquals(1, imageRefs().size)
+    }
+
+    fun testSettingsChangesReachCachedReferencesWithoutEdits() {
+        configure("![a](/logo.png) ![b](https://cdn.example.com/logo.png)\n")
+        val destinations = PsiTreeUtil.findChildrenOfType(myFixture.file, MarkdownLinkDestination::class.java).toList()
+        fun images(index: Int) = destinations[index].references.filterIsInstance<ComarkImageReference>().size
+        assertEquals(listOf(1, 0), listOf(images(0), images(1)))
+
+        val settings = ComarkSettings.getInstance()
+        settings.imageCdnUrl = "https://cdn.example.com"
+        directories().invalidate() // what applying the settings page does
+        assertEquals(listOf(1, 1), listOf(images(0), images(1)))
+
+        settings.imagesEnabled = false
+        directories().invalidate()
+        assertEquals(listOf(0, 0), listOf(images(0), images(1)))
     }
 
     fun testDisabled() {

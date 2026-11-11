@@ -1,6 +1,7 @@
 package cz.xprees.comark.images
 
 import com.intellij.openapi.ui.DialogPanel
+import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.util.ui.UIUtil
 import com.intellij.util.xmlb.XmlSerializer
 import cz.xprees.comark.settings.ComarkConfigurable
@@ -114,14 +115,14 @@ class ComarkImageSettingsTest : NuxtImagesTestBase() {
 
     fun testDetectedDirectoriesLine() {
         nuxtProject(nuxtConfig = "image: { dir: 'assets/images' },")
-        val detected = component<JEditorPane>(panel(), ComarkConfigurable.DETECTED_DIRECTORIES).text
+        val detected = detectedLine()
         assertTrue(detected, detected.contains("assets/images &gt; public") || detected.contains("assets/images > public"))
         assertTrue(detected, detected.contains(project.name))
     }
 
     fun testDetectedDirectoriesLineWithoutDirectoriesSaysNone() {
         settingsOverride("missing-dir")
-        val detected = component<JEditorPane>(panel(), ComarkConfigurable.DETECTED_DIRECTORIES).text
+        val detected = detectedLine()
         assertTrue(detected, detected.contains("none"))
     }
 
@@ -156,6 +157,13 @@ class ComarkImageSettingsTest : NuxtImagesTestBase() {
     private fun settingsOverride(entries: String) {
         ComarkSettings.getInstance().imageDirectories = entries
         directories().invalidate()
+    }
+
+    /** The detected directories line, once the background detection has filled it in. */
+    private fun detectedLine(): String {
+        val line = component<JEditorPane>(panel(), ComarkConfigurable.DETECTED_DIRECTORIES)
+        PlatformTestUtil.waitWithEventsDispatching("detection did not finish", { "Detecting" !in line.text }, 10)
+        return line.text
     }
 
     private fun configurable(): ComarkConfigurable = configurable ?: ComarkConfigurable().also { configurable = it }

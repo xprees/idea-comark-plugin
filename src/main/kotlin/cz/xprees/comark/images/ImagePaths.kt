@@ -51,7 +51,12 @@ object ImagePaths {
 
         val base = baseURL?.trim()?.trim('/').orEmpty()
         if (base.isNotEmpty() && raw.startsWith("/$base/", start)) start += base.length + 1
-        IPX.find(raw.substring(start, end))?.let { start += it.groups[1]!!.range.first }
+        IPX.find(raw.substring(start, end))?.let { ipx ->
+            start += ipx.groups[1]!!.range.first
+            // IPX also serves remote sources (`/_ipx/w_200/https://host/x.jpg`): no local path
+            val source = raw.substring(start + 1, end)
+            if (source.startsWith("/") || SCHEME.containsMatchIn(source)) return null
+        }
 
         val written = raw.substring(start, end)
         val path = decode(written.replace("&amp;", "&"))

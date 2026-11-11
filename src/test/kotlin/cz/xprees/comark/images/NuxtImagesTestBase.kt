@@ -61,12 +61,13 @@ abstract class NuxtImagesTestBase : BasePlatformTestCase() {
     }
 
     /**
-     * A Nuxt project in [root]: a `package.json` depending on Nuxt and Nuxt Content (and Nuxt Image when [nuxtImage]), an `app/`
-     * directory when [nuxt4], and a `nuxt.config.ts` with [nuxtConfig] (the object literal's body) when given.
+     * A Nuxt project in [root]: a `package.json` depending on Nuxt (4 when [nuxt4], else 3) and Nuxt Content (and Nuxt Image when
+     * [nuxtImage]), an `app/` directory with an `app.vue` when [nuxt4], and a `nuxt.config.ts` with [nuxtConfig] (the object literal's body) when given.
      */
     protected fun nuxtProject(root: String = "site", nuxtImage: Boolean = true, nuxt4: Boolean = false, nuxtConfig: String? = null) {
         val image = if (nuxtImage) """, "@nuxt/image": "^1.8.0"""" else ""
-        myFixture.addFileToProject("$root/package.json", """{ "dependencies": { "nuxt": "^3.15.0", "@nuxt/content": "^3.0.0"$image } }""")
+        val nuxt = if (nuxt4) "^4.1.0" else "^3.15.0"
+        myFixture.addFileToProject("$root/package.json", """{ "dependencies": { "nuxt": "$nuxt", "@nuxt/content": "^3.0.0"$image } }""")
         if (nuxt4) myFixture.addFileToProject("$root/app/app.vue", "<template><NuxtPage /></template>\n")
         if (nuxtConfig != null) myFixture.addFileToProject("$root/nuxt.config.ts", "export default defineNuxtConfig({\n$nuxtConfig\n})\n")
     }

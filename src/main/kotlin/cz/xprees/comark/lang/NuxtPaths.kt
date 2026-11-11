@@ -41,10 +41,24 @@ internal object NuxtPaths {
 
     /**
      * The source directory (`srcDir`) of the Nuxt layer in [layer]: [explicitSrcDir] resolved against it when the configuration sets
-     * one, else `app/` when it exists (Nuxt 4), else the layer itself (Nuxt 3).
+     * one, else the layer itself in Nuxt 3 ([nuxt4] false), else `app/` the way Nuxt 4 picks it: when it exists and holds more than
+     * `router.options.*` and `spa-loading-template.html` (which Nuxt 3 projects keep in `app/` too), or when the layer has no Nuxt 3
+     * sources (`app.vue`, `pages/`, ...) of its own. [nuxt4] null (unknown version) applies the Nuxt 4 rule, which leaves Nuxt 3
+     * layouts at the layer.
      */
-    fun sourceRoot(layer: VirtualFile, explicitSrcDir: String? = null): String {
+    fun sourceRoot(layer: VirtualFile, explicitSrcDir: String? = null, nuxt4: Boolean? = null): String {
         if (!explicitSrcDir.isNullOrBlank()) return resolve(layer.path, explicitSrcDir)
-        return (layer.findChild(NUXT_4_SOURCE_DIRECTORY)?.takeIf { it.isDirectory } ?: layer).path
+        if (nuxt4 == false) return layer.path
+        val app = layer.findChild(NUXT_4_SOURCE_DIRECTORY)?.takeIf { it.isDirectory } ?: return layer.path
+        val sources = app.children.any { it.name != SPA_LOADING_TEMPLATE && !it.name.startsWith(ROUTER_OPTIONS) }
+        if (sources) return app.path
+        val rootSources = ROOT_SOURCE_FILES.any { layer.findChild(it)?.isDirectory == false } ||
+                ROOT_SOURCE_DIRECTORIES.any { layer.findChild(it)?.isDirectory == true }
+        return if (rootSources) layer.path else app.path
     }
+
+    private const val SPA_LOADING_TEMPLATE = "spa-loading-template.html"
+    private const val ROUTER_OPTIONS = "router.options."
+    private val ROOT_SOURCE_FILES = listOf("app.vue", "App.vue")
+    private val ROOT_SOURCE_DIRECTORIES = listOf("assets", "layouts", "middleware", "pages", "plugins")
 }

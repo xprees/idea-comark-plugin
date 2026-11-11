@@ -1,5 +1,7 @@
 package cz.xprees.comark.settings
 
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.BoundSearchableConfigurable
 import com.intellij.openapi.project.ProjectManager
@@ -17,6 +19,7 @@ import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.builder.selected
 import javax.swing.JRadioButton
 import com.intellij.ui.components.JBCheckBox
+import com.intellij.util.concurrency.AppExecutorUtil
 import cz.xprees.comark.ComarkBundle
 import cz.xprees.comark.images.NuxtImageDirectories
 import cz.xprees.comark.lang.ComarkExclusions
@@ -141,7 +144,16 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
             }.enabledIf(enabled.selected)
             row(ComarkBundle.message("settings.images.detected")) {
                 // Not bound: what the resolver currently finds for the project in front (the setting itself is application-wide).
-                comment(detectedImageDirectories()).applyToComponent { name = DETECTED_DIRECTORIES }
+                // Finding it reads configuration files, so it runs in the background and the line fills in when it is known.
+                comment(ComarkBundle.message("settings.images.detected.pending")).applyToComponent {
+                    name = DETECTED_DIRECTORIES
+                    val line = this
+                    val project = imageProject()
+                    ReadAction.nonBlocking<String> { detectedImageDirectories(project) }
+                        .expireWhen { project?.isDisposed == true }
+                        .finishOnUiThread(ModalityState.any()) { line.text = it }
+                        .submit(AppExecutorUtil.getAppExecutorService())
+                }
             }
         }
     }
@@ -172,9 +184,12 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
 
     private fun imageSettings() = listOf(settings.imagesEnabled, settings.imageDirectories, settings.imageCdnUrl, settings.previewImagesFromCdn)
 
-    /** The detected image directories of the focused project (or the first open one), for the read-only line of the Images group. */
-    private fun detectedImageDirectories(): String {
-        val project = imageProject() ?: return ComarkBundle.message("settings.images.detected.none")
+    /**
+     * The detected image directories of the focused project (or the first open one), for the read-only line of the Images group.
+     * Reads configuration files: call in a background read action.
+     */
+    private fun detectedImageDirectories(project: Project?): String {
+        project ?: return ComarkBundle.message("settings.images.detected.none")
         val label = NuxtImageDirectories.getInstance(project).detectedLabel().ifEmpty { ComarkBundle.message("settings.images.detected.none") }
         // The comment is HTML: settings entries and project names may hold '<' or '&'.
         return ComarkBundle.message("settings.images.detected.value", StringUtil.escapeXmlEntities(label), StringUtil.escapeXmlEntities(project.name))

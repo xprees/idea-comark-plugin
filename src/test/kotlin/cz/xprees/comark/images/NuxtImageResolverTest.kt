@@ -67,6 +67,53 @@ class NuxtImageResolverTest : NuxtImagesTestBase() {
         assertEquals("site/src/assets/images/a.png", resolved("/a.png", page))
     }
 
+    fun testNuxt3AppDirectoryWithRouterOptionsIsNoSourceDirectory() {
+        nuxtProject(nuxtConfig = "image: { dir: 'assets/images' },")
+        myFixture.addFileToProject("site/app/router.options.ts", "export default {}\n")
+        image("site/assets/images/hero.png")
+        val page = page()
+        assertEquals(listOf("assets/images", "public"), labels(page))
+        assertEquals("site/assets/images/hero.png", resolved("/hero.png", page))
+    }
+
+    fun testUnknownVersionFollowsTheNuxt4SourceDirectoryRule() {
+        myFixture.addFileToProject("site/package.json", """{ "dependencies": { "nuxt": "latest", "@nuxt/image": "^1.8.0" } }""")
+        myFixture.addFileToProject("site/nuxt.config.ts", "export default defineNuxtConfig({ image: { dir: 'img' } })\n")
+        myFixture.addFileToProject("site/app/router.options.ts", "export default {}\n")
+        myFixture.addFileToProject("site/pages/index.vue", "<template />\n")
+        // only router options in app/ and Nuxt 3 sources at the root: the root is the srcDir
+        assertEquals(listOf("img", "public"), labels(page()))
+        myFixture.addFileToProject("other/package.json", """{ "dependencies": { "nuxt": "latest", "@nuxt/image": "^1.8.0" } }""")
+        myFixture.addFileToProject("other/nuxt.config.ts", "export default defineNuxtConfig({ image: { dir: 'img' } })\n")
+        myFixture.addFileToProject("other/app/pages/index.vue", "<template />\n")
+        assertEquals(listOf("app/img", "public"), labels(page(path = "other/content/page.md")))
+    }
+
+    fun testNuxt3PublicDirectoryFollowsSrcDir() {
+        nuxtProject(nuxtImage = false, nuxtConfig = "srcDir: 'src/',")
+        image("site/src/public/logo.png")
+        val page = page()
+        assertEquals(listOf("src/public"), labels(page))
+        assertEquals("site/src/public/logo.png", resolved("/logo.png", page))
+    }
+
+    fun testCompatibilityVersion4UsesTheNuxt4Layout() {
+        nuxtProject(nuxtConfig = "srcDir: 'src/',\nfuture: { compatibilityVersion: 4 },")
+        image("site/public/logo.png")
+        val page = page()
+        assertEquals(listOf("src/public", "public"), labels(page))
+        assertEquals("site/public/logo.png", resolved("/logo.png", page))
+    }
+
+    fun testUnknownVersionWithExplicitSrcDirListsBothPublicDirectories() {
+        myFixture.addFileToProject("site/package.json", """{ "dependencies": { "@nuxt/content": "^3.0.0" } }""")
+        myFixture.addFileToProject("site/nuxt.config.ts", "export default defineNuxtConfig({ srcDir: 'src/' })\n")
+        image("site/src/public/logo.png")
+        val page = page()
+        assertEquals(listOf("public", "src/public"), labels(page))
+        assertEquals("site/src/public/logo.png", resolved("/logo.png", page))
+    }
+
     fun testDirPublic() {
         nuxtProject(nuxtConfig = "dir: { public: 'static' },")
         image("site/static/a.png")
@@ -233,6 +280,31 @@ class NuxtImageResolverTest : NuxtImagesTestBase() {
         assertEquals("site/assets/images/new.png", resolved("/new.png", page))
         image("site/public/later.png")
         assertEquals(listOf("/new.png", "/a.png", "/later.png"), directories().listImages(page).map { it.path })
+    }
+
+    fun testUnrelatedFilesKeepTheCaches() {
+        nuxtProject(nuxtConfig = "")
+        image("site/public/a.png")
+        val page = page()
+        val listing = directories().listImages(page)
+        val before = directories().tracker.modificationCount
+        myFixture.addFileToProject("site/.output/server/index.mjs", "")
+        myFixture.addFileToProject("site/content/other.md", "# Other\n")
+        assertSame(listing, directories().listImages(page))
+        // another project's manifest (outside this project's directory) changes nothing here
+        val outside = myFixture.tempDirFixture.getFile("")!!.parent
+        val other = WriteAction.computeAndWait<com.intellij.openapi.vfs.VirtualFile, Throwable> {
+            outside.createChildDirectory(this, "other-project-${System.nanoTime()}")
+        }
+        try {
+            assertFalse(com.intellij.openapi.vfs.VfsUtilCore.isAncestor(myFixture.tempDirFixture.getFile("")!!, other, false))
+            WriteAction.runAndWait<Throwable> { VfsUtil.saveText(other.createChildData(this, "package.json"), "{}") }
+        } finally {
+            WriteAction.runAndWait<Throwable> { other.delete(this) }
+        }
+        assertEquals(before, directories().tracker.modificationCount)
+        image("site/public/b.png")
+        assertEquals(listOf("/a.png", "/b.png"), directories().listImages(page).map { it.path })
     }
 
     fun testNewLayerIsSeen() {
