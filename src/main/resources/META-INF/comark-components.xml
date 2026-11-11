@@ -1,5 +1,5 @@
 <idea-plugin>
-    <!-- Component IntelliSense: discovery (cz.xprees.comark.meta), completion, navigation and documentation -->
+    <!-- Component IntelliSense: discovery (cz.xprees.comark.meta), completion, navigation and documentation, and route links -->
     <extensions defaultExtensionNs="com.intellij">
         <!-- Registered for Markdown: Comark is a Markdown dialect, and inline component text is Markdown PSI -->
         <completion.contributor language="Markdown"
@@ -9,6 +9,8 @@
         <gotoDeclarationHandler implementation="cz.xprees.comark.navigation.ComarkGotoDeclarationHandler"/>
         <!-- Find Usages / Rename of a component's .vue file: kebab-case and PascalCase usages in Comark files -->
         <referencesSearch implementation="cz.xprees.comark.navigation.ComarkComponentReferenceSearcher"/>
+        <!-- Nuxt Content page routes in link destinations (/guide/install) resolve to their content files -->
+        <psi.referenceContributor language="Markdown" implementation="cz.xprees.comark.navigation.ComarkRouteReferenceContributor"/>
 
         <platform.backend.documentation.targetProvider
                 implementation="cz.xprees.comark.navigation.ComarkDocumentationTargetProvider"/>

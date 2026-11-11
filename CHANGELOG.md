@@ -16,6 +16,8 @@
 - Comark logo as the plugin icon and as the file icon of `.mdc` files
 - Find Usages and Rename for components: component names in Comark files reference their `.vue` file, Find Usages on the file
   (or on a usage) lists block, nested and inline usages, and renaming the file updates them in the style they were written in
+- Nuxt Content route links (`/guide/install#setup`) resolve to their content files: Go to Declaration, anchors in the target page
+  and route completion
 
 ### Fixed
 
