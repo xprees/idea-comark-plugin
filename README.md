@@ -40,7 +40,7 @@ Markdown plugin offers (preview, structure view, lists, tables, header anchors, 
 |---|---|
 | Highlighting | Component markers, names, closers, attributes (`#id`, `.class`, `key="value"`, `:binding`), slots, props fences; inline components, spans, attribute groups and `{{ bindings }}` in text. Colours in *Settings › Editor › Color Scheme › Comark* |
 | Inspections | *Unclosed block component* (with a fix inserting the closer), *Ignored text after component opener*, *Unknown Comark component* (off by default). Markdown's unresolved-link and unresolved-anchor inspections understand Comark spans and `{#id}` anchors |
-| Formatting | *Code › Reformat Code* uses a line-by-line port of the VS Code extension's formatter (monarch-mdc), checked byte for byte against the original on ~59,000 cases. Indent size: *Settings › Editor › Code Style › Comark* (2 by default; EditorConfig wins). Enter indents new lines the same way |
+| Formatting | *Code › Reformat Code* uses a line-by-line port of the VS Code extension's formatter (monarch-mdc), checked byte for byte against the original on ~59,000 cases. Where the original would change what a document says, the IDE keeps it instead (see *Known limitations*); everywhere else the result is the same as in VS Code. Indent size: *Settings › Editor › Code Style › Comark* (2 by default; EditorConfig wins); indentation is always spaces. Enter and *Code › Auto-Indent Lines* indent lines the same way |
 | Components | Completion of component names (`::`, `:::`, inline `:`), props inside `{…}` and in props YAML, prop values from string unions, slot names after `#`; Go to Declaration to the `.vue` file, prop and `<slot>`; quick documentation. Sources: Vue SFCs in `components/` (Nuxt naming), `.nuxt/component-meta.mjs` / `.json`, an optional metadata URL. No Vue plugin needed |
 | Route links | In Nuxt Content packages, page routes in links (`[Install](/guide/install#setup)`) resolve to their content file (`content/1.guide/2.install.md`, `index` files for directories, ordering prefixes and extensions dropped): Go to Declaration opens the page, `#anchor` resolves and completes against its headings, and routes complete after `](/`. Routes that match no content file are not reported (custom pages may exist) |
 | Editor | Folding of components, slots and props (Markdown folds kept); matching `::name` / `::` highlighting and navigation; YAML highlighting and checks in props blocks; live templates from the VS Code snippets; Enter after an unclosed opener inserts its closer; breadcrumbs and sticky lines; structure view with headers, components and slots; spellchecking of component content and attribute values |
@@ -57,6 +57,13 @@ the Markdown one), component completion, an optional component metadata URL and 
 - Some Markdown plugin features check for the plain Markdown language and stay off in Comark files: *Create Link*, *Insert Image*,
   table column/row actions and image drag and drop. HTML `<a id>` anchors are not link targets.
 - Reformat Code re-aligns top-level tables only; tables inside components are left as they are.
+- Reformat Code deliberately differs from the VS Code extension's formatter where that one changes content or structure, so a
+  document formatted in both editors can differ in these places: components inside list items stay in the list item (indented to
+  its content column; VS Code moves them out), indented code blocks keep their indentation (VS Code turns them into paragraphs),
+  tabs in the indentation of code fence content are kept (VS Code turns each into one space), and two or more trailing spaces
+  before a continuing line (a hard line break) are kept (VS Code strips them).
+- The formatter always indents with spaces, so the Comark code style offers no tab options: Markdown counts a leading tab as four
+  columns, which would turn tab-indented nested components into code blocks.
 - The preview renders components only with the built-in JCEF preview; Markdown settings list "JCEF Browser" twice (both entries are
   the same choice), a side effect of how the plugin hooks the preview.
 - Prop types imported from other files (`defineProps<Props>()` with an imported `Props`) are not resolved; components inside

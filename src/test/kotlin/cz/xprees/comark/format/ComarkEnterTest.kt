@@ -136,6 +136,34 @@ class ComarkEnterTest : BasePlatformTestCase() {
         }
     }
 
+    // ---- components inside list items are component content, not list content -----------------------------------
+
+    fun testEnterInListItemComponentBodyDoesNotInsertABullet() =
+        enter("- item\n  ::block\n  text<caret>\n  ::\n", "- item\n  ::block\n  text\n  <caret>\n  ::\n")
+
+    fun testEnterAfterListItemComponentOpenerDoesNotInsertABullet() =
+        enter("- item\n  ::block<caret>\n  ::\n", "- item\n  ::block\n  <caret>\n  ::\n")
+
+    fun testEnterInComponentNestedInAListItemComponent() =
+        enter("- item\n  ::block\n    :::inner\n    text<caret>\n    :::\n  ::\n", "- item\n  ::block\n    :::inner\n    text\n    <caret>\n    :::\n  ::\n")
+
+    fun testEnterInListItemComponentInsideAComponent() =
+        enter("::outer\n- item\n  :::block\n  text<caret>\n  :::\n::\n", "::outer\n- item\n  :::block\n  text\n  <caret>\n  :::\n::\n")
+
+    fun testEnterOnBlankLineInListItemComponent() =
+        enter("- item\n  ::block\n  text\n<caret>\n  ::\n", "- item\n  ::block\n  text\n\n  <caret>\n  ::\n")
+
+    fun testListInsideAListItemComponentContinues() =
+        enter("- item\n  ::block\n  - one<caret>\n  ::\n", "- item\n  ::block\n  - one\n  - <caret>\n  ::\n")
+
+    // ---- block quotes keep the Markdown behaviour ----------------------------------------------------------------
+
+    fun testBlockQuoteContinuesInsideAComponent() =
+        enter("::alert\n> quote<caret>\n::\n", "::alert\n> quote\n> <caret>\n::\n")
+
+    fun testBlockQuoteContinuesInsideANestedComponent() =
+        enter("::outer\n  :::alert\n  > quote<caret>\n  :::\n::\n", "::outer\n  :::alert\n  > quote\n  > <caret>\n  :::\n::\n")
+
     // ---- elsewhere Markdown decides ------------------------------------------------------------------------------
 
     fun testTopLevelParagraph() = enter("Some text<caret>\n", "Some text\n<caret>\n")

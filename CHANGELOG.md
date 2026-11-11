@@ -20,3 +20,12 @@
 ### Fixed
 
 - Code fences indented inside components no longer log errors from Markdown's fence language injection
+- Enter inside a component nested in a list item no longer inserts a list bullet into the component body
+- Code › Auto-Indent Lines (and other indentation adjustments, such as indenting pasted text) use the Comark formatter's
+  indentation instead of flattening nested components
+- Reformat Code keeps components inside list items in the list item, and no longer changes Markdown content: tabs in code fences,
+  indented code blocks and hard line breaks are kept. These are deliberate differences from the VS Code extension's formatter
+- Enter after a block quote line inside a component continues the block quote
+- Components inside list items can be folded
+- The Comark code style page no longer offers "Use tab character" and tab size, which the formatter ignores (it always indents
+  with spaces)

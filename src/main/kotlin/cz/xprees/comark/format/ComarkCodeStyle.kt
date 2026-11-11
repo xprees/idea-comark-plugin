@@ -9,6 +9,7 @@ import com.intellij.lang.Language
 import com.intellij.psi.PsiFile
 import com.intellij.psi.codeStyle.CodeStyleConfigurable
 import com.intellij.psi.codeStyle.CodeStyleSettings
+import com.intellij.psi.codeStyle.CodeStyleSettingsCustomizable
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings
 import com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider
 import cz.xprees.comark.lang.ComarkLanguage
@@ -18,6 +19,10 @@ import cz.xprees.comark.lang.ComarkLanguage
  *
  * Comark files keep the Markdown file type, so without this they used the Markdown code style's indent (4 by default), while the
  * VS Code extension's formatter (monarch-mdc) and Nuxt projects use 2. The default here is 2.
+ *
+ * The page offers the indent size only. The formatter always indents with spaces, like monarch-mdc, and has to: Markdown counts
+ * a leading tab as four columns, so a nested component indented with a tab would turn into an indented code block. "Use tab
+ * character" and the tab size would therefore have no effect, and are not shown.
  */
 class ComarkCodeStyleSettingsProvider : LanguageCodeStyleSettingsProvider() {
     override fun getLanguage(): Language = ComarkLanguage
@@ -31,7 +36,12 @@ class ComarkCodeStyleSettingsProvider : LanguageCodeStyleSettingsProvider() {
         indentOptions.USE_TAB_CHARACTER = false
     }
 
-    override fun getIndentOptionsEditor(): IndentOptionsEditor = IndentOptionsEditor()
+    /** Asks [customizeSettings] which options to show. */
+    override fun getIndentOptionsEditor(): IndentOptionsEditor = IndentOptionsEditor(this)
+
+    override fun customizeSettings(consumer: CodeStyleSettingsCustomizable, settingsType: SettingsType) {
+        if (settingsType == SettingsType.INDENT_SETTINGS) consumer.showStandardOptions(CodeStyleSettingsCustomizable.IndentOption.INDENT_SIZE.name)
+    }
 
     override fun getCodeSample(settingsType: SettingsType): String = SAMPLE
 

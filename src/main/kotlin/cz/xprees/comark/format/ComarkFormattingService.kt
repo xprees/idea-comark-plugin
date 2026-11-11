@@ -20,8 +20,9 @@ import cz.xprees.comark.settings.ComarkSettings
 
 /**
  * Makes Code | Reformat Code (and reformat on save, and every other caller of `CodeStyleManager.reformat*`) use
- * [ComarkFormatter] for Comark files while [ComarkSettings.formatterEnabled] is on. With the setting off, [canFormat] declines and
- * the platform falls back to its formatting-model formatter, which for Comark files is the Markdown plugin's.
+ * [ComarkFormatter], through [ComarkDocumentFormatter] (which keeps content monarch-mdc would change), for Comark files while
+ * [ComarkSettings.formatterEnabled] is on. With the setting off, [canFormat] declines and the platform falls back to its
+ * formatting-model formatter, which for Comark files is the Markdown plugin's ([ComarkFormattingModelBuilder] hands over to it).
  *
  * Why a [FormattingService] and not a `FormattingModelBuilder`: the formatter is a text-to-text port of the VS Code extension's
  * (so both editors produce the same result), not a block model. [AbstractDocumentFormattingService] is the platform's base for
@@ -39,7 +40,9 @@ import cz.xprees.comark.settings.ComarkSettings
  *   the file from blocking it.
  * - The indentation step is the Comark code style's indent size (Settings | Editor | Code Style | Comark, 2 by default like
  *   monarch-mdc), unless EditorConfig or indent detection set one for the file ([ComarkIndent]). The formatter always indents
- *   with spaces, like the original.
+ *   with spaces, like the original (see [ComarkCodeStyleSettingsProvider] for why).
+ * - What the formatter cannot see in the text - components inside list items, indented code blocks, code fences - comes from
+ *   the PSI ([ComarkDocumentStructure]); see [ComarkDocumentFormatter] for what it does with it.
  * - Afterwards the platform's post-format processors run on the formatted ranges, as they do after model-based formatting. This
  *   keeps the Markdown plugin's table formatting for top level tables (it only visits the file's direct children, so tables
  *   inside components are left alone, as by the Markdown formatter). Its block quote processor never applies to Comark files,
@@ -64,9 +67,14 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
         val ranges = formattingRanges.filter { it.startOffset <= document.textLength }
         if (ranges.isEmpty()) return
         val indentSize = ComarkIndent.indentSize(file)
+        PsiDocumentManager.getInstance(file.project).commitDocument(document)
+        val structure = ComarkDocumentStructure.of(file)
 
         val edits = try {
-            computeEdits(document.charsSequence, ranges, indentSize, canChangeWhiteSpaceOnly, ProgressManager::checkCanceled)
+            computeEdits(
+                document.charsSequence, ranges, indentSize, canChangeWhiteSpaceOnly, ProgressManager::checkCanceled,
+                structure,
+            )
         } catch (e: ComarkFormatterException) {
             reportFailure(document, formattingContext, e)
             return
@@ -139,17 +147,19 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
             tabSize: Int,
             whitespaceOnly: Boolean = false,
             checkCanceled: () -> Unit = {},
+            structure: DocumentStructure = DocumentStructure.EMPTY,
         ): List<Edit> {
             val lineStarts = lineStarts(text)
             val lineCount = lineStarts.size
             val affected = affectedLines(lineStarts, text.length, ranges)
             val lastAffected = affected.lastOrNull() ?: return emptyList()
 
-            // Format only as far as the result of the last affected line can depend on (see the class documentation)
+            // Format only as far as the result of the last affected line can depend on (see the class documentation). A component
+            // inside a list item is formatted as a whole, which may reach further down.
             val lastNeeded = lastAffected + ComarkFormatter.MAX_PASSES + 2
-            val formattedWhole = lastNeeded >= lineCount - 1
+            val formattedWhole = lastNeeded >= lineCount - 1 || structure.listItemComponents.isNotEmpty()
             val input = if (formattedWhole) text.toString() else text.subSequence(0, lineStarts[lastNeeded + 1] - 1).toString()
-            val formatted = ComarkFormatter.format(input, tabSize, isFormatOnType = false, checkCanceled = checkCanceled).split('\n')
+            val formatted = ComarkDocumentFormatter.format(input, tabSize, structure, checkCanceled)
 
             val edits = ArrayList<Edit>()
             for (line in affected) {
@@ -194,17 +204,19 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
 
         /**
          * Edits turning the line `text[start, end)` into [formatted]. The formatter keeps a line's content between its leading
-         * and trailing whitespace (`formatted` is spaces followed by a prefix of the content), so the two ends are edited
-         * separately and the content itself is never replaced.
+         * and trailing whitespace (`formatted` is spaces or tabs, the content, and possibly kept trailing whitespace), so the two
+         * ends are edited separately and the content itself is never replaced.
          */
         private fun lineEdits(text: CharSequence, start: Int, end: Int, formatted: String, whitespaceOnly: Boolean, out: MutableList<Edit>) {
             val original = text.subSequence(start, end)
             if (original.contentEquals(formatted)) return
             val contentStart = start + JsText.leadingWhitespace(original)
-            val newIndent = formatted.takeWhile { it == ' ' }
-            val content = formatted.substring(newIndent.length)
-            val contentEnd = contentStart + content.length
-            if (contentEnd > end || !text.regionMatches(contentStart, content, 0, content.length)) {
+            val newIndent = formatted.takeWhile { it == ' ' || it == '\t' }
+            val contentLength = JsText.trim(original.toString()).length
+            val contentEnd = contentStart + contentLength
+            if (contentEnd > end || newIndent.length + contentLength > formatted.length ||
+                !text.regionMatches(contentStart, formatted, newIndent.length, contentLength)
+            ) {
                 // Not the shape the formatter produces; never expected, but stay correct: replace the differing middle
                 val prefix = original.commonPrefixWith(formatted).length
                 val suffix = minOf(original.length, formatted.length).let { max ->
@@ -219,8 +231,14 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
             val oldIndent = text.subSequence(start, contentStart)
             val keep = oldIndent.commonPrefixWith(newIndent).length
             addEdit(out, start + keep, contentStart, newIndent.substring(keep), text, whitespaceOnly)
-            // Trailing whitespace
-            addEdit(out, contentEnd, end, "", text, whitespaceOnly)
+            // Trailing whitespace (kept, in part, for hard line breaks)
+            val newTrailing = formatted.substring(newIndent.length + contentLength)
+            val oldTrailing = text.subSequence(contentEnd, end)
+            if (oldTrailing.startsWith(newTrailing)) {
+                addEdit(out, contentEnd + newTrailing.length, end, "", text, whitespaceOnly)
+            } else {
+                addEdit(out, contentEnd, end, newTrailing, text, whitespaceOnly)
+            }
         }
 
         private fun addEdit(out: MutableList<Edit>, start: Int, end: Int, replacement: String, text: CharSequence, whitespaceOnly: Boolean) {

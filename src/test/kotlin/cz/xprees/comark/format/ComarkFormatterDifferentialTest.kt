@@ -18,6 +18,9 @@ import java.io.File
  *   chosen to cover every block of the JavaScript formatter plus a stratified random sample. A case with `error` is one where
  *   the JavaScript formatter throws; the port must throw [ComarkFormatterException] there.
  *
+ * This checks the plain port. What Reformat Code applies adds the documented deviations of [ComarkDocumentFormatter]; that is
+ * compared with the same data by `ComarkFormattingPipelineTest`, which skips (and counts) the inputs hitting a deviation.
+ *
  * Setting the environment variable `COMARK_FORMATTER_DIFF_DIR` to a directory of such JSON files (e.g. the full corpus) checks
  * all of them too (run with `--rerun`, Gradle does not see the variable as an input).
  */
