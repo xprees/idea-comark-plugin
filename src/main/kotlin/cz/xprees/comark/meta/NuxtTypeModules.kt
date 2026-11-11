@@ -1,6 +1,7 @@
 package cz.xprees.comark.meta
 
 import com.intellij.openapi.vfs.VirtualFile
+import cz.xprees.comark.lang.NuxtPaths
 
 /**
  * Resolves the import specifiers of one component's scripts to TypeScript files, the way a Nuxt project sees them:
@@ -70,12 +71,10 @@ internal class NuxtTypeModules(
 
     private fun sourceRoot(directory: VirtualFile): VirtualFile? {
         val root = root(directory) ?: return null
-        return root.findChild(NUXT_4_SOURCE_DIRECTORY)?.takeIf { it.isDirectory } ?: root
+        return root.fileSystem.findFileByPath(NuxtPaths.sourceRoot(root)) ?: root
     }
 
     companion object {
-        private const val NUXT_4_SOURCE_DIRECTORY = "app"
-
         private val MODULE_EXTENSIONS = listOf(".ts", ".mts", ".cts")
 
         /** Files that mark the root of a Nuxt project. */

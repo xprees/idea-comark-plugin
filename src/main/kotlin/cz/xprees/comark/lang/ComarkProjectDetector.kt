@@ -17,6 +17,10 @@ import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.util.FileContentUtilCore
+import cz.xprees.comark.lang.NuxtPaths.CONFIG
+import cz.xprees.comark.lang.NuxtPaths.STRING
+import cz.xprees.comark.lang.NuxtPaths.isUnder
+import cz.xprees.comark.lang.NuxtPaths.resolve
 import cz.xprees.comark.settings.ComarkSettings
 import org.intellij.plugins.markdown.lang.hasMarkdownType
 import java.util.concurrent.ConcurrentHashMap
@@ -168,17 +172,12 @@ class ComarkProjectDetector(private val project: Project) : Disposable {
         private const val CONTENT_DIRECTORY = "content"
         private const val NODE_MODULES = "node_modules"
 
-        /** `content.config.ts` (Nuxt Content 3) and `nuxt.config.ts` (Nuxt Content 2 sources), in every script flavour. */
-        private val CONFIG = Regex("""(?:content|nuxt)\.config\.(?:ts|js|mjs|mts|cjs|cts)""")
-
         private fun isWatched(name: String) = name == MANIFEST || CONFIG.matches(name)
 
         /** The last string literal of a `cwd:` / `base:` value: `'docs'`, `resolve(__dirname, 'docs')`, `new URL('./docs', …)`. */
         private val CWD = Regex("""\bcwd\s*:\s*((?:new\s+)?[\w.$]+\s*\([^)]*\)|[^,}\n]*)""")
         private val FS_SOURCE = Regex("""\{[^{}]*\bdriver\s*:\s*['"`]fs['"`][^{}]*}""")
         private val BASE = Regex("""\bbase\s*:\s*((?:new\s+)?[\w.$]+\s*\([^)]*\)|[^,}\n]*)""")
-        private val WINDOWS_DRIVE = Regex("""^[A-Za-z]:[\\/]""")
-        private val STRING = Regex("""['"`]([^'"`]+)['"`]""")
 
         /**
          * Directories named by a Nuxt Content configuration [text]: the `cwd` of collection sources (`content.config.*`), or, in a Nuxt
@@ -193,21 +192,6 @@ class ComarkProjectDetector(private val project: Project) : Disposable {
             return values.mapNotNull { value -> STRING.findAll(value).lastOrNull()?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() } }
                 .filter { !it.contains("://") || it.startsWith("file://") }.map { it.removePrefix("file://") }.toList()
         }
-
-        private fun resolve(root: String, path: String): String {
-            val absolute = if (path.startsWith("/") || WINDOWS_DRIVE.containsMatchIn(path)) path.replace('\\', '/') else "$root/$path"
-            val segments = ArrayList<String>()
-            for (segment in absolute.split('/')) {
-                when (segment) {
-                    "", "." -> {}
-                    ".." -> if (segments.isNotEmpty()) segments.removeAt(segments.size - 1)
-                    else -> segments += segment
-                }
-            }
-            return segments.joinToString("/", prefix = if (absolute.startsWith("/")) "/" else "")
-        }
-
-        private fun isUnder(path: String, root: String) = path == root || path.startsWith(if (root.endsWith('/')) root else "$root/")
 
         /** `"@nuxt/content"`, `"@nuxtjs/mdc"`, `"comark"`, `"@comark/..."`, `"docus"`, `"@nuxt/ui-pro"` as dependency keys. */
         private val DEPENDENCY = Regex(""""(?:@nuxt/content|@nuxtjs/mdc|comark|@comark/[\w.-]+|docus|@nuxt/ui-pro|@nuxtlabs/[\w.-]*mdc[\w.-]*)"\s*:""")
