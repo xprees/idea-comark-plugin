@@ -482,7 +482,7 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
             l++
         }
         val dedentedText = dedented.toString()
-        val parsed = MarkdownParser(flavour, false, CANCELLATION).parse(MarkdownElementTypes.MARKDOWN_FILE, dedentedText, false)
+        val parsed = MarkdownParserCompat.parse(MarkdownParser(flavour, false, CANCELLATION), MarkdownElementTypes.MARKDOWN_FILE, dedentedText, false)
         var tree = if (guard) CompositeASTNode(parsed.type, parsed.children.filter { it.endOffset > 1 }) else parsed
         val placeholders = HashMap<Int, ComponentBlock>()
         if (fenceStarts.isNotEmpty()) tree = replaceFences(tree, fenceStarts, placeholders)

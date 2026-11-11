@@ -3,6 +3,7 @@
 package cz.xprees.comark.preview
 
 import com.intellij.openapi.progress.ProgressManager
+import cz.xprees.comark.parser.MarkdownParserCompat
 import cz.xprees.comark.lang.ComarkFlavour
 import cz.xprees.comark.parser.ComarkSyntax
 import org.intellij.markdown.IElementType
@@ -237,7 +238,7 @@ internal class InlineComarkRewriter(private val text: String, private val linkRe
         )
 
         private fun parse(markdown: String): ASTNode =
-            MarkdownParser(ComarkFlavour.INSTANCE, true, CancellationToken.NonCancellable).buildMarkdownTreeFromString(markdown)
+            MarkdownParserCompat.parseDocument(MarkdownParser(ComarkFlavour.INSTANCE, true, CancellationToken.NonCancellable), markdown)
 
         /** A link label as Markdown compares them: brackets removed, whitespace collapsed, case ignored. */
         private fun normalizeLabel(label: String): String =

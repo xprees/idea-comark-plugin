@@ -3,6 +3,7 @@
 package cz.xprees.comark.navigation
 
 import com.intellij.lang.documentation.DocumentationMarkup
+import cz.xprees.comark.parser.MarkdownParserCompat
 import com.intellij.model.Pointer
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
@@ -212,7 +213,7 @@ object ComarkDocumentationRenderer {
     /** Descriptions and documentation are Markdown (JSDoc, nuxt-component-meta, remote `documentation_markdown`). */
     internal fun markdownToHtml(markdown: String): String {
         val flavour = GFMFlavourDescriptor()
-        val tree = MarkdownParser(flavour, true, CancellationToken.NonCancellable).buildMarkdownTreeFromString(markdown)
+        val tree = MarkdownParserCompat.parseDocument(MarkdownParser(flavour, true, CancellationToken.NonCancellable), markdown)
         return HtmlGenerator(markdown, tree, flavour, false).generateHtml().removePrefix("<body>").removeSuffix("</body>")
     }
 }
