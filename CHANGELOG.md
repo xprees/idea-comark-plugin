@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.3.0] - 2026-11-11
+
 First release: Comark (Components in Markdown, formerly MDC) support for JetBrains IDEs 2026.1 and newer, on top of the bundled
 Markdown plugin.
 
@@ -38,3 +40,6 @@ Markdown plugin.
 - Nuxt Content route links (`/guide/install#setup`) resolve to their content files, with anchors and route completion; links to
   comark heading ids and `{#id}` / `id` attributes resolve too
 - Components, props and slots render as labelled blocks in the built-in Markdown preview
+
+[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/v2026.3.0...HEAD
+[2026.3.0]: https://github.com/xprees/idea-comark-plugin/commits/v2026.3.0
