@@ -5,6 +5,16 @@
 ### Added
 
 - *Read components like* setting: Nuxt Content and Nuxt Studio (remark-mdc, the default) or the comark parser
+- Nuxt image paths (`/images/hero.webp`) in images, reference definitions, image-like component attributes and props, and front
+  matter (`image`, `seo.image`, `og:image`) resolve to the Nuxt Image directory and the `public/` directories of the app and its
+  layers, understanding `srcDir`, `image.dir`, `dir.public`, `app.baseURL`, `app.cdnURL`, `/_ipx/` and `image.alias`
+- Go to Declaration, completion with thumbnails and pixel sizes, and quick documentation with a preview for image paths
+- Find Usages of image files, and Rename and Move of image files and directories update the image paths in Comark files
+- *Missing Nuxt image* inspection with a fix to the closest existing image; the Markdown plugin no longer reports these paths as
+  unresolved files
+- The preview shows images from the Nuxt image directories (optionally from the CDN) and image props of components as thumbnails
+- *Images* settings: on/off, image directories that replace the detected ones, a CDN URL, CDN images in the preview, and the
+  directories detected for the current project
 
 ### Fixed
 
