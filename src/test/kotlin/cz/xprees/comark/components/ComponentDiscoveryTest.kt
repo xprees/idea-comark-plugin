@@ -12,7 +12,7 @@ class ComponentDiscoveryTest : ComponentsTestBase() {
     fun testVueComponentsAreDiscoveredWithNuxtNames() {
         addStandardComponents()
         val index = index()
-        assertEquals(listOf("alert", "badge", "prose-card"), index.visible().map { it.kebabName })
+        assertEquals(listOf("alert", "badge", "card"), index.visible().map { it.kebabName })
 
         val alert = index.find("alert")!!
         assertEquals("Alert", alert.name)
@@ -24,7 +24,7 @@ class ComponentDiscoveryTest : ComponentsTestBase() {
         assertEquals("Alert.vue", alert.file!!.name)
         assertEquals("src", alert.root!!.name)
 
-        val card = index.find("prose-card")!!
+        val card = index.find("card")!!
         assertEquals("A card with an optional footer.", card.description)
         assertTrue(card.findProp("items")!!.required)
     }
@@ -32,11 +32,11 @@ class ComponentDiscoveryTest : ComponentsTestBase() {
     fun testNamesResolveInAnySpelling() {
         addStandardComponents()
         val index = index()
-        for (name in listOf("prose-card", "ProseCard", "proseCard", "PROSE-CARD".lowercase())) {
-            assertEquals(name, "ProseCard", index.find(name)?.name)
+        for (name in listOf("card", "Card", "CARD".lowercase())) {
+            assertEquals(name, "Card", index.find(name)?.name)
         }
-        // Nuxt Content registers components/content without path prefixes: the bare file name resolves too
-        assertEquals("ProseCard", index.find("card")?.name)
+        // Nuxt Content registers components/content without path prefixes: the path-prefixed name is never registered
+        assertNull(index.find("prose-card"))
         assertNull(index.find("nope"))
     }
 
@@ -47,7 +47,7 @@ class ComponentDiscoveryTest : ComponentsTestBase() {
         myFixture.addFileToProject(".output/components/Output.vue", BADGE)
         myFixture.addFileToProject("pages/index.vue", BADGE)
         val names = index().components.map { it.name }
-        assertSameElements(names, "Alert", "ProseCard", "Badge")
+        assertSameElements(names, "Alert", "Card", "Badge")
     }
 
     fun testComponentMetaIsMergedWithVueFiles() {

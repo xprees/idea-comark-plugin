@@ -54,7 +54,7 @@ class ComponentFindUsagesTest : ComponentsTestBase() {
     }
 
     fun testNestedBlockNameResolves() {
-        page("::alert\n:::prose-ca<caret>rd\nx\n:::\n::\n")
+        page("::alert\n:::ca<caret>rd\nx\n:::\n::\n")
         assertEquals("Card.vue", resolvedFileAtCaret())
     }
 
@@ -67,7 +67,7 @@ class ComponentFindUsagesTest : ComponentsTestBase() {
     fun testInlineNameInComponentContentAndTableResolves() {
         page("::alert[see :car<caret>d]\n::\n")
         assertEquals("Card.vue", resolvedFileAtCaret())
-        page("| a |\n|---|\n| :Prose<caret>Card |\n", "table.md")
+        page("| a |\n|---|\n| :Ca<caret>rd |\n", "table.md")
         assertEquals("Card.vue", resolvedFileAtCaret())
     }
 
@@ -133,10 +133,11 @@ class ComponentFindUsagesTest : ComponentsTestBase() {
         assertEquals(5, usages(target).size)
     }
 
-    fun testFindUsagesOfPrefixedComponent() {
-        page("::prose-card\n::\n\nAlias :card and :ProseCard[x], not :prose or prose card.\n")
+    fun testFindUsagesOfNestedContentComponent() {
+        // components/content/prose/Card.vue is registered as `Card` only; `prose-card` is no usage of it
+        page("::card\n::\n\nInline :Card and :card[x], not :prose-card or prose card.\n")
         assertEquals(
-            listOf("::[prose-card]", "Alias :[card] and :ProseCard[x], not :prose or prose card.", "Alias :card and :[ProseCard][x], not :prose or prose card."),
+            listOf("::[card]", "Inline :[Card] and :card[x], not :prose-card or prose card.", "Inline :Card and :[card][x], not :prose-card or prose card."),
             usages(vueFile("content/prose/Card.vue")),
         )
     }
@@ -183,11 +184,11 @@ class ComponentFindUsagesTest : ComponentsTestBase() {
         assertNotNull(myFixture.findFileInTempDir("site/components/content/Callout.vue"))
     }
 
-    fun testRenameKeepsPrefixAliasAndStyle() {
-        page("::prose-card\n::\n\n:::ProseCard\n:::\n\nAlias :card and :proseCard[x].\n")
+    fun testRenameKeepsStyle() {
+        page("::card\n::\n\n:::Card\n:::\n\nInline :card and :Card[x].\n")
         myFixture.renameElement(vueFile("content/prose/Card.vue"), "InfoPanel.vue")
         assertEquals(
-            "::prose-info-panel\n::\n\n:::ProseInfoPanel\n:::\n\nAlias :info-panel and :proseInfoPanel[x].\n",
+            "::info-panel\n::\n\n:::InfoPanel\n:::\n\nInline :info-panel and :InfoPanel[x].\n",
             myFixture.editor.document.text,
         )
     }

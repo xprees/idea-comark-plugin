@@ -17,8 +17,8 @@ class UnknownComponentInspectionTest : ComponentsTestBase() {
             ::
 
             ::alert
-              :::prose-card
-              Nested :card is known by its Nuxt Content name.
+              :::card
+              Nested :<weak_warning descr="Unknown component 'prose-card'">prose-card</weak_warning> is not registered by Nuxt Content.
               :::
             ::
 
@@ -51,7 +51,7 @@ class UnknownComponentInspectionTest : ComponentsTestBase() {
 
     fun testSpellingVariantsAreKnown() {
         addStandardComponents()
-        configure("::ProseCard\n::\n\n::proseCard\n::\n\nText :Badge.")
+        configure("::Card\n::\n\n::card\n::\n\nText :Badge.")
         myFixture.checkHighlighting(false, false, true)
     }
 }
