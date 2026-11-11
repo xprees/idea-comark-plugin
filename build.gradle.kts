@@ -172,6 +172,8 @@ intellijPlatform {
 
 changelog {
     groups.empty()
+    // tags are plain versions (2026.3.0), so compare/commit links in the changelog must not add the default "v" prefix
+    versionPrefix = ""
     repositoryUrl = providers.gradleProperty("pluginRepositoryUrl")
 }
 

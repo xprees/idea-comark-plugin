@@ -96,8 +96,16 @@ jobs:
             --force \
             || true
 
-          gh pr create \
+          # Needs Settings > Actions > General > Workflow permissions > "Allow GitHub Actions to create and approve pull requests".
+          # Without it the patched changelog stays on $BRANCH and [Unreleased] keeps this release's notes, so the next draft
+          # would repeat them: say so loudly, but don't fail a release that was already published.
+          if ! gh pr create \
             --title "Changelog update - \`$VERSION\`" \
             --body "Current pull request contains patched \`CHANGELOG.md\` file for the \`$VERSION\` version." \
             --label "$LABEL" \
-            --head $BRANCH
+            --head $BRANCH; then
+            URL="${{ github.server_url }}/${{ github.repository }}/compare/$BRANCH?expand=1"
+            echo "::warning title=Changelog not updated::Could not open the changelog pull request (GitHub Actions may not create pull requests in this repository). Open it from $URL and merge it before the next release, or its notes repeat this release's."
+            echo "### Changelog pull request not created" >> "$GITHUB_STEP_SUMMARY"
+            echo "Open and merge it from [$BRANCH]($URL); enable *Allow GitHub Actions to create and approve pull requests* to automate this." >> "$GITHUB_STEP_SUMMARY"
+          fi
