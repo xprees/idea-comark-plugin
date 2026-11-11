@@ -10,6 +10,7 @@ import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import cz.xprees.comark.ComarkBundle
+import cz.xprees.comark.lang.ComarkExclusions
 import cz.xprees.comark.lang.ComarkProjectDetector
 import java.net.URI
 
@@ -27,6 +28,20 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
                 row { radioButton(ComarkBundle.message("settings.mode.always"), ComarkSettings.Mode.ALWAYS) }
                 row { radioButton(ComarkBundle.message("settings.mode.never"), ComarkSettings.Mode.NEVER) }
             }.bind(settings::mode)
+            row {
+                label(ComarkBundle.message("settings.excluded.label"))
+            }
+            row {
+                textArea()
+                    .applyToComponent { rows = 4 }
+                    .align(AlignX.FILL)
+                    .bindText(settings::excludedPatterns)
+                    .comment(ComarkBundle.message("settings.excluded.comment"))
+                    .validationOnApply {
+                        val invalid = ComarkExclusions.invalidPatterns(it.text)
+                        if (invalid.isEmpty()) null else error(ComarkBundle.message("settings.excluded.invalid", invalid.joinToString(", ")))
+                    }
+            }
         }
         group(ComarkBundle.message("settings.group.formatting")) {
             row {
@@ -61,8 +76,9 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
 
     override fun apply() {
         val modeBefore = settings.mode
+        val excludedBefore = settings.excludedPatterns
         super.apply()
-        if (settings.mode != modeBefore) {
+        if (settings.mode != modeBefore || settings.excludedPatterns != excludedBefore) {
             // Which Markdown files are Comark just changed: drop cached decisions and re-parse open files in every project.
             for (project in ProjectManager.getInstance().openProjects) {
                 if (!project.isDisposed) ComarkProjectDetector.getInstance(project).invalidate()

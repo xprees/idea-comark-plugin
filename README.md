@@ -29,10 +29,14 @@ gives its `since-build`) and verified against the latest IDEA, WebStorm and Ride
 | File | Comark when |
 |---|---|
 | `*.mdc` | always |
-| `*.md` | *Auto* (default): a `package.json` in the file's directory or above depends on `@nuxt/content`, `@nuxtjs/mdc`, `comark`, `@comark/*`, `docus` or `@nuxt/ui-pro`; *All .md files*; or never |
+| `*.md` | *Auto* (default): a `package.json` in the file's directory or above depends on `@nuxt/content`, `@nuxtjs/mdc`, `comark`, `@comark/*`, `docus` or `@nuxt/ui-pro`; *All .md files*; or never. Files matching an exclusion pattern are never Comark |
 
-The setting lives in *Settings › Languages & Frameworks › Comark*. Comark files keep the Markdown file type, so everything the
-Markdown plugin offers (preview, structure view, lists, tables, header anchors, code fence injection, …) still applies.
+The setting lives in *Settings › Languages & Frameworks › Comark*, together with exclusion patterns: globs, one per line, matched
+like `.gitignore` entries against the path relative to the project directory (`CHANGELOG.md` or `legacy` match a name at any level,
+`docs/legacy/**` or `/README.md` match from the project directory, and a matching directory excludes everything in it).
+
+Comark files show the Comark icon. They keep the Markdown file type, so everything the Markdown plugin offers (preview, structure
+view, lists, tables, header anchors, code fence injection, …) still applies.
 
 ## Features
 
@@ -48,7 +52,7 @@ Markdown plugin offers (preview, structure view, lists, tables, header anchors, 
 
 ## Settings
 
-*Settings › Languages & Frameworks › Comark*: which `.md` files are Comark, whether Reformat Code uses the Comark formatter (otherwise
+*Settings › Languages & Frameworks › Comark*: which `.md` files are Comark and which are excluded, whether Reformat Code uses the Comark formatter (otherwise
 the Markdown one), component completion, an optional component metadata URL and its cache time.
 *Settings › Editor › Code Style › Comark*: indentation used by the formatter and Enter.
 

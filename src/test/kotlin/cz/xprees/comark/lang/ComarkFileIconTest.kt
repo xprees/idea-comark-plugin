@@ -14,6 +14,7 @@ class ComarkFileIconTest : BasePlatformTestCase() {
         assertSame(ComarkIcons.FILE, iconOf("PAGE.MDC"))
     }
 
+    /** Outside Nuxt Content / Comark packages (the default mode), `.md` files are plain Markdown. */
     fun testMarkdownFilesKeepTheirIcon() {
         assertNotSame(ComarkIcons.FILE, iconOf("readme.md"))
     }
