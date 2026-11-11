@@ -43,6 +43,7 @@ const { parseMarkdown } = await import('comark')
 const comarkEmoji = (await import('comark/plugins/emoji')).default
 const tocPlugin = (await import('comark/plugins/toc')).default
 const { nuxtContentParse } = await import('./lib/nuxt-content-parse.mjs')
+const { encode, decode } = await import('./lib/encode.mjs')
 
 // Every Studio runtime file the imports above pulled in (the hook stand-ins are not Studio files).
 const STUDIO_FILES = [
@@ -73,6 +74,49 @@ if (changed.length && !args.includes('--allow-other-studio')) {
   console.error(`nuxt-studio files differ from 1.8.0: ${changed.join(', ')} (run npm ci, or pass --allow-other-studio)`)
   process.exit(2)
 }
+// The renderer itself: every comark 0.7.0 and js-yaml 5.5.0 file that `comark/render` and comark's internal/yaml.js load
+// (comark's utils also load `entities`, whose decoder renderMarkdown does not call). sha256 as published on npm.
+const EXPECTED_RENDERER_FILES = {
+  'comark/dist/internal/frontmatter.js': 'fba9759556ce5f5efaa09a5edb7e855543aa11d01a7ad083f32fd8497d17ee7c',
+  'comark/dist/internal/props-validation.js': 'f0c791b45709b1948e98ed5ea4ca79fd16f9392ea952448f62a8c347580696ac',
+  'comark/dist/internal/stringify/attributes.js': '2d5b8f97e673ad4fa35b4605e0bc847c479e627bb5cc62fb0586a24b3cb005f6',
+  'comark/dist/internal/stringify/fence.js': 'a41e7ac658f7d8c9a6862eaf338ecf6076bef62859c2eed5dd929c8344c9d53a',
+  'comark/dist/internal/stringify/handlers/a.js': '5defe964993e141fda2c342ac3d6f8abd784f6df6fef8f79830cd1043b33f625',
+  'comark/dist/internal/stringify/handlers/blockquote.js': '2d9bed6928d0aebb9f001047abf8a11ea51f28b9c859d5c320cd8fe2861a67b8',
+  'comark/dist/internal/stringify/handlers/br.js': 'a16d7be4a2431447d9d2d947d0d0bca7921c13fdbca086d9fafe6637a368d95b',
+  'comark/dist/internal/stringify/handlers/code.js': 'b327cda54c2000bbc82a2862629cbffd028c7c29beda71a49538d87a8e0b0217',
+  'comark/dist/internal/stringify/handlers/comment.js': 'cf6d5ddd797ca891c26a7338f9dc46dd1b2100d0be8e9e1a55b6d9e65dfb0aa7',
+  'comark/dist/internal/stringify/handlers/del.js': 'ab949f9e3505fa8236a9905ae756c0fd7f81e9c2220c7377a0fd8f5f2de4a08a',
+  'comark/dist/internal/stringify/handlers/emphesis.js': '968e5eb4ef3074403fde6ee0e6f5c95b328b1f508c801e68318c2188c5ac1dd5',
+  'comark/dist/internal/stringify/handlers/heading.js': 'be862a5b7ede09ee28479e892abc380ad353679b39f8cdfee571602c02a5474b',
+  'comark/dist/internal/stringify/handlers/hr.js': '0818a7a741120d348ce38424fc1785619bdd9146176cf85742bf2c32b30c5ac6',
+  'comark/dist/internal/stringify/handlers/html.js': '0c64be9ef9ae2da994d5639bf888757b2cc30b9a6191f66516626d4e801bef58',
+  'comark/dist/internal/stringify/handlers/img.js': '6b517e833bc73f0f24788eae07da295269f47fc9bcdd361732e25b4196439da0',
+  'comark/dist/internal/stringify/handlers/index.js': 'c9623a7212335adda9b177b4bf597613e2729827c2f560743a325b6513cb9da7',
+  'comark/dist/internal/stringify/handlers/li.js': '5f9968788763b905584255d216812db317f2c6c953ced32b10472e7d6acd3bd0',
+  'comark/dist/internal/stringify/handlers/math.js': '0341c2132ced56f90148c2efa97075b1a4e69039e66caef04fc70c6c6e8139c8',
+  'comark/dist/internal/stringify/handlers/mdc.js': '83812f7be1c59d349d8168c0dc709716f696f11bd99fb3074e2b10b987f57ab4',
+  'comark/dist/internal/stringify/handlers/mermaid.js': 'f1de42f51d52bc638fc6bdfd0d2247e1db9ac9226e581fd7d834d2bf0da09b1a',
+  'comark/dist/internal/stringify/handlers/ol.js': 'f9b4782cf5ae6205d298425269493f92fd651a636f0b028f579a874c4670268e',
+  'comark/dist/internal/stringify/handlers/p.js': 'dd6299f4518a65a0e5921f664761c6c809fc44f2d9c28ef617b952b9706a28ee',
+  'comark/dist/internal/stringify/handlers/pre.js': 'ef0be33f97e8bc90002af360a9c488149becbaa65ed857d68d79ea7c8f384d53',
+  'comark/dist/internal/stringify/handlers/strong.js': '54f4e7c220cad81c13412e7748a8d42c8df91c7bb4c56cf4ba542d9e86155604',
+  'comark/dist/internal/stringify/handlers/table.js': 'd30f5fe25f490f5178cf71d12ddee21491400b5b2c33c651fe5a6b3a8c62bd34',
+  'comark/dist/internal/stringify/handlers/template.js': 'd03f0e81adb10222b8e9e9a7e4094d8877251975da4be69b5f4e2f8c5a7e32d5',
+  'comark/dist/internal/stringify/handlers/ul.js': 'a0584f6bdd4e7e53bf65f1cd11fb8f63163ae910d8681c65eeebe1baf59c0758',
+  'comark/dist/internal/stringify/state.js': '2bacee2e42e6b97b9e7711068b21083b1a8afd696f0e13be00a2b3c45d7c0b86',
+  'comark/dist/internal/yaml.js': '8a1de28bd480087481d9357690ce3d0b503ad3ef2b23f638b52a50e190be20bb',
+  'comark/dist/render.js': '31488faabc708b5ca8621efc779273c8029d24f7820b7ad9ac1f18d9d8b0fec0',
+  'comark/dist/utils/index.js': '5e3e642fcad6f7a4d38959854df64a4ac23fe5dd00d7eff5e4a31e6d857927db',
+  'js-yaml/dist/js-yaml.mjs': '213470960d9c2ff1d01f9164e5017749bfc383d8a6ebb8683f35c76e8c6d052b',
+}
+const rendererFiles = Object.fromEntries(Object.keys(EXPECTED_RENDERER_FILES)
+  .map((rel) => [rel, sha256(fs.readFileSync(path.join(here, 'node_modules', rel)))]))
+const changedRenderer = Object.keys(rendererFiles).filter((rel) => rendererFiles[rel] !== EXPECTED_RENDERER_FILES[rel])
+if (changedRenderer.length && !args.includes('--allow-other-renderer')) {
+  console.error(`comark/js-yaml files differ from comark 0.7.0 / js-yaml 5.5.0: ${changedRenderer.join(', ')} (run npm ci, or pass --allow-other-renderer)`)
+  process.exit(2)
+}
 const pkgVersion = (name) => JSON.parse(fs.readFileSync(path.join(pkgDir(name), 'package.json'), 'utf8')).version
 const versions = Object.fromEntries(['nuxt-studio', 'comark', 'js-yaml', '@nuxtjs/mdc', 'remark-mdc', 'minimark', 'shiki']
   .map((n) => [n, pkgVersion(n)]))
@@ -92,36 +136,6 @@ const T = async (src, collectionType) => generate.contentFromMarkdownDocument(aw
 const safe = async (fn) => { try { return await fn() } catch (e) { return { error: String((e && e.message) || e).split('\n')[0] } } }
 const isStr = (v) => typeof v === 'string'
 
-// ---- JSON encoding of values JSON cannot hold (YAML dates, .nan/.inf, undefined) ---------------
-function encode(v) {
-  if (v instanceof Date) return { $type: 'date', value: Number.isNaN(v.getTime()) ? 'Invalid Date' : v.toISOString() }
-  if (typeof v === 'number' && !Number.isFinite(v)) return { $type: 'number', value: String(v) }
-  if (typeof v === 'number' && Object.is(v, -0)) return { $type: 'number', value: '-0' }
-  if (v === undefined) return { $type: 'undefined' }
-  if (typeof v === 'bigint') return { $type: 'bigint', value: String(v) }
-  if (Array.isArray(v)) return v.map(encode)
-  if (v && typeof v === 'object') {
-    const o = {}
-    for (const [k, x] of Object.entries(v)) o[k] = encode(x)
-    return o
-  }
-  return v
-}
-function decode(v) {
-  if (Array.isArray(v)) return v.map(decode)
-  if (v && typeof v === 'object') {
-    if (typeof v.$type === 'string' && Object.keys(v).every((k) => k === '$type' || k === 'value')) {
-      if (v.$type === 'date') return new Date(v.value)
-      if (v.$type === 'number') return Number(v.value)
-      if (v.$type === 'undefined') return undefined
-      if (v.$type === 'bigint') return BigInt(v.value)
-    }
-    const o = {}
-    for (const [k, x] of Object.entries(v)) o[k] = decode(x)
-    return o
-  }
-  return v
-}
 // Drops parse positions ($.line, only set by comark when streaming) from a comark node.
 function dropPositions(node) {
   if (!Array.isArray(node)) return node
@@ -141,6 +155,14 @@ async function textTree(src, collectionType) {
   const doc = await textDocument(src, collectionType)
   const t = legacy.unbindComarkTree(legacy.comarkTreeFromLegacyDocument(doc))
   return { frontmatter: t.frontmatter || {}, meta: t.meta || {}, nodes: t.nodes.map(dropPositions) }
+}
+// Comark tree as renderMarkdown receives it on the DB path (contentFromMarkdownDocument, generate.js:121-129), or null when
+// Studio finds no tree (it then writes "\n").
+async function dbTree(src, collectionType) {
+  const t = legacy.comarkTreeFromLegacyDocument(await dbDocument(src, collectionType))
+  if (!t) return null
+  const body = legacy.unbindComarkTree(t)
+  return { frontmatter: body.frontmatter || {}, meta: body.meta || {}, nodes: body.nodes }
 }
 async function renderTree(encodedTree, frontmatter) {
   const body = { frontmatter: decode(frontmatter), meta: decode(encodedTree.meta), nodes: decode(encodedTree.nodes) }
@@ -213,6 +235,15 @@ for (const it of items) {
       if (shikiEffectExamples.length < 5) shikiEffectExamples.push(it.name)
     }
   }
+  const d = await safe(() => dbTree(input, ct))
+  if (d === null || d.error) {
+    r.dbTree = null
+    r.dbFrontmatter = null
+  } else {
+    r.dbTree = { meta: encode(d.meta), nodes: encode(d.nodes) }
+    r.dbFrontmatter = encode(d.frontmatter)
+    r.renderedFromDbTree = await safe(() => renderTree(r.dbTree, r.dbFrontmatter))
+  }
   records.push(r)
 }
 
@@ -228,6 +259,8 @@ const summary = {
   textStable: count((r) => r.textStable),
   textOfDbEqualsDb: count((r) => isStr(r.db) && r.textOfDb === r.db),
   renderedFromTreeEqualsText: count((r) => isStr(r.text) && r.renderedFromTree === r.text),
+  dbTrees: count((r) => r.dbTree !== null),
+  renderedFromDbTreeEqualsDb: count((r) => isStr(r.db) && r.renderedFromDbTree === r.db),
   shikiTreeEffect,
 }
 const output = {
@@ -235,6 +268,7 @@ const output = {
   documentId: DOC_ID,
   versions,
   studioFiles,
+  rendererFiles,
   shiki: {
     themes: { default: 'github-light', dark: 'github-dark', light: 'github-light' },
     note: "Studio passes theme names that comark's shiki plugin has no loader for, so highlighting throws and the plugin's catch branch only sets class=\"shiki\" on <pre> (renderMarkdown drops it). " +

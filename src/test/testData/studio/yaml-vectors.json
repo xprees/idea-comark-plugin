@@ -15733,6 +15733,439 @@
    ],
    "dump": "- a:\n    - []\n    - {}\n    - - []\n    - - {}\n",
    "comark": "- a:\n    - []\n    - {}\n    - - []\n    - - {}\n"
+  },
+  {
+   "value": {
+    "base": {
+     "$type": "shared",
+     "id": 0,
+     "value": {
+      "a": 1
+     }
+    },
+    "derived": {
+     "<<": {
+      "$type": "ref",
+      "id": 0
+     },
+     "b": 2
+    }
+   },
+   "dump": "base: &ref_0\n  a: 1\nderived:\n  '<<': *ref_0\n  b: 2\n",
+   "comark": "base: &ref_0\n  a: 1\nderived:\n  '<<': *ref_0\n  b: 2\n"
+  },
+  {
+   "value": {
+    "first": {
+     "$type": "shared",
+     "id": 0,
+     "value": [
+      "x",
+      "y"
+     ]
+    },
+    "second": {
+     "$type": "ref",
+     "id": 0
+    },
+    "third": {
+     "$type": "ref",
+     "id": 0
+    }
+   },
+   "dump": "first: &ref_0\n  - x\n  - 'y'\nsecond: *ref_0\nthird: *ref_0\n",
+   "comark": "first: &ref_0\n  - x\n  - 'y'\nsecond: *ref_0\nthird: *ref_0\n"
+  },
+  {
+   "value": [
+    {
+     "$type": "shared",
+     "id": 0,
+     "value": {
+      "a": 1
+     }
+    },
+    {
+     "$type": "ref",
+     "id": 0
+    },
+    {
+     "$type": "shared",
+     "id": 1,
+     "value": [
+      "x",
+      "y"
+     ]
+    },
+    {
+     "$type": "ref",
+     "id": 1
+    }
+   ],
+   "dump": "- &ref_0\n  a: 1\n- *ref_0\n- &ref_1\n  - x\n  - 'y'\n- *ref_1\n",
+   "comark": "- &ref_0\n  a: 1\n- *ref_0\n- &ref_1\n  - x\n  - 'y'\n- *ref_1\n"
+  },
+  {
+   "value": [
+    {
+     "$type": "shared",
+     "id": 0,
+     "value": [
+      "x",
+      "y"
+     ]
+    },
+    {
+     "$type": "shared",
+     "id": 1,
+     "value": {
+      "a": 1
+     }
+    },
+    {
+     "$type": "ref",
+     "id": 0
+    },
+    {
+     "$type": "ref",
+     "id": 1
+    }
+   ],
+   "dump": "- &ref_0\n  - x\n  - 'y'\n- &ref_1\n  a: 1\n- *ref_0\n- *ref_1\n",
+   "comark": "- &ref_0\n  - x\n  - 'y'\n- &ref_1\n  a: 1\n- *ref_0\n- *ref_1\n"
+  },
+  {
+   "value": {
+    "e": {
+     "$type": "shared",
+     "id": 0,
+     "value": []
+    },
+    "again": {
+     "$type": "ref",
+     "id": 0
+    },
+    "eo": {
+     "$type": "shared",
+     "id": 1,
+     "value": {}
+    },
+    "eo2": {
+     "$type": "ref",
+     "id": 1
+    }
+   },
+   "dump": "e: &ref_0 []\nagain: *ref_0\neo: &ref_1 {}\neo2: *ref_1\n",
+   "comark": "e: &ref_0 []\nagain: *ref_0\neo: &ref_1 {}\neo2: *ref_1\n"
+  },
+  {
+   "value": [
+    {
+     "$type": "shared",
+     "id": 0,
+     "value": []
+    },
+    {
+     "$type": "ref",
+     "id": 0
+    },
+    {
+     "$type": "shared",
+     "id": 1,
+     "value": {}
+    },
+    {
+     "$type": "ref",
+     "id": 1
+    }
+   ],
+   "dump": "- &ref_0 []\n- *ref_0\n- &ref_1 {}\n- *ref_1\n",
+   "comark": "- &ref_0 []\n- *ref_0\n- &ref_1 {}\n- *ref_1\n"
+  },
+  {
+   "value": {
+    "deep": {
+     "inner": {
+      "list": {
+       "$type": "shared",
+       "id": 0,
+       "value": [
+        "x",
+        "y"
+       ]
+      }
+     }
+    },
+    "list": {
+     "$type": "ref",
+     "id": 0
+    }
+   },
+   "dump": "deep:\n  inner:\n    list: &ref_0\n      - x\n      - 'y'\nlist: *ref_0\n",
+   "comark": "deep:\n  inner:\n    list: &ref_0\n      - x\n      - 'y'\nlist: *ref_0\n"
+  },
+  {
+   "value": {
+    "list": {
+     "$type": "shared",
+     "id": 0,
+     "value": [
+      "x",
+      "y"
+     ]
+    },
+    "deep": {
+     "inner": {
+      "list": {
+       "$type": "ref",
+       "id": 0
+      }
+     }
+    }
+   },
+   "dump": "list: &ref_0\n  - x\n  - 'y'\ndeep:\n  inner:\n    list: *ref_0\n",
+   "comark": "list: &ref_0\n  - x\n  - 'y'\ndeep:\n  inner:\n    list: *ref_0\n"
+  },
+  {
+   "value": {
+    "a": [
+     {
+      "$type": "shared",
+      "id": 0,
+      "value": {
+       "a": 1
+      }
+     }
+    ],
+    "b": [
+     {
+      "$type": "ref",
+      "id": 0
+     }
+    ]
+   },
+   "dump": "a:\n  - &ref_0\n    a: 1\nb:\n  - *ref_0\n",
+   "comark": "a:\n  - &ref_0\n    a: 1\nb:\n  - *ref_0\n"
+  },
+  {
+   "value": {
+    "anchors": {
+     "base": {
+      "$type": "shared",
+      "id": 0,
+      "value": {
+       "a": 1
+      }
+     },
+     "derived": {
+      "<<": {
+       "$type": "ref",
+       "id": 0
+      },
+      "b": 2
+     }
+    },
+    "other": {
+     "x": {
+      "$type": "shared",
+      "id": 1,
+      "value": [
+       "x",
+       "y"
+      ]
+     },
+     "y": {
+      "z": {
+       "$type": "ref",
+       "id": 1
+      }
+     }
+    }
+   },
+   "dump": "anchors:\n  base: &ref_0\n    a: 1\n  derived:\n    '<<': *ref_0\n    b: 2\nother:\n  x: &ref_1\n    - x\n    - 'y'\n  'y':\n    z: *ref_1\n",
+   "comark": "anchors:\n  base: &ref_0\n    a: 1\n  derived:\n    '<<': *ref_0\n    b: 2\nother:\n  x: &ref_1\n    - x\n    - 'y'\n  'y':\n    z: *ref_1\n"
+  },
+  {
+   "value": [
+    [
+     {
+      "$type": "shared",
+      "id": 0,
+      "value": [
+       "x",
+       "y"
+      ]
+     },
+     {
+      "$type": "ref",
+      "id": 0
+     }
+    ],
+    {
+     "m": {
+      "$type": "ref",
+      "id": 0
+     }
+    }
+   ],
+   "dump": "- - &ref_0\n    - x\n    - 'y'\n  - *ref_0\n- m: *ref_0\n",
+   "comark": "- - &ref_0\n    - x\n    - 'y'\n  - *ref_0\n- m: *ref_0\n"
+  },
+  {
+   "value": {
+    "k": {
+     ":key": {
+      "$type": "shared",
+      "id": 0,
+      "value": {
+       "a": 1
+      }
+     }
+    },
+    ":other": {
+     "$type": "ref",
+     "id": 0
+    }
+   },
+   "dump": "k:\n  :key: &ref_0\n    a: 1\n:other: *ref_0\n",
+   "comark": "k:\n  :key: &ref_0\n    a: 1\n:other: *ref_0\n"
+  },
+  {
+   "value": {
+    "$type": "shared",
+    "id": 0,
+    "value": {
+     "name": "self",
+     "self": {
+      "$type": "ref",
+      "id": 0
+     }
+    }
+   },
+   "dump": "&ref_0\nname: self\nself: *ref_0\n",
+   "comark": "&ref_0\nname: self\nself: *ref_0\n"
+  },
+  {
+   "value": {
+    "$type": "shared",
+    "id": 0,
+    "value": [
+     "a",
+     {
+      "$type": "ref",
+      "id": 0
+     }
+    ]
+   },
+   "dump": "&ref_0\n- a\n- *ref_0\n",
+   "comark": "&ref_0\n- a\n- *ref_0\n"
+  },
+  {
+   "value": {
+    "$type": "shared",
+    "id": 0,
+    "value": {
+     "k": [
+      {
+       "back": {
+        "$type": "ref",
+        "id": 0
+       }
+      }
+     ]
+    }
+   },
+   "dump": "&ref_0\nk:\n  - back: *ref_0\n",
+   "comark": "&ref_0\nk:\n  - back: *ref_0\n"
+  },
+  {
+   "value": {
+    "wrap": {
+     "$type": "shared",
+     "id": 0,
+     "value": {
+      "name": "self",
+      "self": {
+       "$type": "ref",
+       "id": 0
+      }
+     }
+    }
+   },
+   "dump": "wrap: &ref_0\n  name: self\n  self: *ref_0\n",
+   "comark": "wrap: &ref_0\n  name: self\n  self: *ref_0\n"
+  },
+  {
+   "value": [
+    {
+     "$type": "shared",
+     "id": 0,
+     "value": [
+      "a",
+      {
+       "$type": "ref",
+       "id": 0
+      }
+     ]
+    },
+    {
+     "$type": "ref",
+     "id": 0
+    }
+   ],
+   "dump": "- &ref_0\n  - a\n  - *ref_0\n- *ref_0\n",
+   "comark": "- &ref_0\n  - a\n  - *ref_0\n- *ref_0\n"
+  },
+  {
+   "value": {
+    "seq": [
+     {
+      "$type": "shared",
+      "id": 0,
+      "value": {
+       "a": 1
+      }
+     },
+     {
+      "$type": "shared",
+      "id": 1,
+      "value": [
+       "x",
+       "y"
+      ]
+     },
+     {
+      "$type": "shared",
+      "id": 2,
+      "value": []
+     },
+     {
+      "$type": "shared",
+      "id": 3,
+      "value": {}
+     }
+    ],
+    "again": [
+     {
+      "$type": "ref",
+      "id": 3
+     },
+     {
+      "$type": "ref",
+      "id": 2
+     },
+     {
+      "$type": "ref",
+      "id": 1
+     },
+     {
+      "$type": "ref",
+      "id": 0
+     }
+    ]
+   },
+   "dump": "seq:\n  - &ref_3\n    a: 1\n  - &ref_2\n    - x\n    - 'y'\n  - &ref_1 []\n  - &ref_0 {}\nagain:\n  - *ref_0\n  - *ref_1\n  - *ref_2\n  - *ref_3\n",
+   "comark": "seq:\n  - &ref_3\n    a: 1\n  - &ref_2\n    - x\n    - 'y'\n  - &ref_1 []\n  - &ref_0 {}\nagain:\n  - *ref_0\n  - *ref_1\n  - *ref_2\n  - *ref_3\n"
   }
  ]
 }

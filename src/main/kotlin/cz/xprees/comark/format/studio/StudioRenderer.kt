@@ -238,7 +238,8 @@ object StudioRenderer {
 
     private fun textContent(node: StudioNode): String = when (node) {
         is StudioText -> node.text
-        is StudioComment -> node.text ?: "undefined"
+        // utils `textContent` concatenates the comment's items after the attributes: nothing when it has no text.
+        is StudioComment -> node.text ?: ""
         is StudioElement -> node.children.joinToString("") { textContent(it) }
     }
 
@@ -430,18 +431,31 @@ object StudioRenderer {
         return fenceBlock + BLOCK_SEPARATOR
     }
 
+    /**
+     * `formatHighlights(highlights)` from `handlers/pre.js`, with JavaScript semantics for any value:
+     * `[...highlights].sort((a, b) => a - b)`, ranges merged where `sorted[i] === end + 1`, and every bound written with
+     * `String()`. A string is spread into its UTF-16 units. That matters on Studio's database path, where
+     * `propsMDCToComark` (legacy.js) turns `highlights: [2, 4, 5]` into the string `"2 4 5"`, so Studio writes `{ , ,2,4,5}`.
+     *
+     * comark throws for a truthy value that is neither iterable nor has a `length`: a number, an object or a boolean. The
+     * port returns `""` there (the fence then ends in ` {}`), which no tree Studio produces reaches.
+     */
     private fun formatHighlights(highlights: Any?): String {
-        val list = (highlights as? List<*>)?.map { StudioJs.toNumber(it) } ?: return ""
-        if (list.isEmpty()) return ""
-        val sorted = list.sorted()
+        val items: List<Any?> = when (highlights) {
+            is List<*> -> highlights
+            is String -> highlights.map { it.toString() }
+            else -> return ""
+        }
+        if (items.isEmpty()) return ""
+        val sorted = jsSortByDifference(items)
         val ranges = ArrayList<String>()
         var start = sorted[0]
         var end = sorted[0]
         for (i in 1..sorted.size) {
-            if (i < sorted.size && sorted[i] == end + 1) {
+            if (i < sorted.size && strictEquals(sorted[i], plusOne(end))) {
                 end = sorted[i]
             } else {
-                ranges += if (start == end) StudioJs.numberToString(start) else StudioJs.numberToString(start) + "-" + StudioJs.numberToString(end)
+                ranges += if (strictEquals(start, end)) StudioJs.str(start) else StudioJs.str(start) + "-" + StudioJs.str(end)
                 if (i < sorted.size) {
                     start = sorted[i]
                     end = sorted[i]
@@ -449,6 +463,39 @@ object StudioRenderer {
             }
         }
         return ranges.joinToString(",")
+    }
+
+    /**
+     * `Array.prototype.sort((a, b) => a - b)` as V8 runs it: `undefined` items go last without being compared, and the
+     * rest are sorted stably with a comparator whose `NaN` result counts as `0`. V8 and the JDK both use TimSort (binary
+     * insertion sort for short arrays), so they compare the same pairs in the same order.
+     */
+    private fun jsSortByDifference(items: List<Any?>): List<Any?> {
+        val defined = items.filter { it !== JsUndefined }
+        val undefinedCount = items.size - defined.size
+        val sorted = defined.sortedWith { a, b ->
+            val d = StudioJs.toNumber(a) - StudioJs.toNumber(b)
+            when {
+                d.isNaN() || d == 0.0 -> 0
+                d < 0 -> -1
+                else -> 1
+            }
+        }
+        return sorted + List(undefinedCount) { JsUndefined }
+    }
+
+    /** `v + 1`: string concatenation when `v` is (or converts to) a string, numeric addition otherwise. */
+    private fun plusOne(v: Any?): Any = when (v) {
+        is String, is List<*>, is Map<*, *>, is JsDate -> StudioJs.str(v) + "1"
+        else -> StudioJs.toNumber(v) + 1.0
+    }
+
+    /** `a === b` (`NaN` is not equal to itself; objects compare by identity). */
+    private fun strictEquals(a: Any?, b: Any?): Boolean = when {
+        a is Number && b is Number -> a.toDouble() == b.toDouble()
+        a is String && b is String -> a == b
+        a is Boolean && b is Boolean -> a == b
+        else -> a === b
     }
 
     private fun heading(node: StudioElement, state: State): String {

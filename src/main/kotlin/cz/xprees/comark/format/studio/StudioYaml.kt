@@ -4,6 +4,7 @@ import cz.xprees.comark.format.JsText
 import java.math.BigInteger
 import java.time.DateTimeException
 import java.time.LocalDate
+import java.util.IdentityHashMap
 import java.util.Locale
 
 /**
@@ -11,8 +12,9 @@ import java.util.Locale
  * (`DUMP_SCHEMA`, `quoteStyle: 'single'`, `seqInlineFirst`, no `flowLevel`, no key sorting, `noRefs: false`), and of
  * comark 0.7.0's `stringifyYaml` (`internal/yaml.js`), which runs that dump and then unquotes keys of the form `':key':`.
  *
- * Values are the JavaScript values of [StudioNode]. Repeated references to one object (js-yaml's `&ref_0` anchors) cannot
- * occur in this model, so they are not produced.
+ * Values are the JavaScript values of [StudioNode]. Like js-yaml, an array or object instance reached a second time (a YAML
+ * alias, which loads as one shared JavaScript object) is written as an alias: the first occurrence gets `&ref_N`, numbered
+ * in the order the repeats are met, and every later one `*ref_N`. Identity is [java.util.IdentityHashMap] identity.
  */
 object StudioYaml {
     /** comark's `stringifyYaml(data)`. */
@@ -37,7 +39,7 @@ object StudioYaml {
 
     /** js-yaml `dump(data, { indent: 2, lineWidth: -1 })`. */
     fun dump(data: Any?): String {
-        val root = build(data) ?: return ""
+        val root = Builder().build(data) ?: return ""
         val state = Presenter()
         var result = state.writeNode(0, root, null, block = true, compact = true, isKey = false) + "\n"
         if (state.openEnded) result += "...\n"
@@ -56,24 +58,55 @@ object StudioYaml {
 
     private sealed class Node
     private class Scalar(val tag: String, val value: String) : Node()
-    private class Sequence(val items: List<Node>) : Node()
-    private class Mapping(val items: List<Pair<Node, Node>>) : Node()
 
-    /** `build`; `null` is js-yaml's `INVALID` (an `undefined`, which is skipped). */
-    private fun build(v: Any?): Node? = when (v) {
-        null -> Scalar(TAG_NULL, "null")
-        JsUndefined -> null
-        is Boolean -> Scalar(TAG_BOOL, if (v) "true" else "false")
-        is Number -> number(v.toDouble())
-        is String -> Scalar(TAG_STR, v)
-        is JsDate -> Scalar(TAG_TIMESTAMP, v.iso ?: throw IllegalArgumentException("Invalid time value"))
-        is List<*> -> Sequence(v.map { build(it) ?: Scalar(TAG_NULL, "null") })
-        is Map<*, *> -> {
-            @Suppress("UNCHECKED_CAST")
-            val m = v as Map<String, Any?>
-            Mapping(StudioJs.entries(m).mapNotNull { (k, x) -> build(x)?.let { Scalar(TAG_STR, k) to it } })
+    /** A sequence or mapping; [anchor] is set once the same object is met again. */
+    private sealed class Collection : Node() {
+        var anchor: String? = null
+    }
+    private class Sequence(val items: MutableList<Node> = ArrayList()) : Collection()
+    private class Mapping(val items: MutableList<Pair<Node, Node>> = ArrayList()) : Collection()
+    private class Alias(val target: Collection) : Node()
+
+    private val EMPTY_LIST: List<Any?> = emptyList()
+    private val EMPTY_MAP: Map<String, Any?> = emptyMap()
+
+    /** js-yaml's `build` with `noRefs: false`: the collections met so far, by identity, and the anchor counter. */
+    private class Builder {
+        private val refs = IdentityHashMap<Any, Collection>()
+        private var refCounter = 0
+
+        /** `null` is js-yaml's `INVALID` (an `undefined`, which is skipped). */
+        fun build(v: Any?): Node? {
+            // Kotlin's emptyList()/emptyMap() are singletons, which would alias every empty collection built with them; a
+            // JavaScript array or object shared through a YAML alias is a fresh instance on the Kotlin side.
+            if ((v is List<*> || v is Map<*, *>) && v !== EMPTY_LIST && v !== EMPTY_MAP) {
+                refs[v]?.let { existing ->
+                    if (existing.anchor == null) existing.anchor = "ref_${refCounter++}"
+                    return Alias(existing)
+                }
+            }
+            return when (v) {
+                null -> Scalar(TAG_NULL, "null")
+                JsUndefined -> null
+                is Boolean -> Scalar(TAG_BOOL, if (v) "true" else "false")
+                is Number -> number(v.toDouble())
+                is String -> Scalar(TAG_STR, v)
+                is JsDate -> Scalar(TAG_TIMESTAMP, v.iso ?: throw IllegalArgumentException("Invalid time value"))
+                is List<*> -> Sequence().also { node ->
+                    if (v !== EMPTY_LIST) refs[v] = node
+                    for (item in v) node.items += build(item) ?: Scalar(TAG_NULL, "null")
+                }
+                is Map<*, *> -> Mapping().also { node ->
+                    if (v !== EMPTY_MAP) refs[v] = node
+                    @Suppress("UNCHECKED_CAST")
+                    for ((k, x) in StudioJs.entries(v as Map<String, Any?>)) {
+                        val value = build(x) ?: continue
+                        node.items += Scalar(TAG_STR, k) to value
+                    }
+                }
+                else -> throw IllegalArgumentException("unacceptable kind of an object to dump ${v::class.java.name}")
+            }
         }
-        else -> throw IllegalArgumentException("unacceptable kind of an object to dump ${v::class.java.name}")
     }
 
     private fun number(d: Double): Scalar {
@@ -513,17 +546,29 @@ object StudioYaml {
 
         fun writeNode(level: Int, node: Node, parent: Node?, block: Boolean, compact: Boolean, isKey: Boolean): String {
             return when (node) {
-                is Mapping -> if (block && node.items.isNotEmpty()) {
-                    writeBlockMapping(level, node, compact)
-                } else {
+                is Alias -> {
                     openEnded = false
-                    writeFlowMapping(level, node)
+                    "*${node.target.anchor}"
                 }
-                is Sequence -> if (block && node.items.isNotEmpty()) {
-                    writeBlockSequence(level, node, compact)
-                } else {
-                    openEnded = false
-                    writeFlowSequence(level, node)
+                is Collection -> {
+                    val anchor = node.anchor
+                    // cannotBeCompact: an anchored collection starts on its own line
+                    val c = compact && anchor == null
+                    val body = when (node) {
+                        is Mapping -> if (block && node.items.isNotEmpty()) {
+                            writeBlockMapping(level, node, c)
+                        } else {
+                            openEnded = false
+                            writeFlowMapping(level, node)
+                        }
+                        is Sequence -> if (block && node.items.isNotEmpty()) {
+                            writeBlockSequence(level, node, c)
+                        } else {
+                            openEnded = false
+                            writeFlowSequence(level, node)
+                        }
+                    }
+                    if (anchor == null) body else "&$anchor" + (if (body == "" || body[0] == '\n') "" else " ") + body
                 }
                 is Scalar -> {
                     val layout = Layout(

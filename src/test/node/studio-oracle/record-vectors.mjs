@@ -10,7 +10,11 @@
 // - render-vectors.json: comark 0.7.0 `renderMarkdown(tree, { blockAttributesStyle: 'frontmatter' })` for hand-made trees
 //   with attribute values the parsed corpus does not produce (numbers, booleans, null, objects, bindings, ...).
 //
-// Values JSON cannot hold are encoded like in oracle.json: {"$type": "date" | "number" | "undefined", "value": ...}.
+// - render-random-vectors.json: the same for trees from a seeded random generator (fixed seed, so re-recording gives the
+//   same trees), one vector per line.
+//
+// Values are encoded like in oracle.json (lib/encode.mjs): {"$type": "date" | "number" | "undefined", "value": ...} for
+// values JSON cannot hold, and {"$type": "shared" | "ref", "id": ...} for an array or object reached more than once.
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -21,19 +25,7 @@ const { dump } = await import('js-yaml')
 const { stringifyYaml } = await import(pathToFileURL(path.join(here, 'node_modules/comark/dist/internal/yaml.js')).href)
 const { renderMarkdown } = await import('comark/render')
 
-function encode(v) {
-  if (v instanceof Date) return { $type: 'date', value: Number.isNaN(v.getTime()) ? 'Invalid Date' : v.toISOString() }
-  if (typeof v === 'number' && !Number.isFinite(v)) return { $type: 'number', value: String(v) }
-  if (typeof v === 'number' && Object.is(v, -0)) return { $type: 'number', value: '-0' }
-  if (v === undefined) return { $type: 'undefined' }
-  if (Array.isArray(v)) return v.map(encode)
-  if (v && typeof v === 'object') {
-    const o = {}
-    for (const [k, x] of Object.entries(v)) o[k] = encode(x)
-    return o
-  }
-  return v
-}
+const { encode } = await import('./lib/encode.mjs')
 
 // ---- YAML ------------------------------------------------------------------------------------------------------------
 const strings = [
@@ -82,6 +74,29 @@ const collections = [
   [{ a: 'x\ny' }, ['p\nq']], { s: ' leading', t: 'trailing ', both: ' both ' }, { a: [[], {}, [[]], [{}]] },
 ]
 
+// Shared objects and arrays (what YAML aliases load as): js-yaml writes &ref_N at the first occurrence, numbered in the
+// order the repeats are met, and *ref_N at the others. Cycles too.
+const shared = (() => {
+  const o = { a: 1 }
+  const l = ['x', 'y']
+  const e = []
+  const eo = {}
+  const deep = { inner: { list: l } }
+  const cyc = { name: 'self' }
+  cyc.self = cyc
+  const cycList = ['a']
+  cycList.push(cycList)
+  const cycDeep = { k: [] }
+  cycDeep.k.push({ back: cycDeep })
+  return [
+    { base: o, derived: { '<<': o, b: 2 } }, { first: l, second: l, third: l }, [o, o, l, l], [l, o, l, o],
+    { e, again: e, eo, eo2: eo }, [e, e, eo, eo], { deep, list: l }, { list: l, deep }, { a: [o], b: [o] },
+    { anchors: { base: o, derived: { '<<': o, b: 2 } }, other: { x: l, y: { z: l } } }, [[l, l], { m: l }],
+    { k: { ':key': o }, ':other': o }, cyc, cycList, cycDeep, { wrap: cyc }, [cycList, cycList],
+    { seq: [o, l, e, eo], again: [eo, e, l, o] },
+  ]
+})()
+
 const values = []
 for (const s of strings) {
   values.push(s, { k: s }, [s], { a: { b: [s] } }, { [s]: 1 }, [[s]], [{ k: s }])
@@ -89,6 +104,7 @@ for (const s of strings) {
 for (const n of [...numbers, ...others]) values.push(n, { k: n }, [n])
 values.push(...collections, undefined, { a: undefined })
 for (const c of collections) values.push({ k: c }, [c])
+values.push(...shared)
 
 const yamlVectors = []
 for (const value of values) {
@@ -136,10 +152,130 @@ const trees = [
   { nodes: [['ul', {}, ['li', {}, ['card', { x: 1 }, ['p', {}, 'in list']]]]] },
   { nodes: [['comment', {}, 'tag named comment'], ['html', {}, 'tag named html'], ['mdc', {}, 'tag named mdc']] },
 ]
+// Renderer branches the parsed corpus does not reach, and the tree shapes of Studio's database path.
+const sharedProps = { k: 1 }
+const sharedList = [1, 2]
+trees.push(
+  // database path: propsMDCToComark (legacy.js) joins arrays of primitives with spaces, so highlights arrive as a string
+  { frontmatter: { title: 'T' }, nodes: [['h1', { id: 't' }, 'T'], ['pre', { filename: 'a.js', highlights: '1 2', language: 'js', meta: undefined, style: undefined }, ['code', { __ignoreMap: '' }, 'const a = 1\nconst b = 2']],
+    ['card', {}, ['pre', { highlights: '3', language: 'ts' }, ['code', { __ignoreMap: '' }, 'x']]]] },
+  { nodes: [['pre', { highlights: '10', language: 'ts' }, ['code', {}, 'a']], ['pre', { highlights: '2 4 5 10 12', language: 'vue' }, ['code', {}, 'b']],
+    ['pre', { highlights: 'b a 1', language: 'x' }, ['code', {}, 'c']], ['pre', { highlights: ' ', language: 'y' }, ['code', {}, 'd']]] },
+  // highlights arrays with values that are not numbers
+  { nodes: [['pre', { highlights: [3, null, 1] }, ['code', {}, 'a']], ['pre', { highlights: [true, 2] }, ['code', {}, 'b']],
+    ['pre', { highlights: ['2', '3', 1] }, ['code', {}, 'c']], ['pre', { highlights: ['1', '11', '12'] }, ['code', {}, 'd']],
+    ['pre', { highlights: [2, undefined, 1, 'x', 3] }, ['code', {}, 'e']], ['pre', { highlights: [NaN, 1, 2] }, ['code', {}, 'f']],
+    ['pre', { highlights: [1, 1, 2, 2, 4] }, ['code', {}, 'g']], ['pre', { highlights: [-1, 0, 1.5, 2.5] }, ['code', {}, 'h']],
+    ['pre', { highlights: [[1], [2], {}] }, ['code', {}, 'i']], ['pre', { highlights: [false, 0, 1] }, ['code', {}, 'j']]] },
+  // comments without text inside code, pre and math (textContent ignores them)
+  { nodes: [['p', {}, ['code', {}, 'a', [null, {}], 'b']], ['pre', { language: 'js' }, ['code', {}, 'x', [null, {}], 'y']],
+    ['p', {}, ['math', {}, 'x', [null, {}, 'c']]], [null, {}]] },
+  // escaping in text: processing instructions, closing tags, '<' before a non-tag character, ':' at a line start
+  { nodes: [['p', {}, 'x <?php y> z'], ['p', {}, 'x </b> z'], ['p', {}, 'a < b and a <1 and <-'], ['p', {}, 'a\n:b'], ['p', {}, ':start'],
+    ['p', {}, 'a <!-- c --> b <![CDATA[x]]> <!x>']] },
+  // nested lists with attributes, li className arrays, li attributes
+  { nodes: [['ul', {}, ['li', {}, 'x', ['ul', { class: 'inner' }, ['li', {}, 'y']]], ['li', {}, 'z', ['ol', { id: 'o' }, ['li', {}, 'w']]]]] },
+  { nodes: [['ol', { start: 4 }, ['li', {}, 'a', ['ol', {}, ['li', {}, 'b', ['ul', { class: 'deep' }, ['li', {}, 'c']]]]]]] },
+  { nodes: [['ul', {}, ['li', { className: ['task-list-item', 'x'] }, ['input', { checked: true }], ' done'], ['li', { className: ['a'] }, 'b'],
+    ['li', { id: 'i', class: 'c' }, 'with attrs'], ['li', { className: 'task-list-item' }, ['input', {}], ' open']]] },
+  // blockquote with attributes and block children
+  { nodes: [['blockquote', { class: 'q' }, ['p', {}, 'one'], ['p', {}, 'two']], ['blockquote', { id: 'b' }, ['ul', {}, ['li', {}, 'x']]],
+    ['blockquote', {}, ['p', {}, 'plain'], ['pre', {}, ['code', {}, 'c']]]] },
+  // tables: header from a bare tr of th cells, string cells, non-row children, an empty table, a table with attributes
+  { nodes: [['table', {}, ['tr', {}, ['th', {}, 'H1'], ['th', {}, 'H2']], ['tr', {}, ['td', {}, 'a'], ['td', {}, 'b']]]] },
+  { nodes: [['table', {}, ['thead', {}, 'text', ['tr', {}, 'cell text', ['th', {}, 'H']], ['p', {}, 'not a row']], ['tbody', {}, ['tr', {}, ['td', {}, 'x']], 'loose']]] },
+  { nodes: [['table', {}]], frontmatter: {} },
+  { nodes: [['table', {}, 'just text', ['caption', {}, 'cap']]] },
+  { nodes: [['table', { class: 't', id: 'x' }, ['thead', {}, ['tr', {}, ['th', {}, 'A']]], ['tbody', {}, ['tr', {}, ['td', {}, '1']]]]] },
+  { nodes: [['card', {}, ['table', {}, ['thead', {}, ['tr', {}, ['th', {}, 'A']]], ['tbody', {}, ['tr', {}, ['td', {}, ['strong', {}, 'b'], ' c']]]]]] },
+  // templates without a parent template group, and at the root
+  { nodes: [['template', { name: 'default' }, ['p', {}, 'root default']], ['template', { name: 'other', x: 'y' }, 'text']] },
+  // html elements: inline tags with only text, separators in html context, object and array attribute values
+  { nodes: [['p', {}, 'a ', ['b', { $: { html: 1, block: 0 } }, 'bold'], ' ', ['i', { $: { html: 1, block: 0 }, class: 'c' }, 'it']]] },
+  { nodes: [['div', { $: { html: 1, block: 1 } }, ['p', {}, 'one'], ['p', {}, 'two'], ['span', { $: { html: 1, block: 0 } }, 'x']]] },
+  { nodes: [['div', { $: { html: 1, block: 1 }, data: { a: 1 }, list: ['x', 'y'], ':bound': 'v' }, 'text']] },
+  { nodes: [['section', { $: { html: 1, block: 1 } }, ['div', { $: { html: 1, block: 1 } }, 'inner'], 'tail']] },
+  // fences: tilde runs, backtick runs, mermaid without content, pre classes starting with shj
+  { nodes: [['pre', { language: 'md' }, ['code', {}, '~~~\nx\n~~~~']], ['pre', {}, ['code', {}, '```\n````\n']], ['pre', { class: 'shj-lang-js user' }, ['code', {}, 'y']],
+    ['mermaid', {}], ['mermaid', { content: '~~~' }]] },
+  // YAML props blocks whose content needs a longer fence, shared props objects (YAML aliases)
+  { nodes: [['card', { a: '---', b: 'x\n---\ny', c: 1, d: 2 }, ['p', {}, 'body']]] },
+  { nodes: [['card', { obj: { text: 'a\n---\nb' } }, ['p', {}, 'body']]] },
+  { nodes: [['card', { a: sharedProps, b: sharedProps, items: sharedList, more: sharedList }, ['p', {}, 'body']]] },
+  { frontmatter: { defaults: sharedProps, page: { '<<': sharedProps }, list: [sharedList, sharedList] }, nodes: [['p', {}, 'x']] },
+  // a tag named like a JavaScript prototype key, spans and inline components
+  { nodes: [['p', {}, ['toString', {}, 'x'], ' ', ['constructor', { a: 'b' }]], ['hasOwnProperty', {}, ['p', {}, 'y']]] },
+  { nodes: [['a', { href: '/x' }, ['span', {}, 'in link']], ['p', {}, ['span', { class: 'c' }, 'span'], ' ', ['badge', { n: { o: 1 } }, 'obj']]] },
+)
+
 const renderVectors = []
 for (const tree of trees) {
   const doc = { frontmatter: tree.frontmatter || {}, meta: {}, nodes: tree.nodes }
-  renderVectors.push({ tree: encode(doc), markdown: await renderMarkdown(doc, { blockAttributesStyle: 'frontmatter' }) })
+  const encoded = { frontmatter: encode(doc.frontmatter), meta: encode(doc.meta), nodes: encode(doc.nodes) }
+  renderVectors.push({ tree: encoded, markdown: await renderMarkdown(doc, { blockAttributesStyle: 'frontmatter' }) })
+}
+
+// ---- seeded random trees ---------------------------------------------------------------------------------------------
+let seed = 20261111
+const rnd = () => {
+  seed = (Math.imul(seed, 1103515245) + 12345) >>> 0
+  seed ^= seed >>> 13
+  seed = Math.imul(seed, 0x5bd1e995) >>> 0
+  seed ^= seed >>> 15
+  return (seed >>> 0) / 4294967296
+}
+const pick = (a) => a[Math.floor(rnd() * a.length)]
+const rTexts = ['a', 'b c', ' x ', '*', '_a_', 'a_b', '<b>', '<a', 'x>', '<?x', '</b>', '&amp;', '& b', '&#123;', ':x', 'a:b', '{.c}', '{x',
+  '#', '# h', '1. x', '- x', '+ ', '>', '=', '===', ':', '\n', 'a\nb', 'a\n# b', 'a\n- b', 'a\n:b', '`', '``', '|', 'a|b', '[', ']', '\\',
+  '~', '~~~', '```', '$', '\t', '  ', 'x  ', ' ', 'é', '😀', '---', '***', 'a\n\nb', '1)', '9999999999.']
+const rTags = ['p', 'p', 'p', 'strong', 'em', 'del', 'code', 'a', 'span', 'ul', 'ul', 'ol', 'ol', 'li', 'li', 'li', 'blockquote', 'pre', 'h2',
+  'hr', 'br', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'template', 'math', 'mermaid', 'alert', 'card', 'card', 'badge', 'div',
+  'html', 'mdc', 'comment', 'toString', 'input']
+const rValues = ['x', '', 'a b', 'a"b', "a'b", 'a"\'b', 'true', 'false', 1, 0, 2.5, true, false, null, { k: 'v' }, ['a', 'b'], '{"a":1}', '[1]',
+  '3', 'default', 'task-list-item', 'language-js', 'text-align:center', 'shj-x', 'a\n---\nb']
+const rKeys = ['class', 'id', 'href', 'src', 'alt', 'title', ':bind', ':checked', 'checked', 'name', 'start', 'as', 'language', 'filename',
+  'meta', 'highlights', 'code', 'style', 'content', 'k', '1', 'className', 'onclick', 'data-x']
+const rHighlights = [[1, 2, 3, 5], [3, 1], [], ['2', '3'], '1 2', '10', '2 4 5', [null, 1], [true, 2], '']
+function rAttrs() {
+  const o = {}
+  const n = rnd() < 0.6 ? 0 : Math.floor(rnd() * 5)
+  for (let i = 0; i < n; i++) {
+    const k = pick(rKeys)
+    o[k] = structuredClone(k === 'highlights' ? pick(rHighlights) : pick(rValues))
+  }
+  if (rnd() < 0.12) o.$ = { html: 1, block: pick([0, 1]) }
+  return o
+}
+function rNode(depth) {
+  if (depth > 5 || rnd() < 0.3) return pick(rTexts)
+  if (rnd() < 0.04) return rnd() < 0.5 ? [null, {}, pick(rTexts)] : [null, {}]
+  const tag = pick(rTags)
+  const kids = []
+  const n = Math.floor(rnd() * 5)
+  if (tag === 'li' && rnd() < 0.3) kids.push(['input', { type: 'checkbox', checked: rnd() < 0.5 }])
+  for (let i = 0; i < n; i++) kids.push(rNode(depth + 1))
+  const at = rAttrs()
+  if (tag === 'li' && kids[0]?.[0] === 'input') at.class = 'task-list-item'
+  return [tag, at, ...kids]
+}
+const RANDOM_TREES = 1500
+const randomVectors = []
+let randomThrew = 0
+while (randomVectors.length < RANDOM_TREES) {
+  const nodes = []
+  const n = 1 + Math.floor(rnd() * 3)
+  for (let j = 0; j < n; j++) nodes.push(rNode(0))
+  const frontmatter = rnd() < 0.1 ? { title: pick(rTexts), n: 1, l: ['a', 'b'] } : {}
+  const doc = { frontmatter, meta: {}, nodes }
+  const encoded = { frontmatter: encode(frontmatter), meta: {}, nodes: encode(nodes) }
+  let markdown
+  try {
+    markdown = await renderMarkdown(doc, { blockAttributesStyle: 'frontmatter' })
+  } catch {
+    randomThrew++ // comark throws for some shapes (e.g. a task-list li without an input); the port need not
+    continue
+  }
+  randomVectors.push({ tree: encoded, markdown })
 }
 
 fs.writeFileSync(path.join(outDir, 'yaml-vectors.json'), JSON.stringify({
@@ -150,4 +286,7 @@ fs.writeFileSync(path.join(outDir, 'render-vectors.json'), JSON.stringify({
   description: "comark 0.7.0 renderMarkdown(tree, {blockAttributesStyle: 'frontmatter'}) for hand-made trees. Re-record with `node record-vectors.mjs` in src/test/node/studio-oracle.",
   vectors: renderVectors,
 }, null, 1) + '\n')
-console.log(`wrote ${yamlVectors.length} YAML vectors and ${renderVectors.length} render vectors`)
+fs.writeFileSync(path.join(outDir, 'render-random-vectors.json'), '{"description": ' + JSON.stringify(
+  `comark 0.7.0 renderMarkdown(tree, {blockAttributesStyle: 'frontmatter'}) for ${RANDOM_TREES} seeded random trees (${randomThrew} generated trees that made comark throw are left out). Re-record with \`node record-vectors.mjs\` in src/test/node/studio-oracle.`,
+) + ',\n "vectors": [\n' + randomVectors.map((v) => JSON.stringify(v)).join(',\n') + '\n]}\n')
+console.log(`wrote ${yamlVectors.length} YAML vectors, ${renderVectors.length} render vectors and ${randomVectors.length} random render vectors`)

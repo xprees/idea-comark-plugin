@@ -28,7 +28,26 @@ class StudioYamlTest {
         }
         println("StudioYaml: ${vectors.size - failures.size} of ${vectors.size} vectors match")
         assertEquals(failures.take(40).joinToString("\n"), 0, failures.size)
-        assert(vectors.size >= 300)
+        assertEquals("vector count", 1989, vectors.size)
+    }
+
+    @Test
+    fun writesSharedObjectsAsAnchorsAndAliases() {
+        val base = linkedMapOf<String, Any?>("a" to 1.0)
+        val tags = listOf("x", "y")
+        val data = linkedMapOf<String, Any?>(
+            "base" to base,
+            "derived" to linkedMapOf<String, Any?>("<<" to base, "b" to 2.0),
+            "list" to listOf(tags, tags, emptyList<Any?>()),
+        )
+        assertEquals(
+            "base: &ref_0\n  a: 1\nderived:\n  '<<': *ref_0\n  b: 2\nlist:\n  - &ref_1\n    - x\n    - 'y'\n  - *ref_1\n  - []\n",
+            StudioYaml.dump(data),
+        )
+        // equal but distinct objects are not aliased
+        assertEquals("a:\n  k: 1\nb:\n  k: 1\n", StudioYaml.dump(mapOf("a" to mapOf("k" to 1.0), "b" to mapOf("k" to 1.0))))
+        // nor are Kotlin's emptyList()/emptyMap() singletons
+        assertEquals("a: []\nb: []\nc: {}\nd: {}\n", StudioYaml.dump(mapOf("a" to emptyList<Any?>(), "b" to emptyList<Any?>(), "c" to emptyMap<String, Any?>(), "d" to emptyMap<String, Any?>())))
     }
 
     @Test

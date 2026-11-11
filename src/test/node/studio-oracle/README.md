@@ -19,16 +19,19 @@ identical bytes.
 Options: `--out <file>` and `--repo <root>`. Recording stops if the installed nuxt-studio files do not match the published
 1.8.0 hashes, unless you pass `--allow-other-studio`.
 
-`record-vectors.mjs` (Gradle: `recordStudioVectors`) records two smaller files next to `oracle.json` for the Kotlin port of
+`record-vectors.mjs` (Gradle: `recordStudioVectors`) records three smaller files next to `oracle.json` for the Kotlin port of
 the renderer:
 
 - `yaml-vectors.json`: js-yaml 5.5.0 `dump(value, { indent: 2, lineWidth: -1 })` and comark's `stringifyYaml(value)` for
   about 2000 values (numeric-looking strings, YAML 1.1 booleans and nulls, dates, indicators, multi-line strings, unicode,
-  numbers, empty and nested collections), each at the root, as a mapping value, as a sequence item and, for strings, as a key.
-  `StudioYamlTest` checks `StudioYaml` against it.
+  numbers, empty and nested collections, shared and cyclic objects, which js-yaml writes with `&ref_N` anchors), each at the
+  root, as a mapping value, as a sequence item and, for strings, as a key. `StudioYamlTest` checks `StudioYaml` against it.
 - `render-vectors.json`: comark `renderMarkdown(tree, { blockAttributesStyle: 'frontmatter' })` for hand-made trees with
   attribute values the parsed corpus does not contain (numbers, booleans, `null`, objects, bindings, `$` html markers, odd
-  `ol` starts). `StudioRenderVectorsTest` checks `StudioRenderer` against it.
+  `ol` starts, string and mixed `highlights`, comments without text, shared YAML objects), and for renderer branches the
+  corpus does not reach. `StudioRenderVectorsTest` checks `StudioRenderer` against it.
+- `render-random-vectors.json`: the same for 1500 trees from a seeded random generator, one vector per line. Recording twice
+  gives the same trees.
 
 ## What runs
 
@@ -89,11 +92,21 @@ instead.
 | `db2`, `text2` | D(D(x)) / T(T(x)), present only when the path is not stable |
 | `comarkTree` | `{meta, nodes}`, the tree `renderMarkdown` receives on the T path: after the comark parse with Studio's options and `unbindComarkTree`, with `$.line` positions dropped. Nodes are comark arrays `[tag, attrs, ...children]`, and strings are text. |
 | `frontmatter` | the front matter object on the T path, i.e. the comark-parsed YAML. The D path's front matter is `cleanDataKeys` of the row and shows only in `db`. |
-| `renderedFromTree` | `renderMarkdown({frontmatter, ...comarkTree}, {blockAttributesStyle: 'frontmatter'})`, then `padBlankLinesInComponents`, then `"\n"`. It is computed from the JSON as written, so it shows that the recorded tree is enough to reproduce `text`. |
+| `renderedFromTree` | `renderMarkdown({frontmatter, ...comarkTree}, {blockAttributesStyle: 'frontmatter'})`, then `padBlankLinesInComponents`, then `"\n"`. It is computed from the JSON as written, so it shows that the recorded tree is enough to reproduce `text`; `StudioOracleCorpusTest` requires that for every case. |
+| `dbTree`, `dbFrontmatter` | the tree and front matter `renderMarkdown` receives on the D path (`comarkTreeFromLegacyDocument` of the database document, then `unbindComarkTree`), or `null` when D threw or Studio found no tree (then `db` is `"\n"`). These trees differ from the T path's: for example `propsMDCToComark` turns `highlights: [2, 4, 5]` into the string `"2 4 5"`, which comark spreads into characters (`{ , ,2,4,5}`). |
+| `renderedFromDbTree` | the same rendering of `dbTree`; it must equal `db`. |
 
-Values that JSON cannot hold are written as `{"$type": "date" | "number" | "undefined" | "bigint", "value": ...}`, for
-example YAML timestamps (`Date`) and `.nan` or `.inf`. Key order matches the JavaScript object, so integer-like keys come
-first, as the renderer sees them.
+Top-level `studioFiles` and `rendererFiles` hold the sha256 of every nuxt-studio, comark and js-yaml file that ran (the
+renderer's files are those `comark/render` and comark's `internal/yaml.js` load). Recording stops when they differ from the
+published files (pass `--allow-other-studio` or `--allow-other-renderer` to record anyway), and `StudioOracleCorpusTest`
+compares them with its own copy of the published hashes.
+
+Values are encoded by `lib/encode.mjs`. Values that JSON cannot hold are written as
+`{"$type": "date" | "number" | "undefined" | "bigint", "value": ...}`, for example YAML timestamps (`Date`) and `.nan` or
+`.inf`. An array or object that is reached more than once from one encoded root (what YAML anchors and aliases load as; js-yaml
+dumps it as `&ref_N` / `*ref_N`) is written in full once as `{"$type": "shared", "id": N, "value": ...}` and elsewhere as
+`{"$type": "ref", "id": N}`. `frontmatter`, `meta` and `nodes` are separate roots. Key order matches the JavaScript object, so
+integer-like keys come first, as the renderer sees them.
 
 ## Fidelity caveats
 
@@ -113,7 +126,4 @@ first, as the renderer sees them.
   `<pre>`. `renderMarkdown` ignores that class, so shiki has no effect on the output. Studio's browser bundle uses the same
   comark code, so it should behave the same, but this has not been checked in a browser. The D path's emulated Nuxt Content
   highlight (material-theme-palenight) only adds styles that Studio strips.
-- YAML anchors and aliases: the JSON tree cannot express that two values are the same object, while js-yaml's dump writes
-  shared objects as `&ref_0` / `*ref_0`. For such documents `renderedFromTree` differs from `text`. There is currently one:
-  `handwritten/h26-frontmatter-structures.md`.
 - `renderMarkdown` and the parse run in Node, not in a browser. Neither depends on the platform.

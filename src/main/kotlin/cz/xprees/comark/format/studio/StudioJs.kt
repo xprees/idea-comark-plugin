@@ -56,6 +56,7 @@ internal object StudioJs {
         is Number -> v.toDouble()
         is String -> stringToNumber(v)
         is List<*> -> if (v.isEmpty()) 0.0 else if (v.size == 1) toNumber(str(v)) else Double.NaN
+        is JsDate -> v.iso?.let { runCatching { Instant.parse(it).toEpochMilli().toDouble() }.getOrNull() } ?: Double.NaN
         else -> Double.NaN
     }
 
