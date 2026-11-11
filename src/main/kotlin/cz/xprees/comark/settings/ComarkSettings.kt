@@ -22,8 +22,21 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         NEVER,
     }
 
+    /** Whose rules decide where a component starts and ends when the source disagrees. */
+    enum class Dialect {
+        /**
+         * Nuxt Content and Nuxt Studio (remark-mdc): a component opener counts at any indentation when it starts a block (after a
+         * blank line or another component), its content is relative to the opener, and a closer may sit up to three columns deeper.
+         */
+        NUXT_CONTENT,
+
+        /** The comark parser: strict CommonMark, a line indented four or more columns past its container is code. */
+        COMARK,
+    }
+
     class State {
         var mode: Mode = Mode.AUTO
+        var dialect: Dialect = Dialect.NUXT_CONTENT
         var formatterEnabled: Boolean = true
         var componentCompletion: Boolean = true
         var componentMetadataUrl: String = ""
@@ -38,6 +51,12 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         get() = state.mode
         set(value) {
             state.mode = value
+        }
+
+    var dialect: Dialect
+        get() = state.dialect
+        set(value) {
+            state.dialect = value
         }
 
     /** Reformat Code uses the Comark formatter (a port of the VS Code extension's) for Comark files. */

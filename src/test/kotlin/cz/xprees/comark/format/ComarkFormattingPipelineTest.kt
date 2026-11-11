@@ -1,5 +1,7 @@
 package cz.xprees.comark.format
 
+import cz.xprees.comark.testutil.withDialect
+import cz.xprees.comark.settings.ComarkSettings
 import com.google.gson.JsonParser
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiFile
@@ -126,6 +128,8 @@ class ComarkFormattingPipelineTest : BasePlatformTestCase() {
             .map { Case(it["name"].asString, it["tabSize"].asInt, it["input"].asString, it["expected"]?.asString) }
         assertEquals(170, cases.size)
         assertEquals(EXPECTED_RECORDED_SKIPS, compare(cases))
+        // the comark dialect reads two more cases' indented nested components as code blocks
+        assertEquals(EXPECTED_RECORDED_SKIPS_COMARK, withDialect(ComarkSettings.Dialect.COMARK) { compare(cases) })
     }
 
     fun testUpstreamTestSuite() {
@@ -148,8 +152,23 @@ class ComarkFormattingPipelineTest : BasePlatformTestCase() {
     }
 
     private companion object {
-        /** 30 of the 170 cases hit a deviation; 25 of them come out different (the others happen to be unaffected). */
+        /**
+         * Nuxt Content dialect (the default): 28 of the 170 cases hit a deviation; 23 of them come out different (the others happen
+         * to be unaffected). Every other case is byte-identical to monarch-mdc.
+         */
         val EXPECTED_RECORDED_SKIPS = Skipped(
+            mapOf(
+                Deviation.LIST_ITEM_COMPONENT to 1,
+                Deviation.INDENTED_CODE_BLOCK to 22,
+                Deviation.NON_SPACE_FENCE_INDENT to 6,
+                Deviation.HARD_LINE_BREAK to 2,
+            ),
+            cases = 28,
+            different = 23,
+        )
+
+        /** Comark dialect: 30 of the 170 cases hit a deviation; 25 of them come out different. */
+        val EXPECTED_RECORDED_SKIPS_COMARK = Skipped(
             mapOf(
                 Deviation.LIST_ITEM_COMPONENT to 1,
                 Deviation.INDENTED_CODE_BLOCK to 24,

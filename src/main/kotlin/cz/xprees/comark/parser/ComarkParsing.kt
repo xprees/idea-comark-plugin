@@ -20,16 +20,17 @@ import org.intellij.markdown.ast.ASTNode as MdNode
 
 /** Parses text into the combined Comark/Markdown tree, remembering the last result (the lexer and parser ask for the same text). */
 object ComarkParseCache {
-    private class Entry(val text: String, val flavour: MarkdownFlavourDescriptor, val tree: MdNode)
+    private class Entry(val text: String, val flavour: MarkdownFlavourDescriptor, val lenient: Boolean, val tree: MdNode)
 
     private val last = AtomicReference<SoftReference<Entry>?>()
 
     fun parse(text: CharSequence, flavour: MarkdownFlavourDescriptor = ComarkFlavour.INSTANCE): MdNode {
+        val lenient = ComarkTreeBuilder.lenientIndentation()
         val cached = last.get()?.get()
-        if (cached != null && cached.flavour === flavour && cached.text.contentEquals(text)) return cached.tree
+        if (cached != null && cached.flavour === flavour && cached.lenient == lenient && cached.text.contentEquals(text)) return cached.tree
         val string = text.toString()
-        val tree = ComarkTreeBuilder(string, flavour).build()
-        last.set(SoftReference(Entry(string, flavour, tree)))
+        val tree = ComarkTreeBuilder(string, flavour, lenient).build()
+        last.set(SoftReference(Entry(string, flavour, lenient, tree)))
         return tree
     }
 }

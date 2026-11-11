@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- *Read components like* setting: Nuxt Content and Nuxt Studio (remark-mdc, the default) or the comark parser
+
+### Fixed
+
+- Nested components indented four or more spaces (Reformat Code with an indent size of 4, e.g. from EditorConfig) are components
+  again, as Nuxt Content renders them, instead of code blocks that broke highlighting, folding and the preview
+
 ## [2026.3.2] - 2026-11-11
 
 ### Added
