@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Prose*` components can be written without the prefix (`::accordion-item` for `ProseAccordionItem`), as Comark and Nuxt UI
+  resolve them: completion offers the short name (typing `prose-` keeps the prefix), and both names are known to the inspection,
+  navigation, Find Usages and Rename
+
 ## [2026.3.5] - 2026-11-11
 
 ### Added

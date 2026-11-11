@@ -189,6 +189,38 @@ val checkPublishable = tasks.register("checkPublishable") {
     }
 }
 
+// Re-records src/test/testData/studio/oracle.json from the real Nuxt Studio save pipeline (needs Node >= 20.6 and npm).
+// Not part of build/check: the recorded file is committed. See src/test/node/studio-oracle/README.md.
+val studioOracleDir = layout.projectDirectory.dir("src/test/node/studio-oracle")
+val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+val installStudioOracle = tasks.register<Exec>("installStudioOracle") {
+    group = "verification"
+    description = "Installs the pinned Node packages of the Nuxt Studio oracle (npm ci)."
+    workingDir = studioOracleDir.asFile
+    commandLine(if (isWindows) listOf("cmd", "/c", "npm", "ci") else listOf("npm", "ci"))
+}
+tasks.register<Exec>("recordStudioOracle") {
+    group = "verification"
+    description = "Records src/test/testData/studio/oracle.json by running Nuxt Studio's save pipeline under Node."
+    dependsOn(installStudioOracle)
+    workingDir = studioOracleDir.asFile
+    commandLine("node", "record.mjs")
+}
+tasks.register<Exec>("recordStudioVectors") {
+    group = "verification"
+    description = "Records src/test/testData/studio/yaml-vectors.json, render-vectors.json and render-random-vectors.json from js-yaml and comark under Node."
+    dependsOn(installStudioOracle)
+    workingDir = studioOracleDir.asFile
+    commandLine("node", "record-vectors.mjs")
+}
+tasks.register<Exec>("recordStudioTextVectors") {
+    group = "verification"
+    description = "Records src/test/testData/studio/text-vectors.json: Nuxt Studio's text path for seeded random documents, under Node."
+    dependsOn(installStudioOracle)
+    workingDir = studioOracleDir.asFile
+    commandLine("node", "record-text-vectors.mjs")
+}
+
 tasks {
     named("signPlugin") { dependsOn(checkPublishable) }
     named("publishPlugin") { dependsOn(checkPublishable) }

@@ -1,0 +1,2200 @@
+{
+ "description": "comark 0.7.0 renderMarkdown(tree, {blockAttributesStyle: 'frontmatter'}) for hand-made trees. Re-record with `node record-vectors.mjs` in src/test/node/studio-oracle.",
+ "vectors": [
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      "Number ",
+      [
+       "badge",
+       {
+        "n": 1,
+        "x": 2.5,
+        "big": 1e+21
+       },
+       "b"
+      ]
+     ]
+    ]
+   },
+   "markdown": "Number :badge[b]{n=\"1\" x=\"2.5\" big=\"1e+21\"}"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      "Bool ",
+      [
+       "badge",
+       {
+        "ok": true,
+        "no": false,
+        ":on": "true",
+        ":off": "false"
+       },
+       "b"
+      ]
+     ]
+    ]
+   },
+   "markdown": "Bool :badge[b]{ok=\"true\" no=\"false\" on :off=\"false\"}"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      "Null ",
+      [
+       "badge",
+       {
+        "nothing": null
+       },
+       "b"
+      ]
+     ]
+    ]
+   },
+   "markdown": "Null   ::badge\n  ---\n  nothing: null\n  ---\n  b\n  ::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "badge",
+      {
+       "n": 1,
+       "b": true,
+       "s": "x"
+      }
+     ]
+    ]
+   },
+   "markdown": "::badge{n=\"1\" b=\"true\" s=\"x\"}\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "card",
+      {
+       "a": "1",
+       "b": "2",
+       "c": "3",
+       "d": "4"
+      },
+      [
+       "p",
+       {},
+       "body"
+      ]
+     ]
+    ]
+   },
+   "markdown": "::card\n---\na: '1'\nb: '2'\nc: '3'\nd: '4'\n---\nbody\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "card",
+      {
+       "a": "true",
+       "b": "false",
+       ":c": "{\"x\":[1,2]}",
+       ":d": "not json",
+       ":e": "12",
+       ":f": "null"
+      },
+      [
+       "p",
+       {},
+       "x"
+      ]
+     ]
+    ]
+   },
+   "markdown": "::card\n---\na: true\nb: false\nc:\n  x:\n    - 1\n    - 2\n:d: not json\ne: 12\nf: null\n---\nx\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "card",
+      {
+       "obj": {
+        "a": 1,
+        "b": [
+         1,
+         "two",
+         null
+        ]
+       },
+       "list": []
+      },
+      [
+       "p",
+       {},
+       "x"
+      ]
+     ]
+    ]
+   },
+   "markdown": "::card\n---\nobj:\n  a: 1\n  b:\n    - 1\n    - two\n    - null\nlist: []\n---\nx\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "card",
+      {
+       "1": "one",
+       "2": "two",
+       "z": "zed",
+       "y": "why"
+      },
+      [
+       "p",
+       {},
+       "x"
+      ]
+     ]
+    ]
+   },
+   "markdown": "::card\n---\n'1': one\n'2': two\nz: zed\n'y': why\n---\nx\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "card",
+      {
+       "class": [
+        "a",
+        "b"
+       ],
+       "id": 7
+      },
+      "text"
+     ]
+    ]
+   },
+   "markdown": "::card\n---\nclass:\n  - a\n  - b\nid: 7\n---\ntext\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "card",
+      {
+       "class": "x  y",
+       "title": "say \"hi\"",
+       "alt": "it's \"x\""
+      },
+      "text"
+     ]
+    ]
+   },
+   "markdown": "::card{.x.y title='say \"hi\"' alt=\"it's \\\"x\\\"\"}\ntext\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "card",
+      {
+       "date": {
+        "$type": "date",
+        "value": "2020-01-01T00:00:00.000Z"
+       }
+      },
+      [
+       "p",
+       {},
+       "x"
+      ]
+     ]
+    ]
+   },
+   "markdown": "::card\n---\ndate: 2020-01-01T00:00:00.000Z\n---\nx\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "ol",
+      {
+       "start": "3"
+      },
+      [
+       "li",
+       {},
+       "a"
+      ],
+      [
+       "li",
+       {},
+       "b"
+      ]
+     ],
+     [
+      "ol",
+      {
+       "start": 0
+      },
+      [
+       "li",
+       {},
+       "c"
+      ]
+     ],
+     [
+      "ol",
+      {
+       "start": 2.5
+      },
+      [
+       "li",
+       {},
+       "d"
+      ]
+     ],
+     [
+      "ol",
+      {
+       "start": "x"
+      },
+      [
+       "li",
+       {},
+       "e"
+      ]
+     ],
+     [
+      "ol",
+      {
+       "start": true
+      },
+      [
+       "li",
+       {},
+       "f"
+      ]
+     ]
+    ]
+   },
+   "markdown": "3. a\n4. b\n\n1. c\n\n1. d\n\n1. e\n\n1. f"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "ul",
+      {
+       "class": "contains-task-list"
+      },
+      [
+       "li",
+       {
+        "class": "task-list-item"
+       },
+       [
+        "input",
+        {
+         "checked": true
+        }
+       ],
+       " done"
+      ],
+      [
+       "li",
+       {
+        "class": "task-list-item"
+       },
+       [
+        "input",
+        {
+         ":checked": "false"
+        }
+       ],
+       " string false"
+      ],
+      [
+       "li",
+       {
+        "class": "task-list-item"
+       },
+       [
+        "input",
+        {}
+       ],
+       " open"
+      ]
+     ]
+    ]
+   },
+   "markdown": "- [x] done\n- [x] string false\n- [ ] open"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "ul",
+      {},
+      [
+       "li",
+       {},
+       [
+        "p",
+        {},
+        "para"
+       ],
+       [
+        "pre",
+        {
+         "language": "js"
+        },
+        [
+         "code",
+         {},
+         "x"
+        ]
+       ],
+       [
+        null,
+        {},
+        " c "
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "- para\n  ```js\n  x\n  ```\n  <!-- c -->"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "pre",
+      {
+       "language": "ts",
+       "filename": "a]b.ts",
+       "highlights": [
+        3,
+        1,
+        2,
+        5
+       ],
+       "meta": "meta=1",
+       "code": "let a\n\n"
+      }
+     ]
+    ]
+   },
+   "markdown": "::pre{code=\"let a\n\n\"}\n```ts [a\\\\]b.ts] {1-3,5} meta=1\nlet a\n```\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "pre",
+      {
+       "highlights": [],
+       "class": "shiki shiki-themes . user"
+      },
+      [
+       "code",
+       {
+        "class": "language-py"
+       },
+       "```\nx"
+      ]
+     ]
+    ]
+   },
+   "markdown": "::pre{.user}\n~~~py {}\n```\nx\n~~~\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      "inline ",
+      [
+       "math",
+       {},
+       "x^2"
+      ]
+     ],
+     [
+      "math",
+      {
+       "class": "block"
+      },
+      "y"
+     ]
+    ]
+   },
+   "markdown": "inline $x^2$\n\n$$\ny\n$$"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "mermaid",
+      {
+       "content": "graph TD\n```\n"
+      }
+     ],
+     [
+      "mermaid",
+      {
+       "content": "a",
+       "id": "m"
+      }
+     ]
+    ]
+   },
+   "markdown": "~~~mermaid\ngraph TD\n```\n~~~\n\n```mermaid {#m}\na\n```"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "tabs",
+      {},
+      [
+       "template",
+       {
+        "name": "default"
+       },
+       [
+        "p",
+        {},
+        "only default"
+       ]
+      ]
+     ],
+     [
+      "tabs",
+      {},
+      [
+       "template",
+       {
+        "name": "one",
+        "x": "1"
+       },
+       [
+        "p",
+        {},
+        "a"
+       ]
+      ],
+      [
+       "template",
+       {
+        "name": "default"
+       },
+       [
+        "p",
+        {},
+        "b"
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "::tabs\nonly default\n::\n\n::tabs\n#one{x=\"1\"}\na\n\n#default\nb\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "div",
+      {
+       "$": {
+        "html": 1,
+        "block": 1
+       },
+       "class": "x",
+       "hidden": true,
+       "off": false,
+       "n": 3,
+       ":b": "true",
+       ":o": "{\"a\":1}",
+       "a&b": "x",
+       "title": "a & b #1; <c>"
+      },
+      [
+       "p",
+       {},
+       "raw *text*"
+      ]
+     ]
+    ]
+   },
+   "markdown": "<div class=\"x\" hidden n=\"3\" b o=\"{&quot;a&quot;:1}\" title=\"a & b #1; &lt;c&gt;\">\nraw \\*text\\*\n</div>"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      "x ",
+      [
+       "span",
+       {
+        "$": {
+         "html": 1,
+         "block": 0
+        }
+       },
+       "inline"
+      ],
+      " y ",
+      [
+       "br",
+       {
+        "$": {
+         "html": 1,
+         "block": 0
+        }
+       }
+      ]
+     ]
+    ]
+   },
+   "markdown": "x <span>inline</span> y <br>"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      [
+       "img",
+       {
+        "src": "/a.png",
+        "alt": "A",
+        "title": "T",
+        "width": 10
+       }
+      ],
+      " ",
+      [
+       "img",
+       {
+        "src": "/b.png",
+        "alt": null
+       }
+      ]
+     ]
+    ]
+   },
+   "markdown": "![A](/a.png \"T\"){width=\"10\"} ![null](/b.png)"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      [
+       "a",
+       {
+        "href": 5
+       },
+       "5"
+      ],
+      " ",
+      [
+       "a",
+       {
+        "href": "https://x.y"
+       },
+       "https://x.y"
+      ],
+      " ",
+      [
+       "a",
+       {
+        "href": "/z",
+        "target": "_blank"
+       },
+       [
+        "span",
+        {},
+        "in"
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "[5](5) <https://x.y> [[in]{}](/z){target=\"_blank\"}"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "blockquote",
+      {
+       "as": "note"
+      },
+      [
+       "p",
+       {},
+       "quoted"
+      ]
+     ],
+     [
+      "blockquote",
+      {
+       "class": "c"
+      },
+      "plain text"
+     ]
+    ]
+   },
+   "markdown": "> [!NOTE]\n> quoted\n\n> plain text {.c}"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "table",
+      {},
+      [
+       "thead",
+       {},
+       [
+        "tr",
+        {},
+        [
+         "th",
+         {
+          "style": "text-align: center"
+         },
+         "Emoji"
+        ],
+        [
+         "th",
+         {
+          "style": "TEXT-ALIGN:RIGHT"
+         },
+         "B"
+        ]
+       ]
+      ],
+      [
+       "tbody",
+       {},
+       [
+        "tr",
+        {},
+        [
+         "td",
+         {},
+         "😀😀"
+        ],
+        [
+         "td",
+         {},
+         "a|b\nc"
+        ]
+       ],
+       [
+        "tr",
+        {},
+        [
+         "td",
+         {},
+         "x"
+        ]
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "| Emoji | B      |\n| :---: | -----: |\n| 😀😀  | a\\|b c |\n| x     |        |"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "table",
+      {
+       "class": "t"
+      },
+      [
+       "tr",
+       {},
+       [
+        "td",
+        {},
+        "no header"
+       ],
+       [
+        "td",
+        {},
+        "2"
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "::table{.t}\n| Column 1  | Column 2 |\n| --------- | -------- |\n| no header | 2        |\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      "a",
+      [
+       "hr",
+       {}
+      ],
+      "b"
+     ],
+     [
+      "hr",
+      {}
+     ],
+     [
+      "h2",
+      {
+       "id": "x",
+       "class": "y"
+      },
+      "Title"
+     ],
+     [
+      "code",
+      {
+       "lang": "js"
+      },
+      "a`b"
+     ]
+    ]
+   },
+   "markdown": "a:hrb\n\n---\n\n## Title {.y}\n\n``a`b``{lang=\"js\"}"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      ":colon and {.attr} and <b> and &amp; and & and a_b_c and _x_"
+     ]
+    ]
+   },
+   "markdown": "\\:colon and \\{.attr} and \\<b> and \\&amp; and & and a_b_c and \\_x\\_"
+  },
+  {
+   "tree": {
+    "frontmatter": {
+     "title": "T",
+     "n": 1.5,
+     "when": {
+      "$type": "date",
+      "value": "2020-01-01T00:00:00.000Z"
+     },
+     "tags": [
+      "a",
+      "b"
+     ],
+     "nested": {
+      "1": "x",
+      "ok": true
+     },
+     ":key": "v"
+    },
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      "x"
+     ]
+    ]
+   },
+   "markdown": "---\ntitle: T\n'n': 1.5\nwhen: 2020-01-01T00:00:00.000Z\ntags:\n  - a\n  - b\nnested:\n  '1': x\n  ok: true\n:key: v\n---\n\nx"
+  },
+  {
+   "tree": {
+    "frontmatter": {
+     "only": "frontmatter"
+    },
+    "meta": {},
+    "nodes": []
+   },
+   "markdown": "---\nonly: frontmatter\n---\n\n"
+  },
+  {
+   "tree": {
+    "frontmatter": {
+     "text": "multi\nline\n\n"
+    },
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      "x"
+     ]
+    ]
+   },
+   "markdown": "---\ntext: |+\n  multi\n  line\n\n...\n---\n\nx"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "outer",
+      {},
+      [
+       "inner",
+       {
+        "a": "1",
+        "b": "2",
+        "c": "3",
+        "d": "4"
+       },
+       [
+        "p",
+        {},
+        "deep"
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "::outer\n  :::inner\n  ---\n  a: '1'\n  b: '2'\n  c: '3'\n  d: '4'\n  ---\n  deep\n  :::\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "ul",
+      {},
+      [
+       "li",
+       {},
+       [
+        "card",
+        {
+         "x": 1
+        },
+        [
+         "p",
+         {},
+         "in list"
+        ]
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "- ::card{x=\"1\"}\n  in list\n  ::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "comment",
+      {},
+      "tag named comment"
+     ],
+     [
+      "html",
+      {},
+      "tag named html"
+     ],
+     [
+      "mdc",
+      {},
+      "tag named mdc"
+     ]
+    ]
+   },
+   "markdown": "<html>\ntag named html\n</html>\n\n::mdc\ntag named mdc\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {
+     "title": "T"
+    },
+    "meta": {},
+    "nodes": [
+     [
+      "h1",
+      {
+       "id": "t"
+      },
+      "T"
+     ],
+     [
+      "pre",
+      {
+       "filename": "a.js",
+       "highlights": "1 2",
+       "language": "js",
+       "meta": {
+        "$type": "undefined"
+       },
+       "style": {
+        "$type": "undefined"
+       }
+      },
+      [
+       "code",
+       {
+        "__ignoreMap": ""
+       },
+       "const a = 1\nconst b = 2"
+      ]
+     ],
+     [
+      "card",
+      {},
+      [
+       "pre",
+       {
+        "highlights": "3",
+        "language": "ts"
+       },
+       [
+        "code",
+        {
+         "__ignoreMap": ""
+        },
+        "x"
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "---\ntitle: T\n---\n\n# T\n\n```js [a.js] { ,1,2}\nconst a = 1\nconst b = 2\n```\n\n::card\n```ts {3}\nx\n```\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "pre",
+      {
+       "highlights": "10",
+       "language": "ts"
+      },
+      [
+       "code",
+       {},
+       "a"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": "2 4 5 10 12",
+       "language": "vue"
+      },
+      [
+       "code",
+       {},
+       "b"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": "b a 1",
+       "language": "x"
+      },
+      [
+       "code",
+       {},
+       "c"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": " ",
+       "language": "y"
+      },
+      [
+       "code",
+       {},
+       "d"
+      ]
+     ]
+    ]
+   },
+   "markdown": "```ts {0,1}\na\n```\n\n```vue { , , ,0, ,1,1,2,2,4,5}\nb\n```\n\n```x {b, ,a, ,1}\nc\n```\n\n```y { }\nd\n```"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "pre",
+      {
+       "highlights": [
+        3,
+        null,
+        1
+       ]
+      },
+      [
+       "code",
+       {},
+       "a"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": [
+        true,
+        2
+       ]
+      },
+      [
+       "code",
+       {},
+       "b"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": [
+        "2",
+        "3",
+        1
+       ]
+      },
+      [
+       "code",
+       {},
+       "c"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": [
+        "1",
+        "11",
+        "12"
+       ]
+      },
+      [
+       "code",
+       {},
+       "d"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": [
+        2,
+        {
+         "$type": "undefined"
+        },
+        1,
+        "x",
+        3
+       ]
+      },
+      [
+       "code",
+       {},
+       "e"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": [
+        {
+         "$type": "number",
+         "value": "NaN"
+        },
+        1,
+        2
+       ]
+      },
+      [
+       "code",
+       {},
+       "f"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": [
+        1,
+        1,
+        2,
+        2,
+        4
+       ]
+      },
+      [
+       "code",
+       {},
+       "g"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": [
+        -1,
+        0,
+        1.5,
+        2.5
+       ]
+      },
+      [
+       "code",
+       {},
+       "h"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": [
+        [
+         1
+        ],
+        [
+         2
+        ],
+        {}
+       ]
+      },
+      [
+       "code",
+       {},
+       "i"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "highlights": [
+        false,
+        0,
+        1
+       ]
+      },
+      [
+       "code",
+       {},
+       "j"
+      ]
+     ]
+    ]
+   },
+   "markdown": "``` {null-1,3}\na\n```\n\n``` {true-2}\nb\n```\n\n``` {1,2,3}\nc\n```\n\n``` {1-11,12}\nd\n```\n\n``` {1-2,x,3,undefined}\ne\n```\n\n``` {NaN-NaN,1-2}\nf\n```\n\n``` {1,1-2,2,4}\ng\n```\n\n``` {-1-0,1.5-2.5}\nh\n```\n\n``` {1,2,[object Object]}\ni\n```\n\n``` {false,0-1}\nj\n```"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      [
+       "code",
+       {},
+       "a",
+       [
+        null,
+        {}
+       ],
+       "b"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "language": "js"
+      },
+      [
+       "code",
+       {},
+       "x",
+       [
+        null,
+        {}
+       ],
+       "y"
+      ]
+     ],
+     [
+      "p",
+      {},
+      [
+       "math",
+       {},
+       "x",
+       [
+        null,
+        {},
+        "c"
+       ]
+      ]
+     ],
+     [
+      null,
+      {}
+     ]
+    ]
+   },
+   "markdown": "`ab`\n\n```js\nxy\n```\n\n$$\nxc\n$$\n\n\n\n<!--undefined-->"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      "x <?php y> z"
+     ],
+     [
+      "p",
+      {},
+      "x </b> z"
+     ],
+     [
+      "p",
+      {},
+      "a < b and a <1 and <-"
+     ],
+     [
+      "p",
+      {},
+      "a\n:b"
+     ],
+     [
+      "p",
+      {},
+      ":start"
+     ],
+     [
+      "p",
+      {},
+      "a <!-- c --> b <![CDATA[x]]> <!x>"
+     ]
+    ]
+   },
+   "markdown": "x \\<?php y> z\n\nx \\</b> z\n\na < b and a <1 and <-\n\na\n\\:b\n\n\\:start\n\na \\<!-- c --> b \\<!\\[CDATA\\[x\\]\\]> \\<!x>"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "ul",
+      {},
+      [
+       "li",
+       {},
+       "x",
+       [
+        "ul",
+        {
+         "class": "inner"
+        },
+        [
+         "li",
+         {},
+         "y"
+        ]
+       ]
+      ],
+      [
+       "li",
+       {},
+       "z",
+       [
+        "ol",
+        {
+         "id": "o"
+        },
+        [
+         "li",
+         {},
+         "w"
+        ]
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "- x\n  ::ul{.inner}\n  - y\n  ::\n- z\n  ::ol{#o}\n  1. w\n  ::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "ol",
+      {
+       "start": 4
+      },
+      [
+       "li",
+       {},
+       "a",
+       [
+        "ol",
+        {},
+        [
+         "li",
+         {},
+         "b",
+         [
+          "ul",
+          {
+           "class": "deep"
+          },
+          [
+           "li",
+           {},
+           "c"
+          ]
+         ]
+        ]
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "4. a\n   1. b\n      ::ul{.deep}\n      - c\n      ::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "ul",
+      {},
+      [
+       "li",
+       {
+        "className": [
+         "task-list-item",
+         "x"
+        ]
+       },
+       [
+        "input",
+        {
+         "checked": true
+        }
+       ],
+       " done"
+      ],
+      [
+       "li",
+       {
+        "className": [
+         "a"
+        ]
+       },
+       "b"
+      ],
+      [
+       "li",
+       {
+        "id": "i",
+        "class": "c"
+       },
+       "with attrs"
+      ],
+      [
+       "li",
+       {
+        "className": "task-list-item"
+       },
+       [
+        "input",
+        {}
+       ],
+       " open"
+      ]
+     ]
+    ]
+   },
+   "markdown": "- [x] done {className=\"[\\\"task-list-item\\\",\\\"x\\\"]\"}\n- b {className=\"[\\\"a\\\"]\"}\n- with attrs {#i .c}\n- [ ] open {className=\"task-list-item\"}"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "blockquote",
+      {
+       "class": "q"
+      },
+      [
+       "p",
+       {},
+       "one"
+      ],
+      [
+       "p",
+       {},
+       "two"
+      ]
+     ],
+     [
+      "blockquote",
+      {
+       "id": "b"
+      },
+      [
+       "ul",
+       {},
+       [
+        "li",
+        {},
+        "x"
+       ]
+      ]
+     ],
+     [
+      "blockquote",
+      {},
+      [
+       "p",
+       {},
+       "plain"
+      ],
+      [
+       "pre",
+       {},
+       [
+        "code",
+        {},
+        "c"
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "::blockquote{.q}\n> one\n>\n> two\n::\n\n::blockquote{#b}\n> - x\n::\n\n> plain\n>\n> ```\n> c\n> ```"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "table",
+      {},
+      [
+       "tr",
+       {},
+       [
+        "th",
+        {},
+        "H1"
+       ],
+       [
+        "th",
+        {},
+        "H2"
+       ]
+      ],
+      [
+       "tr",
+       {},
+       [
+        "td",
+        {},
+        "a"
+       ],
+       [
+        "td",
+        {},
+        "b"
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "| H1  | H2  |\n| --- | --- |\n| a   | b   |"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "table",
+      {},
+      [
+       "thead",
+       {},
+       "text",
+       [
+        "tr",
+        {},
+        "cell text",
+        [
+         "th",
+         {},
+         "H"
+        ]
+       ],
+       [
+        "p",
+        {},
+        "not a row"
+       ]
+      ],
+      [
+       "tbody",
+       {},
+       [
+        "tr",
+        {},
+        [
+         "td",
+         {},
+         "x"
+        ]
+       ],
+       "loose"
+      ]
+     ]
+    ]
+   },
+   "markdown": "| H   |\n| --- |\n| x   |"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "table",
+      {}
+     ]
+    ]
+   },
+   "markdown": ""
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "table",
+      {},
+      "just text",
+      [
+       "caption",
+       {},
+       "cap"
+      ]
+     ]
+    ]
+   },
+   "markdown": ""
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "table",
+      {
+       "class": "t",
+       "id": "x"
+      },
+      [
+       "thead",
+       {},
+       [
+        "tr",
+        {},
+        [
+         "th",
+         {},
+         "A"
+        ]
+       ]
+      ],
+      [
+       "tbody",
+       {},
+       [
+        "tr",
+        {},
+        [
+         "td",
+         {},
+         "1"
+        ]
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "::table{.t #x}\n| A   |\n| --- |\n| 1   |\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "card",
+      {},
+      [
+       "table",
+       {},
+       [
+        "thead",
+        {},
+        [
+         "tr",
+         {},
+         [
+          "th",
+          {},
+          "A"
+         ]
+        ]
+       ],
+       [
+        "tbody",
+        {},
+        [
+         "tr",
+         {},
+         [
+          "td",
+          {},
+          [
+           "strong",
+           {},
+           "b"
+          ],
+          " c"
+         ]
+        ]
+       ]
+      ]
+     ]
+    ]
+   },
+   "markdown": "::card\n| A       |\n| ------- |\n| **b** c |\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "template",
+      {
+       "name": "default"
+      },
+      [
+       "p",
+       {},
+       "root default"
+      ]
+     ],
+     [
+      "template",
+      {
+       "name": "other",
+       "x": "y"
+      },
+      "text"
+     ]
+    ]
+   },
+   "markdown": "#default\nroot default\n\n#other{x=\"y\"}\ntext"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      "a ",
+      [
+       "b",
+       {
+        "$": {
+         "html": 1,
+         "block": 0
+        }
+       },
+       "bold"
+      ],
+      " ",
+      [
+       "i",
+       {
+        "$": {
+         "html": 1,
+         "block": 0
+        },
+        "class": "c"
+       },
+       "it"
+      ]
+     ]
+    ]
+   },
+   "markdown": "a <b>bold</b> <i class=\"c\">it</i>"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "div",
+      {
+       "$": {
+        "html": 1,
+        "block": 1
+       }
+      },
+      [
+       "p",
+       {},
+       "one"
+      ],
+      [
+       "p",
+       {},
+       "two"
+      ],
+      [
+       "span",
+       {
+        "$": {
+         "html": 1,
+         "block": 0
+        }
+       },
+       "x"
+      ]
+     ]
+    ]
+   },
+   "markdown": "<div>\none\n\n\ntwo\n\n\n<span>x</span>\n</div>"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "div",
+      {
+       "$": {
+        "html": 1,
+        "block": 1
+       },
+       "data": {
+        "a": 1
+       },
+       "list": [
+        "x",
+        "y"
+       ],
+       ":bound": "v"
+      },
+      "text"
+     ]
+    ]
+   },
+   "markdown": "<div data=\"{&quot;a&quot;:1}\" list=\"[&quot;x&quot;,&quot;y&quot;]\" bound=\"v\">\ntext\n</div>"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "section",
+      {
+       "$": {
+        "html": 1,
+        "block": 1
+       }
+      },
+      [
+       "div",
+       {
+        "$": {
+         "html": 1,
+         "block": 1
+        }
+       },
+       "inner"
+      ],
+      "tail"
+     ]
+    ]
+   },
+   "markdown": "<section>\n<div>\ninner\n</div>tail\n</section>"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "pre",
+      {
+       "language": "md"
+      },
+      [
+       "code",
+       {},
+       "~~~\nx\n~~~~"
+      ]
+     ],
+     [
+      "pre",
+      {},
+      [
+       "code",
+       {},
+       "```\n````\n"
+      ]
+     ],
+     [
+      "pre",
+      {
+       "class": "shj-lang-js user"
+      },
+      [
+       "code",
+       {},
+       "y"
+      ]
+     ],
+     [
+      "mermaid",
+      {}
+     ],
+     [
+      "mermaid",
+      {
+       "content": "~~~"
+      }
+     ]
+    ]
+   },
+   "markdown": "```md\n~~~\nx\n~~~~\n```\n\n~~~\n```\n````\n~~~\n\n```\ny\n```\n\n```mermaid\n\n```\n\n```mermaid\n~~~\n```"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "card",
+      {
+       "a": "---",
+       "b": "x\n---\ny",
+       "c": 1,
+       "d": 2
+      },
+      [
+       "p",
+       {},
+       "body"
+      ]
+     ]
+    ]
+   },
+   "markdown": "::card\n---\na: ---\nb: |-\n  x\n  ---\n  y\nc: 1\nd: 2\n---\nbody\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "card",
+      {
+       "obj": {
+        "text": "a\n---\nb"
+       }
+      },
+      [
+       "p",
+       {},
+       "body"
+      ]
+     ]
+    ]
+   },
+   "markdown": "::card\n---\nobj:\n  text: |-\n    a\n    ---\n    b\n---\nbody\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "card",
+      {
+       "a": {
+        "$type": "shared",
+        "id": 0,
+        "value": {
+         "k": 1
+        }
+       },
+       "b": {
+        "$type": "ref",
+        "id": 0
+       },
+       "items": {
+        "$type": "shared",
+        "id": 1,
+        "value": [
+         1,
+         2
+        ]
+       },
+       "more": {
+        "$type": "ref",
+        "id": 1
+       }
+      },
+      [
+       "p",
+       {},
+       "body"
+      ]
+     ]
+    ]
+   },
+   "markdown": "::card\n---\na: &ref_0\n  k: 1\nb: *ref_0\nitems: &ref_1\n  - 1\n  - 2\nmore: *ref_1\n---\nbody\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {
+     "defaults": {
+      "$type": "shared",
+      "id": 0,
+      "value": {
+       "k": 1
+      }
+     },
+     "page": {
+      "<<": {
+       "$type": "ref",
+       "id": 0
+      }
+     },
+     "list": [
+      {
+       "$type": "shared",
+       "id": 1,
+       "value": [
+        1,
+        2
+       ]
+      },
+      {
+       "$type": "ref",
+       "id": 1
+      }
+     ]
+    },
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      "x"
+     ]
+    ]
+   },
+   "markdown": "---\ndefaults: &ref_0\n  k: 1\npage:\n  '<<': *ref_0\nlist:\n  - &ref_1\n    - 1\n    - 2\n  - *ref_1\n---\n\nx"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "p",
+      {},
+      [
+       "toString",
+       {},
+       "x"
+      ],
+      " ",
+      [
+       "constructor",
+       {
+        "a": "b"
+       }
+      ]
+     ],
+     [
+      "hasOwnProperty",
+      {},
+      [
+       "p",
+       {},
+       "y"
+      ]
+     ]
+    ]
+   },
+   "markdown": ":toString[x] :constructor{a=\"b\"}\n\n::hasOwnProperty\ny\n::"
+  },
+  {
+   "tree": {
+    "frontmatter": {},
+    "meta": {},
+    "nodes": [
+     [
+      "a",
+      {
+       "href": "/x"
+      },
+      [
+       "span",
+       {},
+       "in link"
+      ]
+     ],
+     [
+      "p",
+      {},
+      [
+       "span",
+       {
+        "class": "c"
+       },
+       "span"
+      ],
+      " ",
+      [
+       "badge",
+       {
+        "n": {
+         "o": 1
+        }
+       },
+       "obj"
+      ]
+     ]
+    ]
+   },
+   "markdown": "[[in link]{}](/x)[span]{.c}   ::badge\n  ---\n  'n':\n    o: 1\n  ---\n  obj\n  ::"
+  }
+ ]
+}
