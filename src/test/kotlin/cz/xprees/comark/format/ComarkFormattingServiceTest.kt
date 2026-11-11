@@ -3,10 +3,15 @@ package cz.xprees.comark.format
 import cz.xprees.comark.lang.ComarkLanguage
 import com.intellij.application.options.CodeStyle
 import com.intellij.codeInsight.actions.ReformatCodeProcessor
+import com.intellij.openapi.actionSystem.IdeActions
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.codeStyle.CodeStyleManager
+import com.intellij.psi.codeStyle.CodeStyleSettingsCustomizable
+import com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider
+import com.intellij.psi.util.PsiTreeUtil
+import cz.xprees.comark.psi.ComarkBlockComponent
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import cz.xprees.comark.psi.ComarkFile
 import cz.xprees.comark.settings.ComarkSettings
@@ -60,7 +65,7 @@ class ComarkFormattingServiceTest : BasePlatformTestCase() {
 
     fun testWholeFileReformat() {
         withIndentSize(2) {
-            configure("::outer\n    text  \n:::inner\n---\ntitle: x\nlinks:\n      - a\n---\ninner text\n:::\n::")
+            configure("::outer\n   text  \n:::inner\n---\ntitle: x\nlinks:\n      - a\n---\ninner text\n:::\n::")
             reformat()
             myFixture.checkResult("::outer\ntext\n  :::inner\n  ---\n  title: x\n  links:\n    - a\n  ---\n  inner text\n  :::\n::\n")
         }
@@ -118,7 +123,7 @@ class ComarkFormattingServiceTest : BasePlatformTestCase() {
 
     fun testEditsAreMinimalSoMarkersOnTheContentSurvive() {
         withIndentSize(2) {
-            val text = "::outer\n:::inner\n      some words here   \n:::\n::\n"
+            val text = "::outer\n:::inner\n   some words here   \n:::\n::\n"
             configure(text)
             val document = myFixture.editor.document
             val start = text.indexOf("words")
@@ -185,5 +190,126 @@ class ComarkFormattingServiceTest : BasePlatformTestCase() {
             reformatRange(0, myFixture.editor.document.textLength)
             myFixture.checkResult("::a\ntext\n::\n")
         }
+    }
+
+    // ---- deviations from monarch-mdc: content and structure are kept ----------------------------------------------
+
+    private fun reformatted(text: String): String {
+        configure(text)
+        reformat()
+        return myFixture.editor.document.text
+    }
+
+    fun testReformatKeepsAListItemComponentInsideTheListItem() {
+        val text = "- item\n  ::block\n  text\n  ::\n"
+        assertEquals(text, reformatted(text))
+    }
+
+    fun testListItemComponentIsFormattedAtTheListItemsContentColumn() {
+        assertEquals(
+            "- item\n  ::block\n  text\n    :::inner\n    ---\n    title: x\n    ---\n    more\n    :::\n  ::\n- next\n  - nested\n",
+            reformatted("- item\n  ::block\n     text\n   :::inner\n   ---\n   title: x\n   ---\n   more\n   :::\n  ::\n- next\n  - nested\n"),
+        )
+        // nested lists: the component stays in the inner item, and the list goes on after it
+        assertEquals(
+            "- a\n  - b\n    ::c\n    text\n    ::\n  - d\n",
+            reformatted("- a\n  - b\n    ::c\n      text\n    ::\n  - d\n"),
+        )
+        // inside a component
+        assertEquals(
+            "::outer\n- item\n  :::block\n  text\n  :::\n::\n",
+            reformatted("::outer\n- item\n  :::block\n    text\n  :::\n::\n"),
+        )
+    }
+
+    fun testReformatKeepsTabsInCodeFences() {
+        val text = "::example\n```makefile\nall:\n\tgo build\n```\n::\n"
+        assertEquals(text, reformatted(text))
+        // the fence moves with its component; the content keeps its indentation relative to the fence
+        assertEquals(
+            "::a\n  :::example\n  ```makefile\n  all:\n  \tgo build\n  ```\n  :::\n::\n",
+            reformatted("::a\n:::example\n```makefile\nall:\n\tgo build\n```\n:::\n::\n"),
+        )
+    }
+
+    fun testReformatKeepsIndentedCodeBlocks() {
+        val text = "Paragraph\n\n    code block\n    more code\n"
+        assertEquals(text, reformatted(text))
+        // inside components the code block keeps its indentation relative to the component's opener
+        assertEquals(
+            "::a\n  :::b\n  text\n\n      code  \n        more\n  :::\n::\n",
+            reformatted("::a\n:::b\ntext\n\n    code  \n      more\n:::\n::\n"),
+        )
+    }
+
+    fun testReformatKeepsHardLineBreaks() {
+        val text = "first line  \nsecond line\n"
+        assertEquals(text, reformatted(text))
+        // trailing spaces that are no hard line break still go
+        assertEquals("::a\ntext\n\nlast\n::\n", reformatted("::a\ntext  \n\nlast  \n::\n"))
+        assertEquals("::a\n  :::b\n  one   \n  two\n  :::\n::\n", reformatted("::a\n:::b\none   \ntwo \n:::\n::\n"))
+    }
+
+    // ---- indentation is always spaces --------------------------------------------------------------------------
+
+    fun testCodeStylePageOffersTheIndentSizeOnly() {
+        val shown = ArrayList<String>()
+        val consumer = object : CodeStyleSettingsCustomizable {
+            override fun showAllStandardOptions() = fail("all options shown")
+            override fun showStandardOptions(vararg optionNames: String) {
+                shown += optionNames
+            }
+        }
+        ComarkCodeStyleSettingsProvider().customizeSettings(consumer, LanguageCodeStyleSettingsProvider.SettingsType.INDENT_SETTINGS)
+        assertEquals(listOf("INDENT_SIZE"), shown)
+    }
+
+    fun testTabIndentationWouldTurnNestedComponentsIntoCode() {
+        // why "Use tab character" is not offered: Markdown counts a leading tab as four columns, so this is an indented code block
+        val file = configure("::a\n\t:::b\n\ttext\n\t:::\n::\n")
+        assertEquals(listOf("a"), PsiTreeUtil.findChildrenOfType(file, ComarkBlockComponent::class.java).map { it.componentName })
+        // ...and the formatter writes spaces, whatever the (hidden) option says
+        CodeStyle.doWithTemporarySettings(project, CodeStyle.getSettings(project)) { settings ->
+            settings.getCommonSettings(ComarkLanguage).indentOptions!!.USE_TAB_CHARACTER = true
+            assertEquals("::a\n  :::b\n  text\n  :::\n::\n", reformatted("::a\n:::b\ntext\n:::\n::\n"))
+        }
+    }
+
+    // ---- Auto-Indent Lines uses the same indentation ------------------------------------------------------------
+
+    private fun autoIndent(text: String, start: Int = 0, end: Int = text.length, name: String = "test.mdc"): String {
+        configure(text, name)
+        myFixture.editor.selectionModel.setSelection(start, end)
+        myFixture.performEditorAction(IdeActions.ACTION_EDITOR_AUTO_INDENT_LINES)
+        return myFixture.editor.document.text
+    }
+
+    fun testAutoIndentLinesKeepsTheComarkIndentation() {
+        val text = "::outer\n  :::inner\n  text\n  more\n  :::\n::\n"
+        assertEquals("precondition: the text is formatted", text, ComarkFormatter.format(text))
+        assertEquals(text, autoIndent(text))
+    }
+
+    fun testAutoIndentLinesIndentsLikeReformat() {
+        val text = "::outer\n:::inner\n      text\n- item\n  ::block\n      body\n  ::\n:::\n::\n"
+        assertEquals(reformatted(text), autoIndent(text))
+    }
+
+    fun testAutoIndentLinesChangesOnlyTheSelectedLines() {
+        val text = "::outer\n:::inner\none\ntwo\n:::\n::\n"
+        assertEquals("::outer\n:::inner\none\n  two\n:::\n::\n", autoIndent(text, text.indexOf("two"), text.indexOf("two") + 1))
+    }
+
+    fun testAutoIndentLinesKeepsContent() {
+        val text = "::example\n```makefile\nall:\n\tgo build\n```\n::\n\nParagraph  \nwith a break\n\n    code block\n"
+        assertEquals(text, autoIndent(text))
+    }
+
+    fun testAutoIndentLinesWithTheFormatterDisabledIsMarkdowns() {
+        ComarkSettings.getInstance().formatterEnabled = false
+        val text = "::outer\n  :::inner\n  text\n  :::\n::\n"
+        // what the Markdown plugin's model does in a Markdown file
+        val markdown = autoIndent(text, name = "plain.md")
+        assertEquals(markdown, autoIndent(text))
     }
 }

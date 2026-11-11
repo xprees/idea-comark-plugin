@@ -40,6 +40,10 @@ import kotlin.math.max
  * `" ".repeat()` throws a `RangeError`, this throws [ComarkFormatterException]. That happens for code fence content indented
  * less than its fence (beyond the component indentation) and for YAML array items indented less than the items above them.
  *
+ * The IDE does not apply this directly but through [ComarkDocumentFormatter], which keeps what the original would change in a
+ * document's content or structure (components inside list items, indented code blocks, tabs in code fences, hard line breaks)
+ * and is byte-identical to it everywhere else.
+ *
  * Ported from monarch-mdc, Copyright (c) 2021 NuxtLabs, MIT License (https://github.com/nuxtlabs/monarch-mdc).
  */
 object ComarkFormatter {

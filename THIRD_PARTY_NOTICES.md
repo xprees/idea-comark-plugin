@@ -5,7 +5,8 @@ This plugin contains code ported from the following MIT-licensed projects.
 ## @nuxtlabs/monarch-mdc
 
 The Comark formatter (`cz.xprees.comark.format`) is a Kotlin port of the formatter in
-[@nuxtlabs/monarch-mdc](https://github.com/nuxtlabs/monarch-mdc), which the VS Code extension uses.
+[@nuxtlabs/monarch-mdc](https://github.com/nuxtlabs/monarch-mdc) 0.10.0, which the VS Code extension uses (Comark VS Code extension
+0.6.2 ships monarch-mdc 0.9.0, whose formatter behaves identically).
 
 ```
 MIT License

@@ -168,6 +168,13 @@ class ComarkFoldingTest : BasePlatformTestCase() {
         folds.withText("# A\n\n::alert\ntext\n::\n\n## B\n\nx\n")
     }
 
+    fun testComponentInsideAListItemFolds() {
+        val folds = folds("- item\n  ::block\n  ---\n  title: x\n  ---\n  text\n  more\n    :::inner\n    nested\n    :::\n  ::\n- next\n")
+        folds.withText("\n  ---\n  title: x\n  ---\n  text\n  more\n    :::inner\n    nested\n    :::\n  ")
+        assertEquals(" title ", folds.withText("\n  title: x\n  ").placeholder)
+        folds.withText("\n    nested\n    ")
+    }
+
     fun testPropsSummary() {
         assertEquals("title, icon", ComarkFoldingBuilder.propsSummary("title: x\nicon: y\n"))
         assertEquals("b", ComarkFoldingBuilder.propsSummary("  b: 1\n    c: 2\n"))

@@ -9,7 +9,8 @@ import java.io.File
 
 /**
  * Checks that [ComarkFormatter] produces byte-identical output to the JavaScript formatter it is ported from
- * (`@nuxtlabs/monarch-mdc` 0.10.0).
+ * (`@nuxtlabs/monarch-mdc` 0.10.0). The Comark VS Code extension 0.6.2 ships monarch-mdc 0.9.0, whose formatter produces the same
+ * output on the whole generated corpus (58,766 cases); the two versions differ only in the Monaco syntax highlighting rules.
  *
  * - `formatter/upstream`: monarch-mdc's own test suite (`tests/content/{input,output}`, MIT, see the LICENSE there), tabSize 2.
  * - `formatter/differential/cases.json`: input/expected pairs recorded by running the JavaScript formatter under Node. They are
@@ -17,6 +18,9 @@ import java.io.File
  *   extension, mutations of them and thousands of random MDC documents, with tab sizes 0-8 and both format-on-type modes),
  *   chosen to cover every block of the JavaScript formatter plus a stratified random sample. A case with `error` is one where
  *   the JavaScript formatter throws; the port must throw [ComarkFormatterException] there.
+ *
+ * This checks the plain port. What Reformat Code applies adds the documented deviations of [ComarkDocumentFormatter]; that is
+ * compared with the same data by `ComarkFormattingPipelineTest`, which skips (and counts) the inputs hitting a deviation.
  *
  * Setting the environment variable `COMARK_FORMATTER_DIFF_DIR` to a directory of such JSON files (e.g. the full corpus) checks
  * all of them too (run with `--rerun`, Gradle does not see the variable as an input).

@@ -91,7 +91,7 @@ class ComarkFormattingEditsTest {
             val text = case["input"].asString.replace("\r", "")
             val tabSize = case["tabSize"].asInt
             val full = try {
-                ComarkFormatter.format(text, tabSize).split('\n')
+                ComarkDocumentFormatter.format(text, tabSize)
             } catch (_: ComarkFormatterException) {
                 continue
             }

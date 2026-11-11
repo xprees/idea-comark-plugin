@@ -19,7 +19,10 @@ import cz.xprees.comark.psi.ComarkFile
 import cz.xprees.comark.psi.ComarkPropsBlock
 import cz.xprees.comark.psi.ComarkSlot
 import org.intellij.plugins.markdown.lang.MarkdownLanguage
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownBlockQuote
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownHeader
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownList
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownListItem
 
 /**
  * Code folding for Comark files: block components, slots, props blocks and header sections, plus everything Markdown folds.
@@ -90,7 +93,10 @@ class ComarkFoldingBuilder : FoldingBuilderEx(), DumbAware {
 
     override fun isCollapsedByDefault(node: ASTNode): Boolean = false
 
-    /** Walks the Comark structure: the file and, recursively, components and slots (Markdown nodes never contain components). */
+    /**
+     * Walks the Comark structure: the file and, recursively, components and slots, and the Markdown containers that can hold
+     * components (lists, list items and block quotes, as in the structure view).
+     */
     private class RegionCollector(
         private val document: Document,
         private val headerPlaceholders: FoldingBuilderEx?,
@@ -107,6 +113,20 @@ class ComarkFoldingBuilder : FoldingBuilderEx(), DumbAware {
                     is ComarkSlot -> slot(child)
                     is ComarkPropsBlock -> props(child)
                     is MarkdownHeader -> section(child)
+                    is MarkdownList, is MarkdownListItem, is MarkdownBlockQuote -> markdownContainer(child)
+                }
+                child = child.nextSibling
+            }
+        }
+
+        /** A list, list item or block quote: only the components in it (Markdown folds the container itself and its headers). */
+        private fun markdownContainer(container: PsiElement) {
+            var child = container.firstChild
+            while (child != null) {
+                ProgressManager.checkCanceled()
+                when (child) {
+                    is ComarkBlockComponent -> component(child)
+                    is MarkdownList, is MarkdownListItem, is MarkdownBlockQuote -> markdownContainer(child)
                 }
                 child = child.nextSibling
             }
