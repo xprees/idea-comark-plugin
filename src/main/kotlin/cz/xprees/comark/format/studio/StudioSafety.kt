@@ -10,6 +10,7 @@ enum class StudioRewriteReason(val description: String) {
     INVALID_YAML("YAML that does not load; Studio's code editor cannot save the document"),
     FRONTMATTER_BODY_KEY("a front matter `body` key, which replaces the document body in Studio"),
     FRONTMATTER_COMMENT("front matter with YAML comments, which Studio's re-dump drops"),
+    PROPS_COMMENT("component props YAML with comments, which Studio's re-dump drops"),
     COMPONENT_IN_LIST_ITEM("a block component inside a list item, which Studio's database path collapses and moves out of the list"),
     HTML_COMMENT("an HTML comment, which Studio's database path drops"),
     RAW_HTML("raw HTML, which Studio's database path converts to components"),
@@ -30,6 +31,9 @@ enum class StudioRewriteReason(val description: String) {
     ADJACENT_LISTS("neighbouring lists of the same kind with different markers, which Studio merges into one list on the next save"),
     COMPONENT_NAMED_A("a component named a, which Studio writes as a link to undefined"),
     INDENTED_COMPONENT("a component indented as code (4+ spaces or a tab), which Studio's text path turns into a code block"),
+    UNCLOSED_ATTRIBUTES("an attribute list { with no closing }, which Studio reads to the end of the text, turning words into attributes and dropping others"),
+    NESTING_LIMIT("nesting past markdown-it's limit of 100 levels, whose content Studio drops, or a tree too deep to render safely"),
+    DROPPED_BLOCK("a block Studio writes nothing for, so it is lost and the blocks around it may merge"),
     NOT_IDEMPOTENT("Studio's rewrite of this block changes again on the next save"),
 }
 
@@ -40,7 +44,7 @@ enum class StudioBlockKind { FRONTMATTER, BLOCK }
  * One top-level block of a document: lines `[startLine, endLine)` of the source (a line break being `\r\n`, `\r` or `\n`),
  * its [source] text (newlines normalized to `\n`, trailing blank lines dropped), the reasons it must be kept verbatim
  * (empty when Studio's rewrite is safe), and [studioOutput], what Studio writes for it on its own (trimmed; empty when Studio
- * drops the block; `null` for front matter Studio cannot load).
+ * drops the block; `null` for front matter Studio cannot load, and for a block too deeply nested to render).
  */
 data class StudioBlock(
     val kind: StudioBlockKind,
@@ -86,7 +90,7 @@ object StudioSafety {
                 fm.error?.startsWith("YAML") == true -> reasons += StudioRewriteReason.INVALID_YAML
                 fm.error != null -> reasons += StudioRewriteReason.FRONTMATTER_BODY_KEY
             }
-            if (fm.yaml != null && hasYamlComment(fm.yaml)) reasons += StudioRewriteReason.FRONTMATTER_COMMENT
+            if (fm.yaml != null && StudioYamlLoader.hasComment(fm.yaml)) reasons += StudioRewriteReason.FRONTMATTER_COMMENT
             val yaml = if (fm.error != null) null else StudioRenderer.frontmatterYaml(fm.data)
             if (reasons.isEmpty() && yaml != null && !frontmatterConverges(yaml)) reasons += StudioRewriteReason.NOT_IDEMPOTENT
             val raw = fm.raw.replace(Regex("\r\n?"), "\n")
@@ -98,18 +102,27 @@ object StudioSafety {
             val reasons: MutableSet<StudioRewriteReason> = EnumSet.noneOf(StudioRewriteReason::class.java)
             classifyTokens(segment.tokens, reasons)
             for (node in segment.nodes) classifyNode(node, null, false, reasons)
-            if (doc.propsYamlErrorLines.any { it >= segment.startLine && it < segment.endLine }) reasons += StudioRewriteReason.INVALID_YAML
+            fun inSegment(lines: List<Int>) = lines.any { it >= segment.startLine && it < segment.endLine }
+            if (inSegment(doc.propsYamlErrorLines)) reasons += StudioRewriteReason.INVALID_YAML
+            if (inSegment(doc.propsYamlCommentLines)) reasons += StudioRewriteReason.PROPS_COMMENT
+            if (inSegment(doc.nestingLimitLines)) reasons += StudioRewriteReason.NESTING_LIMIT
             val kind = listKind(segment)
             if (kind != null && (listKind(segments.getOrNull(i - 1)) == kind || listKind(segments.getOrNull(i + 1)) == kind)) {
                 reasons += StudioRewriteReason.ADJACENT_LISTS
             }
-            val rendered = StudioRenderer.renderNodes(segment.nodes)
-            if (reasons.isEmpty() && StudioJs.trim(rendered).isNotEmpty() && !converges(StudioJs.trimEnd(rendered))) {
+            val tooDeep = StudioTreeBuilder.treeDepth(segment.nodes) > StudioTreeBuilder.MAX_TREE_DEPTH
+            if (tooDeep) reasons += StudioRewriteReason.NESTING_LIMIT
+            val rendered = if (tooDeep) null else StudioRenderer.renderNodes(segment.nodes)
+            if (rendered != null && StudioJs.trim(rendered).isEmpty() && StudioJs.trim(segment.source).isNotEmpty()) {
+                // a dropped block: the blocks around it may then merge, which only the next save would show
+                reasons += StudioRewriteReason.DROPPED_BLOCK
+            }
+            if (reasons.isEmpty() && rendered != null && !converges(StudioJs.trimEnd(rendered))) {
                 reasons += StudioRewriteReason.NOT_IDEMPOTENT
             }
             val block = StudioBlock(
                 StudioBlockKind.BLOCK, doc.sourceLine(segment.startLine), doc.sourceLine(segment.endLine), segment.source, reasons,
-                StudioPostProcess.padBlankLinesInComponents(StudioJs.trim(rendered)),
+                rendered?.let { StudioPostProcess.padBlankLinesInComponents(StudioJs.trim(it)) },
             )
             blocks += AnalyzedBlock(block, rendered)
         }
@@ -128,37 +141,6 @@ object StudioSafety {
     private fun frontmatterConverges(yaml: String): Boolean {
         val text = "---\n$yaml\n---\n\nx\n"
         return StudioFormatter.format(text) == text
-    }
-
-    private val BLOCK_SCALAR_HEADER = Regex("(^|[ \\t:\\-])[|>][0-9+\\-]*[ \\t]*$")
-
-    /**
-     * Whether the front matter YAML has a comment: a `#` at the start of a line or after whitespace, outside quoted
-     * scalars and block scalars (`|`, `>`). A plain scanner, not a YAML parser: it errs towards seeing a comment.
-     */
-    internal fun hasYamlComment(yaml: String): Boolean {
-        var blockIndent = -1 // inside a block scalar: lines indented more than this belong to it
-        for (line in yaml.split("\n")) {
-            val indent = line.indexOfFirst { it != ' ' }.let { if (it < 0) line.length else it }
-            if (blockIndent >= 0) {
-                if (indent == line.length || indent > blockIndent) continue
-                blockIndent = -1
-            }
-            var quote: Char? = null
-            var i = 0
-            while (i < line.length) {
-                val c = line[i]
-                when {
-                    quote == '\'' -> if (c == '\'') quote = null
-                    quote == '"' -> if (c == '\\') i++ else if (c == '"') quote = null
-                    c == '#' && (i == 0 || line[i - 1] == ' ' || line[i - 1] == '\t') -> return true
-                    (c == '\'' || c == '"') && (i == 0 || line[i - 1] in " \t:-[{,") -> quote = c
-                }
-                i++
-            }
-            if (quote == null && BLOCK_SCALAR_HEADER.containsMatchIn(line)) blockIndent = indent
-        }
-        return false
     }
 
     private fun listKind(segment: StudioSegment?): String? = segment?.tokens?.firstOrNull()?.type?.takeIf { it == "bullet_list_open" || it == "ordered_list_open" }
@@ -189,6 +171,7 @@ object StudioSafety {
                     if (token.tag == "a") reasons += StudioRewriteReason.COMPONENT_NAMED_A
                 }
                 "mdc_inline_component" -> if (token.tag == "a") reasons += StudioRewriteReason.COMPONENT_NAMED_A
+                "mdc_inline_props" -> if (token.unclosedProps) reasons += StudioRewriteReason.UNCLOSED_ATTRIBUTES
                 "html_block", "html_inline" -> {
                     if (token.content.contains("<!--")) reasons += StudioRewriteReason.HTML_COMMENT
                     if (StudioJs.trim(token.content.replace(HTML_COMMENT, "")).isNotEmpty()) reasons += StudioRewriteReason.RAW_HTML

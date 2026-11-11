@@ -13,6 +13,22 @@ import java.util.Locale
  * `trim` family.
  */
 internal object StudioJs {
+    /**
+     * The members of JavaScript's `\s`, for building classes such as `[^?\s]`. Java's `\s` is ASCII-only; JavaScript's also
+     * covers U+00A0, U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF. Use [RE_S] or these wherever a
+     * ported pattern has `\s`.
+     */
+    const val RE_S_CHARS = "\\t\\n\\u000B\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff"
+
+    /** JavaScript's `\s` (see [RE_S_CHARS]). */
+    const val RE_S = "[$RE_S_CHARS]"
+
+    /**
+     * JavaScript's `.` without the `s` flag: anything but `\n`, `\r`, U+2028 and U+2029. Java's `.` also leaves out U+0085,
+     * and with DOT_MATCHES_ALL takes the line terminators. Use it wherever a ported pattern has `.`.
+     */
+    const val RE_DOT = "[^\\n\\r\\u2028\\u2029]"
+
     /** `typeof v === 'object'` (true for `null`, arrays, plain objects and dates). */
     fun isObject(v: Any?): Boolean = v == null || v is Map<*, *> || v is List<*> || v is JsDate
 

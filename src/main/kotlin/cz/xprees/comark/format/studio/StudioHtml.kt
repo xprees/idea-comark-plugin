@@ -20,7 +20,7 @@ internal object StudioHtml {
 
     class InlineTag(val tag: String, val attrs: Map<String, Any?>, val isVoid: Boolean, val isClose: Boolean)
 
-    private val CLOSE_TAG = Regex("^</([a-zA-Z][a-zA-Z0-9]*)\\s*>")
+    private val CLOSE_TAG = Regex("^</([a-zA-Z][a-zA-Z0-9]*)${StudioJs.RE_S}*>")
 
     fun parseInlineHtmlTag(html: String): InlineTag? {
         val trimmed = StudioJs.trim(html)

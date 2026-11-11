@@ -36,6 +36,16 @@ class StudioYamlLoaderTest {
     }
 
     @Test
+    fun findsCommentsAsTheParserSeesThem() {
+        for (yaml in listOf("# c\na: 1", "a: 1 # c", "a: Smith,'Jones # c", "a: x -'y # c", "a: |  # c\n  x", "a:\n  # c\n  - b", "a: [1, # c\n  2]")) {
+            assertTrue(yaml, StudioYamlLoader.hasComment(yaml))
+        }
+        for (yaml in listOf("a: x#y", "a: 'x # y'", "a: \"x # y\"", "a: |\n  # in the scalar\n  x", "a: [1, 2]", "a: [")) {
+            assertTrue(yaml, !StudioYamlLoader.hasComment(yaml))
+        }
+    }
+
+    @Test
     fun aliasesShareTheAnchoredInstance() {
         val m = load("a: &x {k: [1, 2]}\nb: *x\n") as Map<*, *>
         assertSame(m["a"], m["b"])

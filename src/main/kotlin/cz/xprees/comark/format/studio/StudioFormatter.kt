@@ -15,6 +15,9 @@ object StudioFormatter {
         null
     } catch (_: StudioUnsupportedException) {
         null
+    } catch (_: StackOverflowError) {
+        // a backstop: trees deeper than StudioTreeBuilder.MAX_TREE_DEPTH are declined before rendering
+        null
     }
 
     /** [formatPreserving]'s result: the formatted [text] and the document's blocks, with the reasons for those kept verbatim. */
@@ -26,33 +29,61 @@ object StudioFormatter {
      * Studio's rendering of [text], except that every block [StudioSafety] classifies (content Studio damages, or a rewrite
      * that does not converge) is copied from the source unchanged (newlines normalized to `\n`, trailing blank lines
      * dropped). The front matter and each top-level block are rendered on their own and joined as Studio joins them: the
-     * front matter, a blank line, then the blocks' output concatenated (a kept block followed by a blank line), trimmed at
-     * both ends, and a final newline. `padBlankLinesInComponents` runs over the result but never changes a kept block.
+     * front matter, a blank line, then the blocks' output concatenated (a kept block set off by a blank line, or by the
+     * source's own blank lines from a kept block before it), trimmed at both ends, and a final newline. `padBlankLinesInComponents` runs over the result but never changes a kept block.
      *
      * The result is checked by formatting it again: a block whose output would change on the next pass (because of what
      * surrounds it) is kept as well, with [StudioRewriteReason.NOT_IDEMPOTENT], until the result is a fixed point.
      *
+     * When that does not settle within [MAX_REPAIRS] rounds, every block whose output differs from its source is kept.
+     *
      * Where nothing is kept, the text is exactly [format]'s. Invalid YAML in the front matter or in a component's props
      * keeps that block instead of failing; `null` only when the document cannot be parsed at all.
      */
-    fun formatPreserving(text: String): PreservingResult? {
+    fun formatPreserving(text: String): PreservingResult? = try {
+        formatPreservingChecked(text)
+    } catch (_: StackOverflowError) {
+        // a backstop: blocks deeper than StudioTreeBuilder.MAX_TREE_DEPTH are kept without rendering them
+        null
+    }
+
+    private fun formatPreservingChecked(text: String): PreservingResult? {
         val analysis = StudioSafety.analyze(text) ?: return null
         var blocks = analysis.blocks
-        repeat(MAX_REPAIRS) {
+        for (round in 0 until MAX_REPAIRS) {
             val assembled = assemble(analysis, blocks)
             val again = StudioSafety.analyze(assembled.text)?.let { assemble(it, it.blocks).text }
             if (again == assembled.text) return PreservingResult(assembled.text, blocks.map { it.block })
-            val line = firstDifferentLine(assembled.text, again ?: "")
-            val culprit = assembled.lineOwners.getOrNull(line)?.takeIf { it >= 0 && !blocks[it].block.kept }
-                ?: blocks.indices.firstOrNull { !blocks[it].block.kept && assembled.lineOwners.indexOf(it) > line }
-                ?: blocks.indices.lastOrNull { !blocks[it].block.kept && assembled.lineOwners.indexOf(it) in 0 until line }
-                ?: return PreservingResult(assembled.text, blocks.map { it.block })
-            blocks = blocks.mapIndexed { i, b ->
-                if (i != culprit) b else StudioSafety.AnalyzedBlock(b.block.copy(reasons = b.block.reasons + StudioRewriteReason.NOT_IDEMPOTENT), b.rendered)
-            }
+            val culprit = culprit(blocks, assembled, firstDifferentLine(assembled.text, again ?: "")) ?: break
+            blocks = blocks.mapIndexed { i, b -> if (i != culprit) b else notIdempotent(b) }
         }
+        // no fixed point found by single repairs: keep every block Studio would change
+        blocks = blocks.map { b -> if (!b.block.kept && b.block.studioOutput != b.block.source) notIdempotent(b) else b }
         val assembled = assemble(analysis, blocks)
         return PreservingResult(assembled.text, blocks.map { it.block })
+    }
+
+    private fun notIdempotent(b: StudioSafety.AnalyzedBlock) =
+        StudioSafety.AnalyzedBlock(b.block.copy(reasons = b.block.reasons + StudioRewriteReason.NOT_IDEMPOTENT), b.rendered)
+
+    /**
+     * The block to keep when the next pass first changes output line [line]: the block that wrote the line, or, for a
+     * separator line between blocks, the nearest block that is not kept yet, the one after the line on a tie. `null` when
+     * every block is kept.
+     */
+    private fun culprit(blocks: List<StudioSafety.AnalyzedBlock>, assembled: Assembled, line: Int): Int? {
+        assembled.lineOwners.getOrNull(line)?.takeIf { it >= 0 && !blocks[it].block.kept }?.let { return it }
+        var best: Int? = null
+        var bestDistance = Int.MAX_VALUE
+        for ((l, owner) in assembled.lineOwners.withIndex()) {
+            if (owner < 0 || blocks[owner].block.kept) continue
+            val distance = if (l >= line) l - line else line - l
+            if (distance < bestDistance || distance == bestDistance && l > line) {
+                best = owner
+                bestDistance = distance
+            }
+        }
+        return best ?: blocks.indices.firstOrNull { !blocks[it].block.kept }
     }
 
     private const val MAX_REPAIRS = 16
@@ -85,11 +116,21 @@ object StudioFormatter {
         val body = StringBuilder()
         val owners = ArrayList<Pair<IntRange, Int>>() // character ranges of the body and the block that wrote them
         val kept = ArrayList<IntRange>()
+        var previous: StudioBlock? = null
         for ((index, b) in blocks.withIndex()) {
             if (b.block.kind != StudioBlockKind.BLOCK) continue
             val start = body.length
+            val before = previous
+            previous = b.block
             if (b.block.kept) {
-                if (body.isNotEmpty()) while (!body.endsWith("\n\n")) body.append('\n')
+                if (before?.kept == true) {
+                    // between two kept blocks, the source's own blank lines: with one blank line, markdown-it could read
+                    // them as one block (an empty list item, then a list)
+                    body.setLength(body.length - 2)
+                    repeat(maxOf(b.block.startLine - before.endLine, 0) + 1) { body.append('\n') }
+                } else if (body.isNotEmpty()) {
+                    while (!body.endsWith("\n\n")) body.append('\n')
+                }
                 val from = body.length
                 body.append(b.block.source)
                 kept += from until body.length

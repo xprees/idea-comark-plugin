@@ -20,6 +20,9 @@ internal class MdToken(var type: String, var tag: String, var nesting: Int) {
     /** For a `link_open` or `image` resolved through a link reference definition: the normalized label (not markdown-it). */
     var reference: String? = null
 
+    /** For an `mdc_inline_props` token: no `}` closed the props, so they ran to the end of the inline content (not comark). */
+    var unclosedProps = false
+
     fun attrIndex(name: String): Int = attrs?.indexOfFirst { it.name == name } ?: -1
 
     fun attrPush(attr: MdAttr) {
@@ -54,6 +57,12 @@ internal class MdEnv {
      */
     var lenientPropsYaml = false
     val propsYamlErrors = ArrayList<Int>()
+
+    /** Not markdown-it: the lines where block parsing stopped at the nesting limit, dropping the rest of the container. */
+    val nestingLimitLines = ArrayList<Int>()
+
+    /** Not comark: with [lenientPropsYaml], the lines of the opening `---` of props blocks whose YAML has a comment. */
+    val propsYamlComments = ArrayList<Int>()
 }
 
 /** Thrown where comark (or markdown-exit) itself throws during the parse; Studio's text path then fails. */
@@ -243,6 +252,7 @@ internal object StudioMdBlock {
             if (line >= endLine) break
             if (state.sCount[line] < state.blkIndent) break
             if (state.level >= MAX_NESTING) {
+                state.env.nestingLimitLines += line
                 state.line = endLine
                 break
             }
@@ -496,7 +506,7 @@ internal object StudioMdBlock {
         "td", "tfoot", "th", "thead", "title", "tr", "track", "ul",
     )
 
-    private const val JS_S = "[\\t\\n\\u000B\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]"
+    private const val JS_S = StudioJs.RE_S
     private const val ATTR_NAME = "[a-zA-Z_:][a-zA-Z0-9:._-]*"
     private const val ATTR_VALUE = "(?:[^\"'=<>`\\x00-\\x20]+|'[^']*'|\"[^\"]*\")"
     private const val ATTRIBUTE = "(?:$JS_S+$ATTR_NAME(?:$JS_S*=$JS_S*$ATTR_VALUE)?)"
@@ -1309,6 +1319,7 @@ internal object StudioMdBlock {
                 state.env.propsYamlErrors += startLine
                 JsUndefined
             }
+            if (state.env.lenientPropsYaml && StudioYamlLoader.hasComment(yaml)) state.env.propsYamlComments += startLine
             val token = state.env.comarkBlockTokens[0]
             for ((key, value) in jsEntries(data)) {
                 if (key == "class") {

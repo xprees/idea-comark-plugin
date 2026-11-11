@@ -30,14 +30,14 @@ class StudioRendererDifferentialTest {
     fun rendersEveryTextPathTreeLikeStudio() {
         val withTree = cases.filter { it["comarkTree"]?.isJsonObject == true }
         assertEquals("cases without a text-path tree (the text path threw)", 34, cases.size - withTree.size)
-        assertEquals("cases with a text-path tree", 438, withTree.size)
+        assertEquals("cases with a text-path tree", 446, withTree.size)
         check("text path", withTree, "comarkTree", "frontmatter", "text")
     }
 
     @Test
     fun rendersEveryDatabasePathTreeLikeStudio() {
         val withTree = cases.filter { it["dbTree"]?.isJsonObject == true }
-        assertEquals("cases with a database-path tree", 472, withTree.size)
+        assertEquals("cases with a database-path tree", 480, withTree.size)
         check("database path", withTree, "dbTree", "dbFrontmatter", "db")
     }
 
