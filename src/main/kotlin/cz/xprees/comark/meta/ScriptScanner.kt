@@ -1,5 +1,7 @@
 package cz.xprees.comark.meta
 
+import com.intellij.openapi.vfs.VirtualFile
+
 /**
  * Minimal lexical scanning of TypeScript / JavaScript text for [VueSfcParser]: skipping strings, comments and bracketed groups,
  * splitting object literals and type literals into members. It is deliberately tolerant (a broken file yields fewer results,
@@ -338,8 +340,19 @@ internal object ScriptScanner {
         return entries
     }
 
-    /** A member of a type literal / interface body: `name?: Type` or a method signature `name?(args): Ret`. */
-    class TypeMember(val name: String, val nameStart: Int, val optional: Boolean, val type: String?, val isMethod: Boolean, val doc: String?)
+    /**
+     * A member of a type literal / interface body: `name?: Type` or a method signature `name?(args): Ret`. [file] is set when the
+     * member is declared in another module than the scanned text (an imported interface); [nameStart] is then into that file.
+     */
+    class TypeMember(
+        val name: String,
+        val nameStart: Int,
+        val optional: Boolean,
+        val type: String?,
+        val isMethod: Boolean,
+        val doc: String?,
+        val file: VirtualFile? = null,
+    )
 
     /** Members of the type literal (or interface body) whose braces are at [open] and [close]. */
     fun typeMembers(text: CharSequence, open: Int, close: Int): List<TypeMember> {

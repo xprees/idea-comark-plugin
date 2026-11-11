@@ -58,8 +58,13 @@ class ComarkDocumentationTarget(private val project: Project, val symbol: Comark
 
     override val navigatable: Navigatable?
         get() {
+            // a prop of an imported interface is declared in that TypeScript file, its offset is into it
+            symbol.prop?.file?.takeIf { it.isValid }?.let { declaring ->
+                val offset = symbol.prop.offset
+                return if (offset >= 0) OpenFileDescriptor(project, declaring, offset) else OpenFileDescriptor(project, declaring)
+            }
             val file = symbol.component.file?.takeIf { it.isValid } ?: return null
-            val offset = symbol.prop?.offset ?: symbol.slot?.offset ?: -1
+            val offset = symbol.prop?.let { if (it.file == null) it.offset else -1 } ?: symbol.slot?.offset ?: -1
             return if (offset >= 0) OpenFileDescriptor(project, file, offset) else OpenFileDescriptor(project, file)
         }
 

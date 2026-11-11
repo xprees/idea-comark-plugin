@@ -41,7 +41,7 @@ Markdown plugin offers (preview, structure view, lists, tables, header anchors, 
 | Highlighting | Component markers, names, closers, attributes (`#id`, `.class`, `key="value"`, `:binding`), slots, props fences; inline components, spans, attribute groups and `{{ bindings }}` in text. Colours in *Settings › Editor › Color Scheme › Comark* |
 | Inspections | *Unclosed block component* (with a fix inserting the closer), *Ignored text after component opener*, *Unknown Comark component* (off by default). Markdown's unresolved-link and unresolved-anchor inspections understand Comark spans and `{#id}` anchors |
 | Formatting | *Code › Reformat Code* uses a line-by-line port of the VS Code extension's formatter (monarch-mdc), checked byte for byte against the original on ~59,000 cases. Indent size: *Settings › Editor › Code Style › Comark* (2 by default; EditorConfig wins). Enter indents new lines the same way |
-| Components | Completion of component names (`::`, `:::`, inline `:`), props inside `{…}` and in props YAML, prop values from string unions, slot names after `#`; Go to Declaration to the `.vue` file, prop and `<slot>`; quick documentation. Sources: Vue SFCs in `components/` (Nuxt naming), `.nuxt/component-meta.mjs` / `.json`, an optional metadata URL. No Vue plugin needed |
+| Components | Completion of component names (`::`, `:::`, inline `:`), props inside `{…}` and in props YAML, prop values from string unions, slot names after `#`; Go to Declaration to the `.vue` file, prop and `<slot>`; quick documentation. Sources: Vue SFCs in `components/` (Nuxt naming), `.nuxt/component-meta.mjs` / `.json`, an optional metadata URL. Props come from `defineProps<…>()` type literals, local or imported interfaces and type aliases (`import type { Props } from './types'`, relative paths and the `~/`, `@/`, `~~/`, `@@/` aliases, `extends`, `A & B`, re-exports), runtime `defineProps({…})`, `withDefaults` and the options API. No Vue plugin needed |
 | Editor | Folding of components, slots and props (Markdown folds kept); matching `::name` / `::` highlighting and navigation; YAML highlighting and checks in props blocks; live templates from the VS Code snippets; Enter after an unclosed opener inserts its closer; breadcrumbs and sticky lines; structure view with headers, components and slots; spellchecking of component content and attribute values |
 | Preview | Components, props and slots render as labelled blocks in the built-in (JCEF) Markdown preview |
 
@@ -58,8 +58,10 @@ the Markdown one), component completion, an optional component metadata URL and 
 - Reformat Code re-aligns top-level tables only; tables inside components are left as they are.
 - The preview renders components only with the built-in JCEF preview; Markdown settings list "JCEF Browser" twice (both entries are
   the same choice), a side effect of how the plugin hooks the preview.
-- Prop types imported from other files (`defineProps<Props>()` with an imported `Props`) are not resolved; components inside
-  `node_modules` are known only through nuxt-component-meta output or the metadata URL.
+- Imported prop types are resolved textually: only from the project's own `.ts` / `.d.ts` files (not packages in `node_modules`
+  or `tsconfig` `paths` other than the Nuxt aliases), and mapped or conditional types, generics and default exports are not
+  evaluated (the members that can be found are used). Components inside `node_modules` are known only through
+  nuxt-component-meta output or the metadata URL.
 
 ## How it works
 

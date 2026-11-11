@@ -13,6 +13,9 @@
 - Component completion, navigation and documentation from Vue components and nuxt-component-meta
 - Markdown plugin compatibility (HTML blocks, TODOs, Fill Paragraph) and components in the Markdown preview
 - Code style page for Comark (indent 2 by default) and spellchecking of component content and attribute values
+- Component props from imported types: `defineProps<Props>()` with `Props` imported from a TypeScript file (relative paths and
+  the Nuxt `~/`, `@/`, `~~/`, `@@/` aliases, `index.ts` / `.d.ts`, re-exports, `extends` and `A & B` of imported types); editing
+  the imported file updates completion, and Go to Declaration opens it at the prop
 
 ### Fixed
 
