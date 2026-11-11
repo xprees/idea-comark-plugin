@@ -18,7 +18,8 @@ import org.intellij.plugins.markdown.lang.MarkdownElementTypes
 
 /**
  * Turns Markdown files into Comark files: `.mdc` always, `.md` when [ComarkSettings.mode] says so (by default when the file
- * belongs to a package that depends on Nuxt Content, Nuxt MDC or Comark, see [ComarkProjectDetector]).
+ * belongs to a package that depends on Nuxt Content, Nuxt MDC or Comark, see [ComarkProjectDetector]) and no exclusion pattern
+ * matches it ([ComarkExclusions]).
  */
 class ComarkLanguageSubstitutor : LanguageSubstitutor() {
     override fun getLanguage(file: VirtualFile, project: Project): Language? =
@@ -30,6 +31,7 @@ class ComarkLanguageSubstitutor : LanguageSubstitutor() {
         fun isComarkFile(file: VirtualFile, project: Project): Boolean {
             if (project.isDisposed) return false
             if (file.extension.equals(MDC_EXTENSION, ignoreCase = true)) return true
+            if (ComarkExclusions.isExcluded(file, project)) return false
             return when (ComarkSettings.getInstance().mode) {
                 ComarkSettings.Mode.ALWAYS -> true
                 ComarkSettings.Mode.NEVER -> false

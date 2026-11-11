@@ -28,6 +28,7 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         var componentCompletion: Boolean = true
         var componentMetadataUrl: String = ""
         var componentMetadataCacheMinutes: Int = 30
+        var excludedPatterns: String = ""
     }
 
     private var state = State()
@@ -62,6 +63,16 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         get() = state.componentMetadataCacheMinutes
         set(value) {
             state.componentMetadataCacheMinutes = value.coerceAtLeast(0)
+        }
+
+    /**
+     * Glob patterns (one per line, `#` starts a comment) of `.md` files and directories that are never Comark, whatever [mode] says;
+     * see [cz.xprees.comark.lang.ComarkExclusions] for how they match. `.mdc` files are always Comark.
+     */
+    var excludedPatterns: String
+        get() = state.excludedPatterns
+        set(value) {
+            state.excludedPatterns = value.trim()
         }
 
     override fun getState(): State = state

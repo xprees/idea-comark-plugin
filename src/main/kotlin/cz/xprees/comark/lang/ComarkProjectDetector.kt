@@ -4,7 +4,9 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.ide.projectView.ProjectView
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
@@ -82,11 +84,18 @@ class ComarkProjectDetector(private val project: Project) : Disposable {
 
         fun getInstance(project: Project): ComarkProjectDetector = project.service()
 
+        /**
+         * Re-parses the open Markdown files, whose language may have changed, and refreshes the icons shown for Markdown files (Comark
+         * files get the Comark icon) in the Project view and the editor tabs.
+         */
         fun reparseOpenMarkdownFiles(project: Project) {
             if (project.isDisposed) return
             ApplicationManager.getApplication().invokeLater({
                 val files = FileEditorManager.getInstance(project).openFiles.filter { it.hasMarkdownType() }
                 if (files.isNotEmpty()) FileContentUtilCore.reparseFiles(files)
+                val editors = FileEditorManagerEx.getInstanceEx(project)
+                files.forEach(editors::updateFilePresentation)
+                ProjectView.getInstance(project).refresh()
             }, project.disposed)
         }
     }
