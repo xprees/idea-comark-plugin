@@ -1,3 +1,5 @@
+@file:OptIn(org.intellij.markdown.ExperimentalApi::class)
+
 package cz.xprees.comark.preview
 
 import com.intellij.openapi.progress.ProgressManager
@@ -9,6 +11,7 @@ import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
+import org.intellij.markdown.parser.CancellationToken
 import org.intellij.markdown.parser.MarkdownParser
 
 /**
@@ -37,7 +40,7 @@ internal class InlineComarkRewriter(private val text: String) {
 
     fun rewrite(): Result {
         if (!mayContainSyntax()) return Result(text, OffsetMapping().apply { copy(0, text.length) })
-        markInlineContent(MarkdownParser(ComarkFlavour.INSTANCE).buildMarkdownTreeFromString(text), inHolder = false)
+        markInlineContent(MarkdownParser(ComarkFlavour.INSTANCE, true, CancellationToken.NonCancellable).buildMarkdownTreeFromString(text), inHolder = false)
         val closers = ArrayDeque<Closer>()
         var copiedFrom = 0
         var i = 0
