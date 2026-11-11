@@ -375,9 +375,11 @@ object ComarkInlineScanner {
             val scan = ComarkSyntax.scanAttributes(text, at, to) ?: return null
             if (!scan.closed) return null
             if (afterText && !afterCloser) {
+                // comark checks the rest of the whole inline source, so a group closing a span's or component's content (followed
+                // by its `]`) is text
                 var j = scan.end
-                while (j < to && (text[j] == ' ' || text[j] == '\t' || text[j] == '\r')) j++
-                if (j < to && text[j] != '\n') {
+                while (j < limit && (text[j] == ' ' || text[j] == '\t' || text[j] == '\r')) j++
+                if (j < limit && text[j] != '\n') {
                     rejectedUntil = scan.end
                     return null
                 }

@@ -189,6 +189,13 @@ tasks {
         gradleVersion = "9.8.0"
     }
 
+    // The licenses of the ported MIT code and of the Comark logo require their notices to ship with the plugin
+    processResources {
+        from(files("LICENSE", "THIRD_PARTY_NOTICES.md")) {
+            into("META-INF")
+        }
+    }
+
     test {
         testLogging {
             events("failed", "skipped")

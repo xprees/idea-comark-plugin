@@ -1,6 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <rect x="1" y="2" width="14" height="12" rx="2" fill="none" stroke="#00DC82" stroke-width="1.2"/>
-  <circle cx="5" cy="6" r="1.1" fill="#00DC82"/>
-  <circle cx="5" cy="10" r="1.1" fill="#00DC82"/>
-  <path d="M8 6h4M8 10h4" stroke="#CED0D6" stroke-width="1.2" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <!-- Comark logo (comark docs/public/logo-dark.svg, MIT License, Copyright (c) 2026 Comark team and contributors), file-icon size -->
+  <g transform="translate(0.06 3.1) scale(0.0763)">
+    <path stroke="#CED0D6" stroke-width="16" d="M199 9v110H9V9h190Z"/>
+    <path fill="#CED0D6" d="M128 51.25V32h19.937v19.25H128ZM128 96V76.75h19.937V96H128ZM158.063 51.25V32H178v19.25h-19.937Zm0 44.75V76.75H178V96h-19.937ZM30 98V30h20l20 25 20-25h20v68H90V59L70 84 50 59v39H30Z"/>
+  </g>
 </svg>

@@ -10,6 +10,7 @@ import com.intellij.psi.util.elementType
 import cz.xprees.comark.navigation.ComarkContentRoutes
 import cz.xprees.comark.parser.ComarkInlineScanner
 import cz.xprees.comark.parser.ComarkTypes
+import cz.xprees.comark.psi.ComarkAttribute
 import cz.xprees.comark.psi.ComarkFile
 import org.intellij.plugins.markdown.lang.MarkdownTokenTypes
 import java.util.Locale
@@ -35,6 +36,14 @@ object ComarkAnchors {
             ProgressManager.checkCanceled()
             when {
                 element.elementType == ComarkTypes.ATTR_ID -> idOf(element.text)?.let(result::add)
+                // `{id="x"}` is the same as `{#x}`
+                element is ComarkAttribute -> if (!element.isBinding && element.attributeName == "id") {
+                    element.valueElement?.text?.let(::unquote)?.takeIf { it.isNotEmpty() }?.let(result::add)
+                }
+                // a component's `id:` prop becomes its id
+                element.elementType == ComarkTypes.PROPS_CONTENT -> PROPS_ID.find(element.text)?.let { match ->
+                    unquote(match.groupValues[1].trim()).takeIf { it.isNotEmpty() }?.let(result::add)
+                }
                 ComarkInlineSyntax.isInlineHolder(element) -> collectInline(element, result, headingSlugs)
             }
         }
@@ -44,8 +53,19 @@ object ComarkAnchors {
     private fun collectInline(holder: PsiElement, into: MutableSet<String>, headingSlugs: MutableMap<String, Int>) {
         val text = holder.text
         val scan = ComarkInlineSyntax.scan(holder)
-        for (token in scan.tokens) {
-            if (token.kind == ComarkInlineScanner.Kind.ATTR_ID) idOf(text.substring(token.start, token.end))?.let(into::add)
+        val tokens = scan.tokens
+        for ((index, token) in tokens.withIndex()) {
+            when (token.kind) {
+                ComarkInlineScanner.Kind.ATTR_ID -> idOf(text.substring(token.start, token.end))?.let(into::add)
+                ComarkInlineScanner.Kind.ATTR_NAME -> if (text.substring(token.start, token.end) == "id") {
+                    tokens.subList(index + 1, minOf(index + 3, tokens.size))
+                        .firstOrNull { it.kind == ComarkInlineScanner.Kind.ATTR_VALUE || it.kind == ComarkInlineScanner.Kind.ATTR_NAME }
+                        ?.takeIf { it.kind == ComarkInlineScanner.Kind.ATTR_VALUE }
+                        ?.let { unquote(text.substring(it.start, it.end)) }?.takeIf { it.isNotEmpty() }?.let(into::add)
+                }
+
+                else -> {}
+            }
         }
         val heading = holder.elementType == MarkdownTokenTypes.ATX_CONTENT || holder.elementType == MarkdownTokenTypes.SETEXT_CONTENT
         if (!heading) return
@@ -105,6 +125,12 @@ object ComarkAnchors {
         if (slug.isNotEmpty() && slug[0] in '0'..'9') slug = "_$slug"
         return slug
     }
+
+    /** A top-level `id: value` line of a props block (YAML), value without a trailing comment. */
+    private val PROPS_ID = Regex("""(?m)^id:[ \t]*([^#\r\n]*?)[ \t]*(?:#.*)?$""")
+
+    private fun unquote(value: String): String =
+        if (value.length >= 2 && (value[0] == '"' || value[0] == '\'') && value.last() == value[0]) value.substring(1, value.length - 1) else value
 
     private fun idOf(token: String): String? = token.removePrefix("#").takeIf { it.isNotEmpty() }
 

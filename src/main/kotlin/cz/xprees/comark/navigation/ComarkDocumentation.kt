@@ -1,3 +1,5 @@
+@file:OptIn(org.intellij.markdown.ExperimentalApi::class)
+
 package cz.xprees.comark.navigation
 
 import com.intellij.lang.documentation.DocumentationMarkup
@@ -25,6 +27,7 @@ import cz.xprees.comark.meta.ComponentUsages
 import cz.xprees.comark.psi.ComarkFile
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.html.HtmlGenerator
+import org.intellij.markdown.parser.CancellationToken
 import org.intellij.markdown.parser.MarkdownParser
 
 /**
@@ -203,7 +206,7 @@ object ComarkDocumentationRenderer {
     /** Descriptions and documentation are Markdown (JSDoc, nuxt-component-meta, remote `documentation_markdown`). */
     internal fun markdownToHtml(markdown: String): String {
         val flavour = GFMFlavourDescriptor()
-        val tree = MarkdownParser(flavour).buildMarkdownTreeFromString(markdown)
+        val tree = MarkdownParser(flavour, true, CancellationToken.NonCancellable).buildMarkdownTreeFromString(markdown)
         return HtmlGenerator(markdown, tree, flavour, false).generateHtml().removePrefix("<body>").removeSuffix("</body>")
     }
 }

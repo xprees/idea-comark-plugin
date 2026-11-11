@@ -323,4 +323,16 @@ class ComarkInlineScannerTest {
             }
         }
     }
+
+    /** comark checks the rest of the whole inline source: a group that closes span or component content is followed by `]`. */
+    @Test
+    fun attributesAfterTextAtEndOfSpanOrContentAreText() {
+        val kinds = scan("See [docs {.a}] and :badge[New {#x}] here.").tokens.map { it.kind }
+        assertTrue(kinds.toString(), Kind.ATTR_CLASS !in kinds && Kind.ATTR_ID !in kinds)
+    }
+
+    @Test
+    fun attributesAfterTextAtEndOfLineStillApply() {
+        assertTrue(tokens("Some text {.a}").contains("ATTR_CLASS:.a"))
+    }
 }
