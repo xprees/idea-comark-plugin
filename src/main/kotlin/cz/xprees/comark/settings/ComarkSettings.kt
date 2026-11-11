@@ -43,6 +43,10 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         var componentMetadataCacheMinutes: Int = 30
         var excludedPatterns: String = ""
         var contentConfigPath: String = ""
+        var imagesEnabled: Boolean = true
+        var imageDirectories: String = ""
+        var imageCdnUrl: String = ""
+        var previewImagesFromCdn: Boolean = false
     }
 
     private var state = State()
@@ -104,6 +108,41 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         set(value) {
             state.contentConfigPath = value.trim()
         }
+
+    /** Image paths (`/threats/x.webp`) resolve against the Nuxt public and Nuxt Image directories. */
+    var imagesEnabled: Boolean
+        get() = state.imagesEnabled
+        set(value) {
+            state.imagesEnabled = value
+        }
+
+    /**
+     * Directories (one per line, `#` starts a comment, in priority order) that image paths resolve against instead of the detected
+     * ones; absolute, or relative to each project's directory (the setting applies to every project). Empty: detect them.
+     */
+    var imageDirectories: String
+        get() = state.imageDirectories
+        set(value) {
+            state.imageDirectories = value.trim()
+        }
+
+    /** The CDN URL image paths may be prefixed with; replaces `app.cdnURL` of the Nuxt configuration when set. */
+    var imageCdnUrl: String
+        get() = state.imageCdnUrl
+        set(value) {
+            state.imageCdnUrl = value.trim()
+        }
+
+    /** The preview loads images of public directories from the CDN URL instead of the local files. */
+    var previewImagesFromCdn: Boolean
+        get() = state.previewImagesFromCdn
+        set(value) {
+            state.previewImagesFromCdn = value
+        }
+
+    /** The entries of [imageDirectories], comments and blank lines dropped. */
+    fun imageDirectoryList(): List<String> =
+        imageDirectories.lineSequence().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
 
     override fun getState(): State = state
 

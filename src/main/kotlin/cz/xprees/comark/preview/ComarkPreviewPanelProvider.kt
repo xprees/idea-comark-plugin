@@ -5,7 +5,10 @@ import com.intellij.openapi.editor.Document
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiManager
+import cz.xprees.comark.images.ComarkPreviewImages
+import cz.xprees.comark.images.PreviewImage
 import cz.xprees.comark.lang.ComarkLanguage
+import cz.xprees.comark.settings.ComarkSettings
 import org.intellij.plugins.markdown.ui.preview.MarkdownHtmlPanel
 import org.intellij.plugins.markdown.ui.preview.MarkdownHtmlPanelProvider
 import org.intellij.plugins.markdown.ui.preview.SourceTextPreprocessor
@@ -63,14 +66,16 @@ class ComarkPreviewPanelProvider : MarkdownHtmlPanelProvider() {
 }
 
 /**
- * Renders Comark files with [ComarkPreviewRenderer] (Markdown snippets by the Markdown plugin's own [MarkdownUtil]) and every other
+ * Renders Comark files with [ComarkPreviewRenderer] (Markdown snippets by the Markdown plugin's own [MarkdownUtil], image paths
+ * mapped to the Nuxt image directories by [ComarkPreviewImages]) and every other
  * file with [fallback]. Produces the same page shape as the JCEF preprocessor (`<html><head></head><body>...</body></html>`).
  */
 internal class ComarkSourceTextPreprocessor(private val fallback: SourceTextPreprocessor) : SourceTextPreprocessor {
     override fun preprocessText(project: Project, document: Document, file: VirtualFile): String {
         if (!isComarkFile(project, file)) return fallback.preprocessText(project, document, file)
         val text = document.immutableCharSequence.toString()
-        val body = ComarkPreviewRenderer(text) { markdown -> MarkdownUtil.generateMarkdownHtml(file, markdown, project) }.renderBody()
+        val images: (String) -> PreviewImage? = if (ComarkSettings.getInstance().imagesEnabled) ComarkPreviewImages(project, file) else { _ -> null }
+        val body = ComarkPreviewRenderer(text, images) { markdown -> MarkdownUtil.generateMarkdownHtml(file, markdown, project) }.renderBody()
         return "<html><head></head>$body</html>"
     }
 

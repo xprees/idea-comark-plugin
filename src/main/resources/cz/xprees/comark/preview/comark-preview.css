@@ -113,3 +113,26 @@
 .comark-span {
   border-bottom: 1px dotted rgba(128, 128, 128, 0.6);
 }
+
+.comark-prop-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  padding: 0.4em 0.75em;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.comark-slot > .comark-prop-images {
+  padding-left: 0;
+  border-bottom: none;
+}
+
+.comark-prop-image {
+  max-height: 8em;
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.comark-missing-image {
+  outline: 1px dashed rgba(218, 54, 51, 0.7);
+}

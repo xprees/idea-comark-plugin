@@ -157,5 +157,5 @@ object ComarkComponentReferences {
     }
 
     /** Markdown injected into a code fence of a Comark file is Comark too, but its components are illustrations. */
-    private fun isExample(file: PsiFile): Boolean = InjectedLanguageManager.getInstance(file.project).isInjectedFragment(file)
+    internal fun isExample(file: PsiFile): Boolean = InjectedLanguageManager.getInstance(file.project).isInjectedFragment(file)
 }

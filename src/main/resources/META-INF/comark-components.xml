@@ -4,6 +4,9 @@
         <!-- Registered for Markdown: Comark is a Markdown dialect, and inline component text is Markdown PSI -->
         <completion.contributor language="Markdown"
                                 implementationClass="cz.xprees.comark.completion.ComarkComponentCompletionContributor"/>
+        <!-- images: Nuxt image paths in destinations, attributes and non-injected YAML; first, to filter Markdown's duplicate path variants -->
+        <completion.contributor language="Markdown" order="first"
+                                implementationClass="cz.xprees.comark.images.ComarkImageCompletionContributor"/>
         <typedHandler implementation="cz.xprees.comark.completion.ComarkCompletionAutoPopupHandler"/>
 
         <gotoDeclarationHandler implementation="cz.xprees.comark.navigation.ComarkGotoDeclarationHandler"/>
@@ -11,7 +14,16 @@
         <referencesSearch implementation="cz.xprees.comark.navigation.ComarkComponentReferenceSearcher"/>
         <!-- Nuxt Content page routes in link destinations (/guide/install) resolve to their content files -->
         <psi.referenceContributor language="Markdown" implementation="cz.xprees.comark.navigation.ComarkRouteReferenceContributor"/>
+        <!-- Nuxt image paths (public/ and Nuxt Image directories) in image destinations and image-like component attributes -->
+        <psi.referenceContributor language="Markdown" implementation="cz.xprees.comark.images.ComarkImageReferenceContributor"/>
+        <!-- Find Usages / Rename / Move of an image file (or a directory of images): its paths in Comark documents -->
+        <referencesSearch implementation="cz.xprees.comark.images.ComarkImageReferenceSearcher"/>
+        <lang.elementManipulator forClass="cz.xprees.comark.psi.ComarkAttributeValue"
+                                 implementationClass="cz.xprees.comark.psi.ComarkAttributeValueManipulator"/>
 
+        <!-- images: thumbnail, sizes and directory of Nuxt image paths; first, so an image prop value documents the image -->
+        <platform.backend.documentation.targetProvider order="first"
+                implementation="cz.xprees.comark.images.ComarkImageDocumentationTargetProvider"/>
         <platform.backend.documentation.targetProvider
                 implementation="cz.xprees.comark.navigation.ComarkDocumentationTargetProvider"/>
         <platform.backend.documentation.psiTargetProvider
@@ -22,7 +34,18 @@
                          groupKey="inspection.unknown.component.group"
                          enabledByDefault="false" level="WEAK WARNING"
                          implementationClass="cz.xprees.comark.meta.ComarkUnknownComponentInspection"/>
+        <!-- site-absolute image paths no image directory serves, in detected Nuxt projects (YAML values: comark-yaml.xml) -->
+        <localInspection language="Markdown" shortName="ComarkMissingImage"
+                         bundle="messages.ComarkBundle" key="inspection.missing.image.display.name"
+                         groupKey="inspection.unknown.component.group"
+                         enabledByDefault="true" level="WEAK WARNING"
+                         implementationClass="cz.xprees.comark.images.ComarkMissingImageInspection"/>
     </extensions>
+
+    <projectListeners>
+        <!-- tells image references which directory a Rename renames (see ComarkImageRenameTarget) -->
+        <listener class="cz.xprees.comark.images.ComarkImageRenameTarget" topic="com.intellij.refactoring.listeners.RefactoringEventListener"/>
+    </projectListeners>
 
     <actions>
         <action id="Comark.RefreshComponents" class="cz.xprees.comark.meta.ComarkRefreshComponentsAction"/>

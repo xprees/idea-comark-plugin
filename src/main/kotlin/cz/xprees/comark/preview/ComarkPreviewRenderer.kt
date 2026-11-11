@@ -1,6 +1,12 @@
 package cz.xprees.comark.preview
 
 import com.intellij.openapi.progress.ProgressManager
+import cz.xprees.comark.images.ImageKeys
+import cz.xprees.comark.images.ImageValue
+import cz.xprees.comark.images.ImageValueLocator
+import cz.xprees.comark.images.PreviewImage
+import cz.xprees.comark.images.PreviewImageRewriter
+import cz.xprees.comark.parser.ComarkSyntax
 import cz.xprees.comark.parser.ComarkParseCache
 import cz.xprees.comark.parser.ComarkTypes
 import org.intellij.markdown.MarkdownElementTypes
@@ -21,9 +27,17 @@ import org.intellij.markdown.ast.ASTNode
  * Every element carries the `md-src-pos` source range the preview uses for scroll synchronisation; the ranges in the rendered
  * snippets are translated back to document offsets.
  *
+ * Image sources are mapped by [imageSrc] (see [cz.xprees.comark.images.ComarkPreviewImages]): the `<img>` tags of every rendered
+ * snippet are rewritten, and image-like props of components and slots are shown as thumbnails under their header.
+ *
  * @param markdownToHtml renders a Markdown snippet to `<body md-src-pos="..">...</body>`.
+ * @param imageSrc maps an image source as written to where the preview loads it from; null leaves it alone.
  */
-internal class ComarkPreviewRenderer(private val text: String, private val markdownToHtml: (String) -> String) {
+internal class ComarkPreviewRenderer(
+    private val text: String,
+    private val imageSrc: (String) -> PreviewImage? = { null },
+    private val markdownToHtml: (String) -> String,
+) {
     private val out = StringBuilder(text.length * 2)
 
     private val tree: ASTNode = ComarkParseCache.parse(text)
@@ -102,7 +116,9 @@ internal class ComarkPreviewRenderer(private val text: String, private val markd
         out.append("><span class=\"comark-component-name\">").append(escape(name)).append("</span>")
         header?.child(ATTRIBUTES)?.let(::renderAttributes)
         out.append("</div>")
-        node.child(PROPS_BLOCK)?.let(::renderProps)
+        val props = node.child(PROPS_BLOCK)
+        props?.let(::renderProps)
+        renderPropImages(header?.child(ATTRIBUTES), props?.child(PROPS_CONTENT))
         out.append("<div class=\"comark-component-body\">")
         header?.child(INLINE_CONTENT)?.let(::renderInlineContent)
         renderChildren(node, columnOf(node.startOffset))
@@ -113,8 +129,11 @@ internal class ComarkPreviewRenderer(private val text: String, private val markd
         val name = node.child(SLOT_NAME)?.let(::textOf) ?: ""
         out.append("<div class=\"comark-slot\" data-slot=\"").append(escape(name)).append("\" ").append(srcPos(node)).append('>')
         out.append("<div class=\"comark-slot-name\">#").append(escape(name))
-        node.child(ATTRIBUTES)?.let(::renderAttributes)
-        out.append("</div><div class=\"comark-slot-body\">")
+        val attributes = node.child(ATTRIBUTES)
+        attributes?.let(::renderAttributes)
+        out.append("</div>")
+        renderPropImages(attributes, null)
+        out.append("<div class=\"comark-slot-body\">")
         renderChildren(node, indent)
         out.append("</div></div>")
     }
@@ -141,6 +160,22 @@ internal class ComarkPreviewRenderer(private val text: String, private val markd
         if (yaml.isEmpty()) return
         out.append("<pre class=\"comark-component-props\" ").append(srcPos(content)).append("><code>")
             .append(escape(yaml)).append("</code></pre>")
+    }
+
+    /** Thumbnails of the image-like props in the `{...}` group [attributes] and the props YAML [propsContent]. */
+    private fun renderPropImages(attributes: ASTNode?, propsContent: ASTNode?) {
+        val values = ArrayList<ImageValue>()
+        if (attributes != null) {
+            ComarkSyntax.scanAttributes(text, attributes.startOffset, attributes.endOffset)?.let { scan ->
+                values += ImageValueLocator.attributeValues(text, scan)
+            }
+        }
+        if (propsContent != null) {
+            // from the start of the line, so the first key's indentation is measured like the others'
+            val start = lineStart(propsContent.startOffset)
+            values += ImageValueLocator.yamlValues(text.substring(start, propsContent.endOffset), start, ImageKeys::isImageKeyPath)
+        }
+        out.append(PreviewImageRewriter.propImagesHtml(values, imageSrc))
     }
 
     /** The `[content]` of `::name[content]`, rendered as inline Markdown. */
@@ -212,7 +247,8 @@ internal class ComarkPreviewRenderer(private val text: String, private val markd
     /** Renders [snippet] (whose offsets map to the document through [toDocument]) and returns the content of its `<body>`. */
     private fun renderSnippet(snippet: String, toDocument: OffsetMapping): String {
         val rewritten = InlineComarkRewriter(snippet, linkReferences).rewrite()
-        val html = unwrapBody(markdownToHtml(rewritten.text))
+        // the `<img>` tags of Markdown images (inline and reference-style, which the rewriter inlines) and of raw HTML
+        val html = PreviewImageRewriter.rewrite(unwrapBody(markdownToHtml(rewritten.text)), imageSrc)
         val renderedLength = rewritten.text.length
         return SRC_POS_VALUE.replace(html) { match ->
             val start = minOf(match.groupValues[2].toInt(), renderedLength)
