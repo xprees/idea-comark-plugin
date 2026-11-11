@@ -30,3 +30,15 @@
 - Preview: large documents with many link reference definitions render quickly again (references resolved once, not per block)
 - Preview: repeated headings get unique ids across components (`usage`, `usage-1`), so in-page anchors reach every heading
 - Preview: link reference definitions no longer show up inside an unclosed code fence or HTML block, with correct scroll positions
+- `.nuxt/component-meta.mjs` written by current nuxt-component-meta versions (a deduplicated module with string tables and
+  shared objects) is read; before, its components (module components such as Nuxt UI / Docus prose components) were missing
+- A half-typed `defineModel('` in a component no longer breaks completion, documentation and navigation in all Comark files, and
+  a component the parser cannot read is skipped instead of failing the whole component index
+- Components in subfolders of `components/content/` are named as Nuxt Content registers them (`content/prose/Card.vue` is
+  `card`, not `prose-card`) in completion, documentation, the unknown-component inspection, Find Usages and Rename
+- Nuxt component naming: grouping folders (`components/(forms)/`) are not part of names, `components/islands/` is a component
+  directory and `.island` files drop the suffix
+- The unknown-component inspection no longer reports HTML elements used as components (`::div`, `:br`, `::table`)
+- Editing a `.vue` file no longer makes the next completion slow in projects with many components and large component metadata
+- Props typed with a type alias of the component (`type Variant = 'solid' | 'outline'`, also imported) get value completion
+  and their kind from the aliased type

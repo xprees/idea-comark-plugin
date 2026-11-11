@@ -12,7 +12,7 @@ class ComponentDiscoveryTest : ComponentsTestBase() {
     fun testVueComponentsAreDiscoveredWithNuxtNames() {
         addStandardComponents()
         val index = index()
-        assertEquals(listOf("alert", "badge", "prose-card"), index.visible().map { it.kebabName })
+        assertEquals(listOf("alert", "badge", "card"), index.visible().map { it.kebabName })
 
         val alert = index.find("alert")!!
         assertEquals("Alert", alert.name)
@@ -24,7 +24,7 @@ class ComponentDiscoveryTest : ComponentsTestBase() {
         assertEquals("Alert.vue", alert.file!!.name)
         assertEquals("src", alert.root!!.name)
 
-        val card = index.find("prose-card")!!
+        val card = index.find("card")!!
         assertEquals("A card with an optional footer.", card.description)
         assertTrue(card.findProp("items")!!.required)
     }
@@ -32,11 +32,11 @@ class ComponentDiscoveryTest : ComponentsTestBase() {
     fun testNamesResolveInAnySpelling() {
         addStandardComponents()
         val index = index()
-        for (name in listOf("prose-card", "ProseCard", "proseCard", "PROSE-CARD".lowercase())) {
-            assertEquals(name, "ProseCard", index.find(name)?.name)
+        for (name in listOf("card", "Card", "CARD".lowercase())) {
+            assertEquals(name, "Card", index.find(name)?.name)
         }
-        // Nuxt Content registers components/content without path prefixes: the bare file name resolves too
-        assertEquals("ProseCard", index.find("card")?.name)
+        // Nuxt Content registers components/content without path prefixes: the path-prefixed name is never registered
+        assertNull(index.find("prose-card"))
         assertNull(index.find("nope"))
     }
 
@@ -47,7 +47,7 @@ class ComponentDiscoveryTest : ComponentsTestBase() {
         myFixture.addFileToProject(".output/components/Output.vue", BADGE)
         myFixture.addFileToProject("pages/index.vue", BADGE)
         val names = index().components.map { it.name }
-        assertSameElements(names, "Alert", "ProseCard", "Badge")
+        assertSameElements(names, "Alert", "Card", "Badge")
     }
 
     fun testComponentMetaIsMergedWithVueFiles() {
@@ -68,6 +68,66 @@ class ComponentDiscoveryTest : ComponentsTestBase() {
         assertEquals(ComponentSource.COMPONENT_META, proseA.source)
         assertNull(proseA.file)
         assertEquals(listOf("href", "target"), proseA.props.map { it.name })
+    }
+
+    fun testModuleComponentFromRealComponentMetaIsCompleted() {
+        myFixture.addFileToProject("package.json", """{ "dependencies": { "@nuxt/content": "^3.0.0" } }""")
+        myFixture.addFileToProject("components/content/Local.vue", "<template><div/></template>")
+        val module = File("src/test/testData/components/component-meta-deduplicated.mjs").readText()
+        myFixture.addFileToProject(".nuxt/component-meta.mjs", module.replace("components/content/Alert.vue", "node_modules/ui/Alert.vue"))
+        assertTrue(index().components.any { it.source == ComponentSource.COMPONENT_META })
+        assertEquals(listOf("title", "open"), index().find("alert")!!.props.map { it.name })
+    }
+
+    fun testUnsavedHalfTypedDefineModelKeepsCompletionWorking() {
+        val vue = myFixture.addFileToProject("components/content/Alert.vue", ALERT)
+        myFixture.addFileToProject("components/Badge.vue", BADGE)
+        myFixture.openFileInEditor(vue.virtualFile)
+        val document = myFixture.editor.document
+        WriteCommandAction.runWriteCommandAction(project) {
+            document.setText("<script setup lang=\"ts\">\nconst model = defineModel('\n</script>\n<template><slot/></template>\n")
+        }
+        configure("::<caret>")
+        myFixture.completeBasic()
+        assertContainsElements(myFixture.lookupElementStrings.orEmpty(), "badge", "alert")
+    }
+
+    fun testIndexRebuildAfterVueKeystroke() {
+        myFixture.addFileToProject("package.json", """{ "dependencies": { "@nuxt/content": "^3.0.0" } }""")
+        val vues = (0 until 400).map { i -> myFixture.addFileToProject("components/content/group${i % 20}/Widget$i.vue", ALERT) }
+        val json = buildString {
+            append("{")
+            for (i in 0 until 800) {
+                if (i > 0) append(",")
+                append("\"UModule$i\": {\"pascalName\": \"UModule$i\", \"filePath\": \"node_modules/@nuxt/ui/dist/runtime/components/Module$i.vue\", ")
+                append("\"meta\": {\"props\": [{\"name\": \"color\", \"type\": \"string\"}], \"slots\": []}}")
+            }
+            append("}")
+        }
+        myFixture.addFileToProject(".nuxt/component-meta.json", json)
+        index()
+        val document = FileDocumentManager.getInstance().getDocument(vues[0].virtualFile)!!
+        val times = ArrayList<Long>()
+        repeat(5) {
+            WriteCommandAction.runWriteCommandAction(project) { document.insertString(document.textLength, " ") }
+            val start = System.nanoTime()
+            val size = index().components.size
+            times += (System.nanoTime() - start) / 1_000_000
+            assertTrue(size >= 1200)
+        }
+        assertTrue("index rebuild after one keystroke in a .vue file took $times ms", times.max() < 300)
+    }
+
+    fun testEditedTypeDependencyStillInvalidatesTheIndex() {
+        myFixture.addFileToProject("types/alert.ts", "export interface AlertProps { title: string }")
+        myFixture.addFileToProject(
+            "components/content/Alert.vue",
+            "<script setup lang=\"ts\">\nimport type { AlertProps } from '../../types/alert'\ndefineProps<AlertProps>()\n</script>\n",
+        )
+        assertEquals(listOf("title"), index().find("alert")!!.props.map { it.name })
+        val types = FileDocumentManager.getInstance().getDocument(myFixture.findFileInTempDir("types/alert.ts"))!!
+        WriteCommandAction.runWriteCommandAction(project) { types.setText("export interface AlertProps { title: string; icon?: string }") }
+        assertEquals(listOf("title", "icon"), index().find("alert")!!.props.map { it.name })
     }
 
     fun testMetaWithoutVueFiles() {

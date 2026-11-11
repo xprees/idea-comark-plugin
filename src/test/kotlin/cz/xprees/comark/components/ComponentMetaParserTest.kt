@@ -43,6 +43,44 @@ class ComponentMetaParserTest {
         assertEquals(PropKind.STRING, proseA.props.first { it.name == "target" }.kind)
     }
 
+    /** Output of nuxt-component-meta 0.19.0's `updateOutput` (optimiseJSON / deduplicateJSON), generated with the real code. */
+    @Test
+    fun parsesRealNuxtComponentMetaOutput() {
+        val module = File("src/test/testData/components/component-meta-deduplicated.mjs").readText()
+        val records = ComponentMetaParser.parse(module)
+        assertNotNull("the deduplicated .mjs nuxt-component-meta 0.19 writes is not understood", records)
+        assertEquals(listOf("Alert", "Badge", "Card"), records!!.map { it.name })
+        val alert = records.first { it.name == "Alert" }
+        assertEquals(listOf("title", "open"), alert.props.map { it.name })
+        assertEquals("Heading", alert.props.first().description)
+        assertEquals("boolean | undefined", alert.props.last().type)
+        assertEquals(listOf("default"), alert.slots.map { it.name })
+        assertEquals("components/content/Alert.vue", alert.filePath)
+    }
+
+    @Test
+    fun modulesWithCommentsEscapesAndSeveralDeclarations() {
+        val module = """
+            /* header */
+            const _s = ['it\'s', "tab\tand A"], _ref0 = {"name": _s[0], required: true, default: -1.5};
+            let other = [ _ref0, ]; // trailing comma
+            export default { "My-Card": { pascalName: "MyCard", meta: { props: other, slots: [], events: [{ huge: [1, 2, { x: _s[1] }] }] } } }
+        """.trimIndent()
+        val record = ComponentMetaParser.parse(module)!!.single()
+        assertEquals("MyCard", record.name)
+        val prop = record.props.single()
+        assertEquals("it's", prop.name)
+        assertTrue(prop.required)
+        assertEquals("-1.5", prop.defaultValue)
+    }
+
+    @Test
+    fun truncatedModulesAreRejectedWithoutErrors() {
+        val module = File("src/test/testData/components/component-meta-deduplicated.mjs").readText()
+        for (length in module.indices) ComponentMetaParser.parse(module.substring(0, length))
+        for (length in fixture.indices step 7) ComponentMetaParser.parse(fixture.substring(0, length))
+    }
+
     @Test
     fun parsesPlainJson() {
         val json = """{ "MyCard": { "pascalName": "MyCard", "meta": { "props": [ { "name": "title", "type": "string", "required": true } ], "slots": [] } } }"""
