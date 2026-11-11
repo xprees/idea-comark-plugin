@@ -29,6 +29,11 @@
                                  key="settings.display.name" bundle="messages.ComarkBundle"/>
     </extensions>
 
+    <applicationListeners>
+        <!-- installs and uninstalls without a restart: re-parses open Markdown files when the plugin is loaded or unloaded -->
+        <listener class="cz.xprees.comark.lang.ComarkDynamicPluginListener" topic="com.intellij.ide.plugins.DynamicPluginListener"/>
+    </applicationListeners>
+
     <!-- One file per feature area -->
     <xi:include href="/META-INF/comark-highlighting.xml" xpointer="xpointer(/idea-plugin/*)"/>
     <xi:include href="/META-INF/comark-formatter.xml" xpointer="xpointer(/idea-plugin/*)"/>

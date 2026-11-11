@@ -36,3 +36,4 @@ Markdown plugin.
 - Nuxt Content route links (`/guide/install#setup`) resolve to their content files, with anchors and route completion; links to
   comark heading ids and `{#id}` / `id` attributes resolve too
 - Components, props and slots render as labelled blocks in the built-in Markdown preview
+- Installs, updates and uninstalls without an IDE restart; open Markdown files switch to Comark (and back) right away
