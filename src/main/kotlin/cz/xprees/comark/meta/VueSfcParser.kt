@@ -1,6 +1,7 @@
 package cz.xprees.comark.meta
 
 import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.vfs.VirtualFile
 import cz.xprees.comark.meta.ScriptScanner.findClosing
 import cz.xprees.comark.meta.ScriptScanner.isCommentStart
 import cz.xprees.comark.meta.ScriptScanner.isIdentPart
@@ -30,6 +31,15 @@ class SfcInfo(val description: String?, val props: List<ComarkProp>, val slots: 
     }
 }
 
+/** The text of a TypeScript module a component imports types from. [file] is null for text that has no file (tests). */
+class TypeModule(val text: CharSequence, val file: VirtualFile? = null)
+
+/** Finds the modules that import specifiers of a component's scripts (and of the modules they import) refer to. */
+fun interface TypeModuleResolver {
+    /** The module [specifier] (`'./types'`, `'~/types/alert'`) refers to when imported by [from] (null: the component), or null. */
+    fun resolve(specifier: String, from: TypeModule?): TypeModule?
+}
+
 /**
  * Extracts props, slots and a description from a Vue single-file component by reading its text.
  *
@@ -38,6 +48,8 @@ class SfcInfo(val description: String?, val props: List<ComarkProp>, val slots: 
  * parser understands the common ways of declaring a component's API:
  * - `defineProps<{ ... }>()` with a type literal or a local `interface` / `type` (intersections, `Partial`, `Omit`, `Pick`),
  *   optional `?` members, JSDoc descriptions and `@default` tags,
+ * - named prop types imported from other modules (`import type { Props } from './types'`, also through `export { ... } from`
+ *   and `export * from` re-exports and `extends` of imported interfaces), when a [TypeModuleResolver] supplies their text,
  * - `defineProps({ ... })` / `defineProps([...])` runtime declarations with `type`, `required` and `default`,
  * - defaults from `withDefaults(defineProps<...>(), { ... })` and from reactive props destructuring,
  * - `defineModel()`,
@@ -47,20 +59,25 @@ class SfcInfo(val description: String?, val props: List<ComarkProp>, val slots: 
  *   a leading HTML comment or a `<docs>` block.
  */
 object VueSfcParser {
-    fun parse(text: CharSequence): SfcInfo {
+    /**
+     * Parses the single-file component [text]. Type names imported from other modules are resolved through [modules]; without
+     * one, only types declared in the component itself are known.
+     */
+    fun parse(text: CharSequence, modules: TypeModuleResolver? = null): SfcInfo {
         val blocks = findBlocks(text)
         val scripts = blocks.filter { it.tag == "script" }
         val template = blocks.firstOrNull { it.tag == "template" }
+        val types = TypeContext(modules)
 
         val props = LinkedHashMap<String, ComarkProp>()
         for (script in scripts) {
             ProgressManager.checkCanceled()
-            ScriptProps(text, script, scripts).collect(props)
+            ScriptProps(text, script, scripts, types).collect(props)
         }
 
         val slots = LinkedHashMap<String, ComarkSlotInfo>()
         template?.let { collectTemplateSlots(text, it, slots) }
-        for (script in scripts) collectScriptSlots(text, script, scripts, slots)
+        for (script in scripts) collectScriptSlots(text, script, scripts, types, slots)
         collectSlotReferences(text, blocks.filter { it.tag == "template" || it.tag == "script" }, slots)
 
         return SfcInfo(describe(text, blocks), props.values.toList(), slots.values.toList())
@@ -175,14 +192,14 @@ object VueSfcParser {
     // ---- Props ------------------------------------------------------------------------------------------------------
 
     /** Props declared in one `<script>` block. Type references are resolved against all script blocks of the file. */
-    private class ScriptProps(private val text: CharSequence, script: Block, private val scripts: List<Block>) {
+    private class ScriptProps(private val text: CharSequence, script: Block, private val scripts: List<Block>, private val types: TypeContext) {
         private val start = script.contentStart
         private val end = script.contentEnd
 
         fun collect(into: MutableMap<String, ComarkProp>) {
             for (call in findCalls(text, start, end, "defineProps")) {
                 val declared = when {
-                    call.typeOpen >= 0 -> TypeResolver(text, scripts).props(call.typeOpen + 1, call.typeClose)
+                    call.typeOpen >= 0 -> TypeResolver(text, scripts, null, types).props(call.typeOpen + 1, call.typeClose)
                     call.argsOpen >= 0 -> runtimeArgumentProps(call)
                     else -> emptyList()
                 }
@@ -365,9 +382,27 @@ object VueSfcParser {
         }
     }
 
-    /** Resolves a props / slots type expression to its members: literals, local interfaces and type aliases, utility types. */
-    private class TypeResolver(private val text: CharSequence, private val scripts: List<Block>) {
-        private var depth = 0
+    /**
+     * State shared by the [TypeResolver]s of one parse, across the component and the modules it imports from: how deep type
+     * resolution is nested, and which named types are being resolved (so that cyclic imports and `extends` chains end).
+     */
+    private class TypeContext(val modules: TypeModuleResolver?) {
+        var depth = 0
+        val resolving = HashSet<Pair<Any, String>>()
+    }
+
+    /**
+     * Resolves a props / slots type expression to its members: literals, interfaces and type aliases, utility types. Named types
+     * are looked up in [scripts] of [text] first, then followed through imports and re-exports into other modules. [module] is the
+     * module [text] belongs to, or null for the component; members declared in a module are tagged with its file.
+     */
+    private class TypeResolver(
+        private val text: CharSequence,
+        private val scripts: List<Block>,
+        private val module: TypeModule?,
+        private val context: TypeContext,
+    ) {
+        private val imports: Imports by lazy { findImports(text, scripts) }
 
         fun props(from: Int, to: Int): List<ComarkProp> = members(from, to).map { member ->
             val doc = member.doc?.let(::parseDoc)
@@ -378,11 +413,15 @@ object VueSfcParser {
                 defaultValue = doc?.tags?.get("default") ?: doc?.tags?.get("defaultValue"),
                 description = doc?.description,
                 offset = member.nameStart,
+                file = member.file,
             )
         }
 
         fun members(from: Int, to: Int): List<ScriptScanner.TypeMember> {
-            if (++depth > 8) return emptyList()
+            if (++context.depth > MAX_TYPE_DEPTH) {
+                context.depth--
+                return emptyList()
+            }
             try {
                 val result = LinkedHashMap<String, ScriptScanner.TypeMember>()
                 for (part in ScriptScanner.splitType(text, from, to, '&')) {
@@ -390,7 +429,7 @@ object VueSfcParser {
                 }
                 return result.values.toList()
             } finally {
-                depth--
+                context.depth--
             }
         }
 
@@ -399,7 +438,7 @@ object VueSfcParser {
             if (s >= to) return emptyList()
             if (text[s] == '{') {
                 val close = findClosing(text, s, to)
-                return if (close < 0) emptyList() else typeMembers(text, s, close)
+                return if (close < 0) emptyList() else local(typeMembers(text, s, close))
             }
             if (text[s] == '(') {
                 val close = findClosing(text, s, to)
@@ -426,8 +465,47 @@ object VueSfcParser {
                     if (name == "Omit") base.filter { it.name !in keys } else base.filter { it.name in keys }
                 }
 
-                else -> declaredMembers(name)
+                else -> namedMembers(name).orEmpty()
             }
+        }
+
+        /**
+         * Members of the type [name]: declared in [text], or imported / re-exported from another module. Null when the name is
+         * not known at all (so that `export *` re-exports can try the next module).
+         */
+        fun namedMembers(name: String): List<ScriptScanner.TypeMember>? {
+            val key = (module?.file ?: module?.text ?: text) to name
+            if (!context.resolving.add(key)) return emptyList()
+            try {
+                declaredMembers(name)?.let { return it }
+                imports.aliases[name]?.let { local -> return namedMembers(local) }
+                return importedMembers(name)
+            } finally {
+                context.resolving.remove(key)
+            }
+        }
+
+        /** Members of [name] when it is imported (`import type { Props }`) or re-exported (`export { Props } from`) by [text]. */
+        private fun importedMembers(name: String): List<ScriptScanner.TypeMember>? {
+            val resolver = context.modules ?: return null
+            imports.named[name]?.let { (imported, specifier) ->
+                return resolver.resolve(specifier, module)?.let { moduleResolver(it).namedMembers(imported) }
+            }
+            for (specifier in imports.star) {
+                ProgressManager.checkCanceled()
+                val target = resolver.resolve(specifier, module) ?: continue
+                moduleResolver(target).namedMembers(name)?.let { return it }
+            }
+            return null
+        }
+
+        private fun moduleResolver(target: TypeModule) =
+            TypeResolver(target.text, listOf(Block("script", "", 0, 0, target.text.length, null)), target, context)
+
+        /** [members] declared in [text], tagged with the module's file (offsets are only kept when there is a file to point at). */
+        private fun local(members: List<ScriptScanner.TypeMember>): List<ScriptScanner.TypeMember> {
+            val module = module ?: return members
+            return members.map { ScriptScanner.TypeMember(it.name, if (module.file != null) it.nameStart else -1, it.optional, it.type, it.isMethod, it.doc, module.file) }
         }
 
         private fun keyLiterals(from: Int, to: Int): Set<String> = ScriptScanner.splitType(text, from, to, '|').mapNotNull { r ->
@@ -435,8 +513,8 @@ object VueSfcParser {
             if (c == '"' || c == '\'' || c == '`') text.subSequence(r.first + 1, r.last).toString() else null
         }.toSet()
 
-        /** Members of a local `interface Name { ... }` (with its local `extends`) or `type Name = ...`. */
-        private fun declaredMembers(name: String): List<ScriptScanner.TypeMember> {
+        /** Members of an `interface Name { ... }` (with its `extends`) or `type Name = ...` declared in [text], or null. */
+        private fun declaredMembers(name: String): List<ScriptScanner.TypeMember>? {
             for (script in scripts) {
                 val s = script.contentStart
                 val e = script.contentEnd
@@ -453,7 +531,7 @@ object VueSfcParser {
                                 if (open < 0) return emptyList()
                                 val close = findClosing(text, open, e)
                                 if (close < 0) return emptyList()
-                                val own = typeMembers(text, open, close)
+                                val own = local(typeMembers(text, open, close))
                                 val heritage = text.subSequence(n + name.length, open).toString()
                                 val inherited = Regex("""\bextends\s+(.+)""", RegexOption.DOT_MATCHES_ALL).find(heritage)?.groupValues?.get(1)
                                     ?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
@@ -468,9 +546,11 @@ object VueSfcParser {
                             if (isWordAt(text, n, name, e)) {
                                 var eq = skipTrivia(text, n + name.length, e)
                                 if (eq < e && text[eq] == '<') eq = skipTrivia(text, findClosing(text, eq, e) + 1, e)
-                                if (eq >= e || text[eq] != '=') return emptyList()
-                                val exprStart = skipTrivia(text, eq + 1, e)
-                                return members(exprStart, ScriptScanner.memberEnd(text, exprStart, e))
+                                // `import { type Name }` and `export { type Name }` mention the name without declaring it
+                                if (eq < e && text[eq] == '=') {
+                                    val exprStart = skipTrivia(text, eq + 1, e)
+                                    return members(exprStart, ScriptScanner.memberEnd(text, exprStart, e))
+                                }
                             }
                             i = n
                         }
@@ -479,15 +559,83 @@ object VueSfcParser {
                     }
                 }
             }
-            return emptyList()
+            return null
         }
 
         private fun resolveName(expression: String): List<ScriptScanner.TypeMember> {
             val name = expression.takeWhile { isIdentPart(it) || it == '.' }
-            return if (name.isEmpty()) emptyList() else declaredMembers(name)
+            return if (name.isEmpty()) emptyList() else namedMembers(name).orEmpty()
         }
 
-        private fun ScriptScanner.TypeMember.copy(optional: Boolean) = ScriptScanner.TypeMember(name, nameStart, optional, type, isMethod, doc)
+        private fun ScriptScanner.TypeMember.copy(optional: Boolean) = ScriptScanner.TypeMember(name, nameStart, optional, type, isMethod, doc, file)
+    }
+
+    /**
+     * Named imports and re-exports of a module (local name to imported name and specifier), its `export *` specifiers and its
+     * local export aliases (`export { A as B }`: exported name to local name).
+     */
+    private class Imports(val named: Map<String, Pair<String, String>>, val star: List<String>, val aliases: Map<String, String>)
+
+    private val NAMED_IMPORT = Regex("""\b(?:import|export)\s+(?:type\s+)?(?:[A-Za-z_$][\w$]*\s*,\s*)?\{([^}]*)}\s*from\s*(['"])([^'"\n]+)\2""")
+    private val STAR_EXPORT = Regex("""\bexport\s+(?:type\s+)?\*\s+from\s*(['"])([^'"\n]+)\1""")
+    private val LOCAL_EXPORT = Regex("""\bexport\s+(?:type\s+)?\{([^}]*)}(?!\s*from\b)""")
+
+    /**
+     * `import type { A, B as C } from '...'`, `import { type A } from '...'`, `export { A as B } from '...'`,
+     * `export * from '...'` and `export { A as B }` in [scripts] of [text], outside comments.
+     */
+    private fun findImports(text: CharSequence, scripts: List<Block>): Imports {
+        val named = HashMap<String, Pair<String, String>>()
+        val star = ArrayList<String>()
+        val aliases = HashMap<String, String>()
+        for (script in scripts) {
+            val code = withoutComments(text, script.contentStart, script.contentEnd)
+            for (match in NAMED_IMPORT.findAll(code)) {
+                val specifier = match.groupValues[3]
+                for ((imported, local) in specifiers(match.groupValues[1])) named.putIfAbsent(local, imported to specifier)
+            }
+            STAR_EXPORT.findAll(code).mapTo(star) { it.groupValues[2] }
+            for (match in LOCAL_EXPORT.findAll(code)) {
+                for ((local, exported) in specifiers(match.groupValues[1])) if (local != exported) aliases.putIfAbsent(exported, local)
+            }
+        }
+        return Imports(named, star, aliases)
+    }
+
+    /** `A, type B as C` -> (A, A), (B, C). */
+    private fun specifiers(list: String): List<Pair<String, String>> = list.split(',').mapNotNull { entry ->
+        val parts = entry.trim().removePrefix("type ").trim().split(Regex("""\s+as\s+"""))
+        val original = parts[0].trim()
+        val renamed = parts.getOrNull(1)?.trim() ?: original
+        if (original.isNotEmpty() && renamed.isNotEmpty() && original.all(::isIdentPart) && renamed.all(::isIdentPart)) original to renamed else null
+    }
+
+    /** The text of [start]..[end] with comments replaced by spaces (strings are kept, so `'//'` in a specifier is no comment). */
+    private fun withoutComments(text: CharSequence, start: Int, end: Int): String {
+        val builder = StringBuilder(end - start)
+        var i = start
+        while (i < end) {
+            val c = text[i]
+            when {
+                c == '"' || c == '\'' || c == '`' -> {
+                    val e = skipString(text, i, end)
+                    builder.append(text, i, e)
+                    i = e
+                }
+
+                isCommentStart(text, i, end) -> {
+                    val e = skipComment(text, i, end)
+                    repeat(e - i) { builder.append(' ') }
+                    i = e
+                }
+
+                else -> {
+                    builder.append(c)
+                    i++
+                }
+            }
+        }
+        return builder.toString()
     }
 
     // ---- Slots ------------------------------------------------------------------------------------------------------
@@ -535,12 +683,16 @@ object VueSfcParser {
         }
     }
 
-    private fun collectScriptSlots(text: CharSequence, script: Block, scripts: List<Block>, into: MutableMap<String, ComarkSlotInfo>) {
+    private fun collectScriptSlots(
+        text: CharSequence,
+        script: Block,
+        scripts: List<Block>,
+        types: TypeContext,
+        into: MutableMap<String, ComarkSlotInfo>,
+    ) {
         for (call in findCalls(text, script.contentStart, script.contentEnd, "defineSlots")) {
             if (call.typeOpen < 0) continue
-            TypeResolver(text, scripts).members(call.typeOpen + 1, call.typeClose).forEach { member ->
-                into.putIfAbsent(member.name, ComarkSlotInfo(member.name, member.doc?.let(::parseDoc)?.description, member.type, member.nameStart))
-            }
+            TypeResolver(text, scripts, null, types).members(call.typeOpen + 1, call.typeClose).forEach { into.putIfAbsent(it.name, slotOf(it)) }
         }
         var from = script.contentStart
         while (true) {
@@ -549,12 +701,18 @@ object VueSfcParser {
             val open = at + "SlotsType".length
             val close = findClosing(text, open, script.contentEnd)
             if (close < 0) break
-            TypeResolver(text, scripts).members(open + 1, close).forEach { member ->
-                into.putIfAbsent(member.name, ComarkSlotInfo(member.name, member.doc?.let(::parseDoc)?.description, member.type, member.nameStart))
-            }
+            TypeResolver(text, scripts, null, types).members(open + 1, close).forEach { into.putIfAbsent(it.name, slotOf(it)) }
             from = close
         }
     }
+
+    /** A slot declared as a type member; slots of imported types have no position in the component file. */
+    private fun slotOf(member: ScriptScanner.TypeMember) = ComarkSlotInfo(
+        member.name,
+        member.doc?.let(::parseDoc)?.description,
+        member.type,
+        if (member.file == null) member.nameStart else -1,
+    )
 
     private val SLOTS_REFERENCE = Regex("""\${'$'}slots\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[\s*['"]([^'"]+)['"]\s*])""")
     private val USE_SLOTS = Regex("""\b([A-Za-z_$][\w$]*)\s*=\s*useSlots\s*\(\s*\)""")
@@ -771,7 +929,10 @@ object VueSfcParser {
         return -1
     }
 
-    private fun ComarkProp.withDefault(default: String) = ComarkProp(name, type, required, default, description, offset)
+    private fun ComarkProp.withDefault(default: String) = ComarkProp(name, type, required, default, description, offset, file)
+
+    /** How deeply type expressions may nest (aliases of aliases, imports of imports) before resolution gives up. */
+    private const val MAX_TYPE_DEPTH = 8
 
     private fun indexOfChar(text: CharSequence, c: Char, from: Int): Int {
         for (i in from until text.length) if (text[i] == c) return i

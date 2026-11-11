@@ -46,8 +46,9 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Files are found by walking the project's content roots (skipping `node_modules`, build output, hidden and excluded
  * directories) instead of using indexes, so components are available in dumb mode too. The walk is cached until a relevant
- * file or directory is created, deleted, moved or renamed; parsed contents are cached per file by modification stamp, and
- * unsaved edits of `.vue` files are seen through their documents. The index itself is a [CachedValue] that depends on all of
+ * file or directory is created, deleted, moved or renamed; parsed contents are cached per file by modification stamp (for a
+ * `.vue` file also by the stamps of the TypeScript files its prop types are imported from), and unsaved edits of `.vue` and
+ * those TypeScript files are seen through their documents. The index itself is a [CachedValue] that depends on all of
  * that plus the remote metadata and the URL setting, so typing in a Markdown file never re-scans anything.
  */
 @Service(Service.Level.PROJECT)
@@ -62,13 +63,26 @@ class ComarkComponentService(private val project: Project) : Disposable {
 
     private class Parsed<T>(val stamp: Long, val value: T)
 
+    /**
+     * A parsed `.vue` file: its own [stamp], the stamps of the TypeScript files its prop types were read from, and the
+     * [typeModuleTracker] count at parse time when it imported types (-1 otherwise), because a created, deleted or moved
+     * TypeScript file can change what its imports resolve to.
+     */
+    private class ParsedSfc(val stamp: Long, val dependencies: Map<VirtualFile, Long>, val modulesStamp: Long, val value: SfcInfo)
+
     /** Changes when files that may be components or metadata appear, disappear or move. */
     private val structureTracker = SimpleModificationTracker()
 
-    /** Changes when the content of a `.vue` or metadata file changes (on disk or in an editor). */
+    /** Changes when the content of a `.vue` or metadata file, or of a TypeScript file a component imports types from, changes. */
     private val contentTracker = SimpleModificationTracker()
 
-    private val sfcCache = ConcurrentHashMap<VirtualFile, Parsed<SfcInfo>>()
+    /** Changes when TypeScript files or directories appear, disappear or move (imports may resolve differently). */
+    private val typeModuleTracker = SimpleModificationTracker()
+
+    private val sfcCache = ConcurrentHashMap<VirtualFile, ParsedSfc>()
+
+    /** TypeScript files some cached component reads prop types from: editing one of them changes that component. */
+    private val typeDependencies: MutableSet<VirtualFile> = ConcurrentHashMap.newKeySet()
     private val metaCache = ConcurrentHashMap<VirtualFile, Parsed<List<MetaComponentRecord>?>>()
 
     private val filesCache: CachedValue<DiscoveredFiles>
@@ -95,7 +109,7 @@ class ComarkComponentService(private val project: Project) : Disposable {
         EditorFactory.getInstance().eventMulticaster.addDocumentListener(object : DocumentListener {
             override fun documentChanged(event: DocumentEvent) {
                 val file = FileDocumentManager.getInstance().getFile(event.document) ?: return
-                if (isComponentFile(file.name)) contentTracker.incModificationCount()
+                if (isComponentFile(file.name) || file in typeDependencies) contentTracker.incModificationCount()
             }
         }, this)
     }
@@ -113,9 +127,33 @@ class ComarkComponentService(private val project: Project) : Disposable {
         return indexCache.value
     }
 
-    /** Props, slots and description parsed from the `.vue` [file] (cached by modification stamp), or null when unreadable. */
+    /**
+     * Props, slots and description parsed from the `.vue` [file], or null when unreadable. Prop types imported from TypeScript
+     * files are resolved ([NuxtTypeModules]); the result is cached by the modification stamps of the file and of those imports.
+     */
     @RequiresReadLock
-    fun sfcInfo(file: VirtualFile): SfcInfo? = cachedParse(file, sfcCache, MAX_SFC_SIZE) { VueSfcParser.parse(it) }
+    fun sfcInfo(file: VirtualFile): SfcInfo? {
+        if (!file.isValid) return null
+        val stamp = stampOf(file)
+        sfcCache[file]?.takeIf { it.stamp == stamp && isUpToDate(it) }?.let { return it.value }
+        val text = loadText(file, MAX_SFC_SIZE) ?: return null
+        val modules = NuxtTypeModules(
+            component = file,
+            rootFallback = { ProjectFileIndex.getInstance(project).getContentRootForFile(it) },
+            stamp = ::stampOf,
+            load = { loadText(it, MAX_SFC_SIZE) },
+        )
+        val modulesStamp = typeModuleTracker.modificationCount
+        val value = VueSfcParser.parse(text, modules)
+        sfcCache[file] = ParsedSfc(stamp, modules.dependencies, if (modules.consulted) modulesStamp else -1, value)
+        typeDependencies += modules.dependencies.keys
+        return value
+    }
+
+    private fun isUpToDate(parsed: ParsedSfc): Boolean {
+        if (parsed.modulesStamp >= 0 && parsed.modulesStamp != typeModuleTracker.modificationCount) return false
+        return parsed.dependencies.all { (file, stamp) -> file.isValid && stampOf(file) == stamp }
+    }
 
     /**
      * Path of the `.vue` [file] relative to the `components/` directory it is a component of (`content/prose/Alert.vue`), or null
@@ -130,8 +168,10 @@ class ComarkComponentService(private val project: Project) : Disposable {
     fun refresh() {
         sfcCache.clear()
         metaCache.clear()
+        typeDependencies.clear()
         structureTracker.incModificationCount()
         contentTracker.incModificationCount()
+        typeModuleTracker.incModificationCount()
         val url = ComarkSettings.getInstance().componentMetadataUrl
         if (url.isNotBlank()) ComarkRemoteMetadata.getInstance().refresh(url)
         DaemonCodeAnalyzer.getInstance(project).restart("Comark components refreshed")
@@ -140,6 +180,7 @@ class ComarkComponentService(private val project: Project) : Disposable {
     override fun dispose() {
         sfcCache.clear()
         metaCache.clear()
+        typeDependencies.clear()
     }
 
     // ---- Discovery --------------------------------------------------------------------------------------------------
@@ -240,6 +281,7 @@ class ComarkComponentService(private val project: Project) : Disposable {
         val known = files.vueFiles.mapTo(HashSet()) { it.file }
         sfcCache.keys.retainAll(known)
         metaCache.keys.retainAll(files.metaFiles.mapTo(HashSet()) { it.file })
+        typeDependencies.retainAll(sfcCache.values.flatMapTo(HashSet()) { it.dependencies.keys })
         return ComponentIndex(components)
     }
 
@@ -328,20 +370,28 @@ class ComarkComponentService(private val project: Project) : Disposable {
 
     private fun <T> cachedParse(file: VirtualFile, cache: MutableMap<VirtualFile, Parsed<T>>, maxSize: Long, parse: (CharSequence) -> T): T? {
         if (!file.isValid) return null
-        val document = FileDocumentManager.getInstance().getCachedDocument(file)
-        val stamp = document?.modificationStamp ?: file.modificationStamp
+        val stamp = stampOf(file)
         cache[file]?.takeIf { it.stamp == stamp }?.let { return it.value }
-        val text: CharSequence = document?.immutableCharSequence ?: run {
-            if (file.length > maxSize) return null
-            try {
-                VfsUtilCore.loadText(file)
-            } catch (_: IOException) {
-                return null
-            }
-        }
+        val text = loadText(file, maxSize) ?: return null
         val value = parse(text)
         cache[file] = Parsed(stamp, value)
         return value
+    }
+
+    /** The modification stamp of [file]'s document when it is open (unsaved edits count), else of the file. */
+    private fun stampOf(file: VirtualFile): Long =
+        FileDocumentManager.getInstance().getCachedDocument(file)?.modificationStamp ?: file.modificationStamp
+
+    /** The text of [file]: its document when it is open, else its VFS content when not larger than [maxSize]; null if unreadable. */
+    private fun loadText(file: VirtualFile, maxSize: Long): CharSequence? {
+        if (!file.isValid || file.isDirectory) return null
+        FileDocumentManager.getInstance().getCachedDocument(file)?.let { return it.immutableCharSequence }
+        if (file.length > maxSize) return null
+        return try {
+            VfsUtilCore.loadText(file)
+        } catch (_: IOException) {
+            null
+        }
     }
 
     // ---- Change tracking --------------------------------------------------------------------------------------------
@@ -349,28 +399,45 @@ class ComarkComponentService(private val project: Project) : Disposable {
     private fun onFileEvents(events: List<VFileEvent>) {
         var structure = false
         var content = false
+        var modules = false
         // VFS events are application wide; only files below this project's content roots matter
         val roots = ProjectRootManager.getInstance(project).contentRoots.map { it.path }
         for (event in events) {
-            if (roots.none { FileUtil.isAncestor(it, event.path, false) }) continue
+            val root = roots.firstOrNull { FileUtil.isAncestor(it, event.path, false) } ?: continue
+            val relativePath = event.path.removePrefix(root)
             when (event) {
-                is VFileContentChangeEvent -> if (isComponentFile(event.file.name)) content = true
-                is VFileCreateEvent -> if (affectsStructure(event.path, event.childName, event.isDirectory)) structure = true
+                is VFileContentChangeEvent -> if (isComponentFile(event.file.name) || event.file in typeDependencies) content = true
+                is VFileCreateEvent -> {
+                    if (affectsStructure(event.path, event.childName, event.isDirectory)) structure = true
+                    if (affectsModules(relativePath, event.childName, event.isDirectory)) modules = true
+                }
+
                 is VFileDeleteEvent, is VFileMoveEvent, is VFileCopyEvent -> {
                     val file = event.file
                     if (file != null && affectsStructure(event.path, file.name, file.isDirectory)) structure = true
+                    if (file != null && affectsModules(relativePath, file.name, file.isDirectory)) modules = true
                 }
 
                 is VFilePropertyChangeEvent -> if (event.isRename) {
                     val names = listOf(event.oldValue, event.newValue).filterIsInstance<String>()
                     if (event.file.isDirectory || names.any(::isComponentFile)) structure = true
+                    if (names.any { affectsModules(relativePath, it, event.file.isDirectory) }) modules = true
                 }
             }
-            if (structure && content) break
+            if (structure && content && modules) break
         }
         if (structure) structureTracker.incModificationCount()
-        if (content) contentTracker.incModificationCount()
+        if (modules) typeModuleTracker.incModificationCount()
+        if (content || modules) contentTracker.incModificationCount()
     }
+
+    /**
+     * Whether creating, deleting or moving the file [name] at [path] can change what a component's type imports resolve to:
+     * TypeScript files, project root markers and directories, outside dependencies and build output.
+     */
+    private fun affectsModules(path: String, name: String, isDirectory: Boolean): Boolean =
+        (isDirectory || NuxtTypeModules.isTypeModule(name) || name in NuxtTypeModules.ROOT_MARKERS) &&
+            path.split('/').none { isSkippedDirectory(it) }
 
     private fun affectsStructure(path: String, name: String, isDirectory: Boolean): Boolean =
         isComponentFile(name) || isDirectory && (name == NUXT_BUILD_DIRECTORY || path.split('/').none { isSkippedDirectory(it) })
