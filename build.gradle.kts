@@ -186,7 +186,7 @@ tasks {
     named("publishPlugin") { dependsOn(checkPublishable) }
 
     wrapper {
-        gradleVersion = "9.8.0"
+        gradleVersion = "9.9.0"
     }
 
     // The licenses of the ported MIT code and of the Comark logo require their notices to ship with the plugin
