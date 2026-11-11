@@ -18,6 +18,7 @@
         <fileType name="Comark" language="Comark" implementationClass="cz.xprees.comark.lang.ComarkFileType" fieldName="INSTANCE"/>
         <!-- .mdc files are Markdown files (preview, editor actions) that the substitutor turns into Comark -->
         <fileType name="Markdown" extensions="mdc"/>
+        <fileIconProvider implementation="cz.xprees.comark.lang.ComarkFileIconProvider"/>
         <lang.substitutor language="Markdown" implementationClass="cz.xprees.comark.lang.ComarkLanguageSubstitutor"/>
         <lang.fileViewProviderFactory language="Comark" implementationClass="cz.xprees.comark.lang.ComarkFileViewProviderFactory"/>
         <lang.parserDefinition language="Comark" implementationClass="cz.xprees.comark.parser.ComarkParserDefinition"/>
