@@ -17,6 +17,9 @@ internal class MdToken(var type: String, var tag: String, var nesting: Int) {
     var block = false
     var hidden = false
 
+    /** For a `link_open` or `image` resolved through a link reference definition: the normalized label (not markdown-it). */
+    var reference: String? = null
+
     fun attrIndex(name: String): Int = attrs?.indexOfFirst { it.name == name } ?: -1
 
     fun attrPush(attr: MdAttr) {
@@ -43,6 +46,14 @@ internal class MdReference(val href: String, val title: String)
 internal class MdEnv {
     var references: HashMap<String, MdReference>? = null
     val comarkBlockTokens = ArrayList<MdToken>()
+
+    /**
+     * Not comark: when set, invalid YAML in a component's props block does not abort the parse. The block is read as if
+     * its props were empty and the line of its opening `---` is recorded in [propsYamlErrors], so that [StudioSafety] can
+     * keep that one block verbatim instead of giving up on the whole document.
+     */
+    var lenientPropsYaml = false
+    val propsYamlErrors = ArrayList<Int>()
 }
 
 /** Thrown where comark (or markdown-exit) itself throws during the parse; Studio's text path then fails. */
@@ -1294,7 +1305,9 @@ internal object StudioMdBlock {
             val data = try {
                 StudioYamlLoader.parseYaml(yaml)
             } catch (e: StudioYamlException) {
-                throw StudioParseException("props YAML: ${e.message}")
+                if (!state.env.lenientPropsYaml) throw StudioParseException("props YAML: ${e.message}")
+                state.env.propsYamlErrors += startLine
+                JsUndefined
             }
             val token = state.env.comarkBlockTokens[0]
             for ((key, value) in jsEntries(data)) {
