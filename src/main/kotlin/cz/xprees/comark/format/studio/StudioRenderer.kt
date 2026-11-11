@@ -22,25 +22,33 @@ object StudioRenderer {
     }
 
     /** `render(document, ...)`: the body, trimmed and ending with one `\n`. */
-    fun render(document: StudioDocument): String {
+    fun render(document: StudioDocument): String = StudioJs.trim(renderNodes(document.nodes)) + "\n"
+
+    /** The concatenated output of top-level [nodes], before `render` trims the whole body. */
+    fun renderNodes(nodes: List<StudioNode>): String {
         val state = State(Context(), 0)
         val sb = StringBuilder()
-        for (child in document.nodes) sb.append(one(child, state, null))
-        return StudioJs.trim(sb.toString()) + "\n"
+        for (child in nodes) sb.append(one(child, state, null))
+        return sb.toString()
     }
 
     /** `renderFrontmatter(data, content)` (`internal/frontmatter.js`). */
     fun renderFrontmatter(data: Any?, content: String): String {
+        val fm = frontmatterYaml(data) ?: return StudioJs.trim(content)
+        if (content.isNotEmpty()) return "---\n$fm\n---\n\n" + StudioJs.trim(content)
+        return fm
+    }
+
+    /** The YAML `renderFrontmatter` writes between the `---` lines for [data], or `null` when it writes no front matter. */
+    fun frontmatterYaml(data: Any?): String? {
         val noKeys = when (data) {
             is Map<*, *> -> data.isEmpty()
             is List<*> -> data.isEmpty()
             is String -> data.isEmpty()
             else -> true // Object.keys of null, booleans and numbers is empty
         }
-        if (!StudioJs.truthy(data) || noKeys) return StudioJs.trim(content)
-        val fm = StudioJs.trim(StudioYaml.stringify(data))
-        if (content.isNotEmpty()) return "---\n$fm\n---\n\n" + StudioJs.trim(content)
-        return fm
+        if (!StudioJs.truthy(data) || noKeys) return null
+        return StudioJs.trim(StudioYaml.stringify(data))
     }
 
     // ---- state ----------------------------------------------------------------------------------------------------------

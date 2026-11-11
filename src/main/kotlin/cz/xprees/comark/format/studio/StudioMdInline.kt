@@ -701,6 +701,7 @@ internal object StudioMdInline {
         var title = ""
         var start: Int
         var parseReference = true
+        var referenceLabel: String? = null
         if (state.ch(state.pos) != 91) return false
         val oldPos = state.pos
         val max = state.posMax
@@ -748,11 +749,13 @@ internal object StudioMdInline {
             }
             href = ref.href
             title = ref.title
+            referenceLabel = StudioMdUtil.normalizeReference(label)
         }
         if (!silent) {
             state.pos = labelStart
             state.posMax = labelEnd
             val o = state.push("link_open", "a", 1)
+            o.reference = referenceLabel
             val attrs = mutableListOf(MdAttr("href", href))
             o.attrs = attrs
             if (title.isNotEmpty()) attrs += MdAttr("title", title)
@@ -769,6 +772,7 @@ internal object StudioMdInline {
     private fun image(state: MdStateInline, silent: Boolean): Boolean {
         var href = ""
         val title: String
+        var referenceLabel: String? = null
         val oldPos = state.pos
         val max = state.posMax
         if (state.ch(state.pos) != 33) return false
@@ -819,12 +823,14 @@ internal object StudioMdInline {
             }
             href = ref.href
             title = ref.title
+            referenceLabel = StudioMdUtil.normalizeReference(label)
         }
         if (!silent) {
             val content = state.slice(labelStart, labelEnd)
             val tokens = ArrayList<MdToken>()
             parse(content, state.env, tokens)
             val token = state.push("image", "img", 0)
+            token.reference = referenceLabel
             val attrs = mutableListOf(MdAttr("src", href), MdAttr("alt", ""))
             token.attrs = attrs
             token.children = tokens

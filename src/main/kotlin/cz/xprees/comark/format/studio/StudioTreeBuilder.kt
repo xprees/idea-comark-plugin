@@ -35,33 +35,115 @@ object StudioTreeBuilder {
     private fun buildChecked(text: String): StudioDocument {
         val (content, data) = parseFrontmatter(text)
         val tokens = StudioMarkdownIt.parse(content)
-        var nodes = TokenProcessor().document(tokens)
-        nodes = nodes.map { autoUnwrap(it) }
+        val nodes = postProcess(TokenProcessor().document(tokens))
+        val frontmatter = documentFrontmatter(data)
+        return StudioDocument(frontmatter = frontmatter, nodes = nodes, frontmatterValue = data)
+    }
+
+    /** `autoUnwrap`, the alert and shiki plugins, then Studio's `unbindComarkTree`; one output node per input node. */
+    private fun postProcess(input: List<StudioNode>): List<StudioNode> {
+        var nodes = input.map { autoUnwrap(it) }
         nodes = nodes.map { alert(it) }
         nodes = shiki(nodes)
-        val frontmatter = documentFrontmatter(data)
-        return StudioDocument(frontmatter = frontmatter, nodes = nodes.map { unbind(it) }, frontmatterValue = data)
+        return nodes.map { unbind(it) }
+    }
+
+    /**
+     * The same parse as [build], split into the document's top-level blocks: the front matter, and each top-level
+     * markdown-it block with the comark nodes made from it. Not part of Studio; [StudioSafety] and
+     * [StudioFormatter.formatPreserving] use it to keep single blocks verbatim.
+     *
+     * Invalid YAML does not throw here: front matter that does not load is reported in [StudioSegmentedDocument.frontmatter]
+     * and read as empty, and a component props block that does not load is read as if empty and reported by line.
+     * Other parse failures still throw [StudioTextPathException].
+     */
+    internal fun buildSegmented(text: String): StudioSegmentedDocument {
+        try {
+            return buildSegmentedChecked(text)
+        } catch (e: StudioYamlException) {
+            throw StudioTextPathException("YAML: ${e.message}")
+        } catch (e: StudioParseException) {
+            throw StudioTextPathException(e.message ?: "parse error")
+        } catch (e: StackOverflowError) {
+            throw StudioUnsupportedException("nesting too deep for this port")
+        }
+    }
+
+    private fun buildSegmentedChecked(text: String): StudioSegmentedDocument {
+        val split = splitFrontmatter(text)
+        var frontmatter: StudioFrontmatterBlock? = null
+        if (split.raw != null) {
+            var data: Any? = null
+            var error: String? = null
+            try {
+                val parsed = StudioYamlLoader.parseYaml(split.yaml!!)
+                data = if (parsed == null || parsed === JsUndefined) LinkedHashMap<String, Any?>() else parsed
+                if (data is Map<*, *> && data.containsKey("body")) error = "front matter has a body key, which replaces the document body"
+            } catch (e: StudioYamlException) {
+                error = "YAML: ${e.message}"
+            }
+            frontmatter = StudioFrontmatterBlock(split.raw, split.yaml, data, error, split.contentLine)
+        }
+        val content = normalizeNewlines(split.content)
+        val env = MdEnv().apply { lenientPropsYaml = true }
+        val tokens = StudioMarkdownIt.parse(content, env)
+        val groups = TokenProcessor().documentGroups(tokens)
+        val nodes = postProcess(groups.flatMap { it.nodes })
+        val lines = content.split("\n")
+        val segments = ArrayList<StudioSegment>()
+        var at = 0
+        for ((index, group) in groups.withIndex()) {
+            val groupTokens = tokens.subList(group.start, group.end)
+            val start = groupTokens.mapNotNull { it.map?.get(0) }.minOrNull()
+                ?: throw StudioUnsupportedException("a top-level block without a source map")
+            val nextStart = groups.getOrNull(index + 1)?.let { g -> tokens.subList(g.start, g.end).mapNotNull { it.map?.get(0) }.minOrNull() }
+                ?: lines.size
+            var end = maxOf(nextStart, start + 1)
+            while (end > start + 1 && StudioJs.trim(lines.getOrElse(end - 1) { "" }).isEmpty()) end--
+            val groupNodes = nodes.subList(at, at + group.nodes.size)
+            at += group.nodes.size
+            segments += StudioSegment(start, end, lines.subList(start, minOf(end, lines.size)).joinToString("\n"), groupTokens, groupNodes)
+        }
+        return StudioSegmentedDocument(text, frontmatter, content, segments, env.propsYamlErrors.toList())
+    }
+
+    private fun normalizeNewlines(s: String): String {
+        var src = s
+        if (src.contains('\r')) src = src.replace(Regex("\r\n?"), "\n")
+        if (src.contains('\u0000')) src = src.replace('\u0000', '\uFFFD')
+        return src
     }
 
     // ---- front matter (internal/frontmatter.js) -----------------------------------------------------------------------
 
-    private fun parseFrontmatter(input: String): Pair<String, Any?> {
-        var content = input
-        var data: Any? = LinkedHashMap<String, Any?>()
-        if (content.startsWith("---")) {
-            val idx = content.indexOf("\n---")
+    /** Where comark's `parseFrontmatter` splits [input]: the raw block with its delimiters, the YAML, and the content. */
+    private class FrontmatterSplit(val raw: String?, val yaml: String?, val content: String, val contentLine: Int)
+
+    private fun splitFrontmatter(input: String): FrontmatterSplit {
+        if (input.startsWith("---")) {
+            val idx = input.indexOf("\n---")
             if (idx != -1) {
-                val hasCarriageReturn = idx > 0 && content[idx - 1] == '\r'
+                val hasCarriageReturn = idx > 0 && input[idx - 1] == '\r'
                 val end = idx - (if (hasCarriageReturn) 1 else 0)
-                val frontmatter = if (end > 4) content.substring(4, end) else ""
+                val frontmatter = if (end > 4) input.substring(4, end) else ""
                 if (frontmatter.isNotEmpty()) {
-                    val parsed = StudioYamlLoader.parseYaml(frontmatter)
-                    data = if (parsed == null || parsed === JsUndefined) LinkedHashMap<String, Any?>() else parsed
-                    content = content.substring(minOf(content.length, idx + 4 + (if (hasCarriageReturn) 1 else 0)))
+                    // comark skips one more character after a `\r\n---` (the closing line's `\r`)
+                    val contentStart = minOf(input.length, idx + 4 + (if (hasCarriageReturn) 1 else 0))
+                    val raw = input.substring(0, idx + 4)
+                    val contentLine = normalizeNewlines(raw).count { it == '\n' }
+                    return FrontmatterSplit(raw, frontmatter, input.substring(contentStart), contentLine)
                 }
             }
         }
-        return content to data
+        return FrontmatterSplit(null, null, input, 0)
+    }
+
+    private fun parseFrontmatter(input: String): Pair<String, Any?> {
+        val split = splitFrontmatter(input)
+        if (split.yaml == null) return input to LinkedHashMap<String, Any?>()
+        val parsed = StudioYamlLoader.parseYaml(split.yaml)
+        val data = if (parsed == null || parsed === JsUndefined) LinkedHashMap<String, Any?>() else parsed
+        return split.content to data
     }
 
     /**
@@ -86,27 +168,31 @@ object StudioTreeBuilder {
     private val INLINE_TAG_MAP = mapOf("strong_open" to "strong", "em_open" to "em", "s_open" to "del", "sub_open" to "sub", "sup_open" to "sup")
 
     private class Result(val node: StudioNode?, val next: Int)
+    private class Group(val start: Int, val end: Int, val nodes: List<StudioNode>)
     private class Many(val nodes: List<StudioNode>, val next: Int)
 
     private class TokenProcessor {
         val headingSlugCounts = HashMap<String, Int>()
         val headingStack = ArrayList<Pair<Int, String>>()
 
-        fun document(tokens: List<MdToken>): List<StudioNode> {
-            val nodes = ArrayList<StudioNode>()
+        fun document(tokens: List<MdToken>): List<StudioNode> = documentGroups(tokens).flatMap { it.nodes }
+
+        /** The top-level token groups (`tokens[start, end)`) and the nodes each one becomes. */
+        fun documentGroups(tokens: List<MdToken>): List<Group> {
+            val groups = ArrayList<Group>()
             var i = 0
             while (i < tokens.size) {
                 val token = tokens[i]
                 if (token.type == "html_block") {
-                    nodes += StudioHtml.htmlToNodes(token.content)
+                    groups += Group(i, i + 1, StudioHtml.htmlToNodes(token.content))
                     i++
                     continue
                 }
                 val r = blockToken(tokens, i)
-                r.node?.let { nodes += it }
+                groups += Group(i, r.next, listOfNotNull(r.node))
                 i = r.next
             }
-            return nodes
+            return groups
         }
 
         fun blockToken(tokens: List<MdToken>, start: Int): Result {
@@ -494,7 +580,7 @@ object StudioTreeBuilder {
         return m.value.toBigDecimal().toDouble()
     }
 
-    private fun parseCodeblockInfo(info: String): LinkedHashMap<String, Any?> {
+    internal fun parseCodeblockInfo(info: String): LinkedHashMap<String, Any?> {
         val result = LinkedHashMap<String, Any?>()
         if (info.isEmpty()) return result
         var remaining = StudioJs.trim(info)
@@ -741,11 +827,10 @@ object StudioTreeBuilder {
 internal object StudioMarkdownIt {
     private val TASK_RE = Regex("^(\\[[ xX]])[\\t\\n\\u000B\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]+")
 
-    fun parse(input: String): List<MdToken> {
+    fun parse(input: String, env: MdEnv = MdEnv()): List<MdToken> {
         var src = input
         if (src.contains('\r')) src = src.replace(Regex("\r\n?"), "\n")
         if (src.contains('\u0000')) src = src.replace('\u0000', '�')
-        val env = MdEnv()
         val tokens = ArrayList<MdToken>()
         if (src.isNotEmpty()) {
             val state = MdStateBlock(src, env, tokens)
@@ -870,4 +955,31 @@ internal object StudioMarkdownIt {
             props?.forEach { if (it.name == "class") prev.attrJoin("class", it.value) else prev.attrSet(it.name, it.value) }
         }
     }
+}
+
+/**
+ * The front matter block of a [StudioSegmentedDocument]: [raw] is the source up to the end of the closing `---`, and
+ * [contentLine] the source line the content starts on (the rest of the closing line).
+ */
+internal class StudioFrontmatterBlock(val raw: String, val yaml: String?, val data: Any?, val error: String?, val contentLine: Int)
+
+/**
+ * One top-level block: content lines `[startLine, endLine)` (trailing blank lines excluded), their [source] text, the
+ * markdown-it tokens of the block and the comark nodes made from it (possibly none).
+ */
+internal class StudioSegment(val startLine: Int, val endLine: Int, val source: String, val tokens: List<MdToken>, val nodes: List<StudioNode>)
+
+/**
+ * [StudioTreeBuilder.buildSegmented]: the [content] after the front matter (newlines normalized to `\n` as markdown-it
+ * does), its [segments], and the content lines of props blocks whose YAML did not load.
+ */
+internal class StudioSegmentedDocument(
+    val text: String,
+    val frontmatter: StudioFrontmatterBlock?,
+    val content: String,
+    val segments: List<StudioSegment>,
+    val propsYamlErrorLines: List<Int>,
+) {
+    /** Content line [line] as a line of [text] (counting `\r\n`, `\r` and `\n` as one line break each). */
+    fun sourceLine(line: Int): Int = line + (frontmatter?.contentLine ?: 0)
 }
