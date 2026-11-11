@@ -56,6 +56,18 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
                     }
             }
         }
+        group(ComarkBundle.message("settings.group.dialect")) {
+            buttonsGroup(ComarkBundle.message("settings.dialect.label")) {
+                row {
+                    radioButton(ComarkBundle.message("settings.dialect.nuxt"), ComarkSettings.Dialect.NUXT_CONTENT)
+                        .comment(ComarkBundle.message("settings.dialect.nuxt.comment"))
+                }
+                row {
+                    radioButton(ComarkBundle.message("settings.dialect.comark"), ComarkSettings.Dialect.COMARK)
+                        .comment(ComarkBundle.message("settings.dialect.comark.comment"))
+                }
+            }.bind(settings::dialect)
+        }
         group(ComarkBundle.message("settings.group.formatting")) {
             row {
                 checkBox(ComarkBundle.message("settings.formatter.enabled"))
@@ -91,8 +103,11 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
         val modeBefore = settings.mode
         val excludedBefore = settings.excludedPatterns
         val configBefore = settings.contentConfigPath
+        val dialectBefore = settings.dialect
         super.apply()
-        if (settings.mode != modeBefore || settings.excludedPatterns != excludedBefore || settings.contentConfigPath != configBefore) {
+        if (settings.mode != modeBefore || settings.excludedPatterns != excludedBefore || settings.contentConfigPath != configBefore ||
+            settings.dialect != dialectBefore
+        ) {
             // Which Markdown files are Comark just changed: drop cached decisions and re-parse open files in every project.
             for (project in ProjectManager.getInstance().openProjects) {
                 if (!project.isDisposed) ComarkProjectDetector.getInstance(project).invalidate()

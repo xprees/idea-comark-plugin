@@ -26,7 +26,16 @@ import org.intellij.markdown.IElementType as MdType
  * The result covers every character of the input, so the lexer can take its leaves as tokens and the PSI parser its
  * composites as markers, exactly as the Markdown plugin does with its own tree.
  */
-class ComarkTreeBuilder(private val text: CharSequence, private val flavour: MarkdownFlavourDescriptor) {
+class ComarkTreeBuilder(
+    private val text: CharSequence,
+    private val flavour: MarkdownFlavourDescriptor,
+    /**
+     * Nuxt Content (remark-mdc) indentation rules instead of comark's: an opener indented four or more columns past its container is
+     * still a component when it starts a block, and a closer may sit up to three columns deeper than its opener. See
+     * [cz.xprees.comark.settings.ComarkSettings.Dialect].
+     */
+    private val lenient: Boolean = lenientIndentation(),
+) {
     private val lines: List<Line> = splitLines(text)
 
     /** A physical line: [start, end) is the content without the line break, [next] the start of the following line. */
@@ -137,6 +146,9 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
             embedded = ArrayList()
         }
 
+        // Nuxt Content mode: inside an indented code block, where an indented opener is code too
+        var inIndentedCode = false
+
         while (l < to) {
             ProgressManager.checkCanceled()
             val line = lines[l]
@@ -146,7 +158,29 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
                 continue
             }
             val relative = line.indent - minOf(container.indent, line.indent)
-            if (!line.isBlank && relative >= 4 && l > regionStart) {
+            if (lenient && !line.isBlank && relative >= 4 && !inIndentedCode && (l == regionStart || lines[l - 1].isBlank)) {
+                // Nuxt Content: an indented opener that starts a block (first line of the region, or after a blank line) is a
+                // component; directly under text it continues the paragraph (or the list item, below), inside indented code it is code
+                val opener = openerAt(line, container)
+                if (opener != null) {
+                    val component = parseComponent(l, opener, to, container)
+                    if (component.closeLine >= 0 && l > regionStart && isInListItem(regionStart, l, container, embedded, relative)) {
+                        embedded += component
+                        l = component.closeLine + 1
+                        continue
+                    }
+                    flush(l)
+                    blocks += component
+                    l = if (component.closeLine >= 0) component.closeLine + 1 else to
+                    regionStart = l
+                    continue
+                }
+                if (l == regionStart || !isInListItem(regionStart, l, container, embedded, relative)) inIndentedCode = true
+                l++
+                continue
+            }
+            if (!line.isBlank && relative < 4) inIndentedCode = false
+            if (!line.isBlank && relative >= 4 && l > regionStart && !inIndentedCode) {
                 // four or more columns in is code or paragraph text, unless it is inside a (nested) list item's content
                 val opener = openerAt(line, container)
                 if (opener != null) {
@@ -206,7 +240,7 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
 
     private fun parseComponent(openLine: Int, opener: ComarkSyntax.Opener, limit: Int, parent: Container): ComponentBlock {
         val markers = opener.markerCount
-        val closeLine = findClose(openLine, markers, limit)
+        val closeLine = findClose(openLine, markers, limit, lines[openLine].indent)
         val bodyEnd = if (closeLine >= 0) closeLine else limit
         val container = Container(lines[openLine].indent, parent.depth + 1)
         var bodyStart = openLine + 1
@@ -243,7 +277,7 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
         ComarkSyntax.isBlank(text, line.contentStart + 3, line.end)
 
     /** Closing line of the component opened at [openLine], or -1 (comark's `comark_block` loop: fences and same-depth nesting). */
-    private fun findClose(openLine: Int, markers: Int, limit: Int): Int {
+    private fun findClose(openLine: Int, markers: Int, limit: Int, openerIndent: Int): Int {
         var depth = 0
         var fenceChar = 0.toChar()
         var fenceLength = 0
@@ -262,6 +296,8 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
                 continue
             }
             if (text[start] != ':') continue
+            // Nuxt Content: a marker four or more columns deeper than the opener is text, not a closer or nested opener
+            if (lenient && line.indent >= openerIndent + 4) continue
             if (ComarkSyntax.colonRun(text, start, line.end) != markers) continue
             if (!ComarkSyntax.isBlank(text, start + markers, line.end)) {
                 depth++
@@ -297,7 +333,7 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
                         }
 
                         opener != null -> {
-                            val close = findClose(l, opener.markerCount, limit)
+                            val close = findClose(l, opener.markerCount, limit, line.indent)
                             if (close < 0) return limit
                             l = close
                         }
@@ -726,6 +762,12 @@ class ComarkTreeBuilder(private val text: CharSequence, private val flavour: Mar
     }
 
     companion object {
+        /** True when the settings ask for Nuxt Content indentation rules (the default), false for comark's. */
+        fun lenientIndentation(): Boolean =
+            com.intellij.openapi.application.ApplicationManager.getApplication()?.let {
+                cz.xprees.comark.settings.ComarkSettings.getInstance().dialect == cz.xprees.comark.settings.ComarkSettings.Dialect.NUXT_CONTENT
+            } ?: true
+
         /** Component nesting depth past which openers are plain text (markdown-it's default `maxNesting`). */
         private const val MAX_NESTING = 100
 

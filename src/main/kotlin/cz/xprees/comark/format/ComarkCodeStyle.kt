@@ -1,5 +1,6 @@
 package cz.xprees.comark.format
 
+import cz.xprees.comark.settings.ComarkSettings
 import com.intellij.application.options.CodeStyle
 import com.intellij.application.options.CodeStyleAbstractConfigurable
 import com.intellij.application.options.CodeStyleAbstractPanel
@@ -83,10 +84,19 @@ internal object ComarkIndent {
      * EditorConfig or detected indentation of this file when present (they override language settings), otherwise the Comark code
      * style's indent size. The file-type based lookup alone would give the Markdown code style's, as Comark files are Markdown files.
      */
-    fun indentSize(file: PsiFile): Int {
+    fun indentSize(file: PsiFile): Int = forDialect(configuredIndentSize(file))
+
+    private fun configuredIndentSize(file: PsiFile): Int {
         val fileOptions = CodeStyle.getIndentOptions(file)
         if (fileOptions.isOverrideLanguageOptions) return fileOptions.INDENT_SIZE.coerceAtLeast(0)
         val comark = CodeStyle.getSettings(file).getCommonSettings(ComarkLanguage).indentOptions
         return (comark?.INDENT_SIZE ?: fileOptions.INDENT_SIZE).coerceAtLeast(0)
     }
+
+    /**
+     * The step actually used: with the comark dialect a nested component four or more columns past its parent would be code, so
+     * indent sizes of four and more fall back to 2. Nuxt Content (remark-mdc) accepts any indentation and keeps the configured size.
+     */
+    fun forDialect(size: Int): Int =
+        if (size >= 4 && ComarkSettings.getInstance().dialect == ComarkSettings.Dialect.COMARK) 2 else size
 }

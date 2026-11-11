@@ -1,5 +1,6 @@
 package cz.xprees.comark.format
 
+import cz.xprees.comark.testutil.withDialect
 import cz.xprees.comark.lang.ComarkLanguage
 import com.intellij.application.options.CodeStyle
 import com.intellij.codeInsight.actions.ReformatCodeProcessor
@@ -265,13 +266,31 @@ class ComarkFormattingServiceTest : BasePlatformTestCase() {
     }
 
     fun testTabIndentationWouldTurnNestedComponentsIntoCode() {
-        // why "Use tab character" is not offered: Markdown counts a leading tab as four columns, so this is an indented code block
-        val file = configure("::a\n\t:::b\n\ttext\n\t:::\n::\n")
-        assertEquals(listOf("a"), PsiTreeUtil.findChildrenOfType(file, ComarkBlockComponent::class.java).map { it.componentName })
+        // why "Use tab character" is not offered: Markdown counts a leading tab as four columns, so with the comark parser this is an
+        // indented code block (Nuxt Content accepts it)
+        withDialect(ComarkSettings.Dialect.COMARK) {
+            val file = configure("::a\n\t:::b\n\ttext\n\t:::\n::\n")
+            assertEquals(listOf("a"), PsiTreeUtil.findChildrenOfType(file, ComarkBlockComponent::class.java).map { it.componentName })
+        }
         // ...and the formatter writes spaces, whatever the (hidden) option says
         CodeStyle.doWithTemporarySettings(project, CodeStyle.getSettings(project)) { settings ->
             settings.getCommonSettings(ComarkLanguage).indentOptions!!.USE_TAB_CHARACTER = true
             assertEquals("::a\n  :::b\n  text\n  :::\n::\n", reformatted("::a\n:::b\ntext\n:::\n::\n"))
+        }
+    }
+
+    /** Indent size 4 (e.g. from EditorConfig): Nuxt Content keeps it, comark falls back to 2 so nested components stay components. */
+    fun testIndentSizeFourPerDialect() {
+        CodeStyle.doWithTemporarySettings(project, CodeStyle.getSettings(project)) { settings ->
+            settings.getCommonSettings(ComarkLanguage).indentOptions!!.INDENT_SIZE = 4
+            val input = "::accordion\n:::item\nText\n:::\n::\n"
+            val nuxt = reformatted(input)
+            assertEquals("::accordion\n    :::item\n    Text\n    :::\n::\n", nuxt)
+            // idempotent: the 4-space result still parses as nested components
+            assertEquals(nuxt, reformatted(nuxt))
+            withDialect(ComarkSettings.Dialect.COMARK) {
+                assertEquals("::accordion\n  :::item\n  Text\n  :::\n::\n", reformatted(input))
+            }
         }
     }
 

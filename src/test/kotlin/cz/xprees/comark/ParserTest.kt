@@ -1,5 +1,7 @@
 package cz.xprees.comark
 
+import cz.xprees.comark.testutil.withDialect
+import cz.xprees.comark.settings.ComarkSettings
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.psi.impl.DebugUtil
 import com.intellij.psi.util.PsiTreeUtil
@@ -213,9 +215,43 @@ class ParserTest : BasePlatformTestCase() {
         assertTrue(file.components.isEmpty())
     }
 
-    fun testIndentedCodeIsNotAComponent() {
+    fun testIndentedCodeIsNotAComponentInComarkDialect() = withDialect(ComarkSettings.Dialect.COMARK) {
         val file = parse("Text\n\n    ::alert\n    ::\n")
         assertTrue(file.components.isEmpty())
+    }
+
+    // ---- Nuxt Content (remark-mdc) indentation, the default; expectations checked against remark-mdc ----
+
+    /** The reported case: nested components indented four spaces (Reformat Code with indent size 4) stay components. */
+    fun testFourSpaceNestedComponentsAreComponentsInNuxtDialect() {
+        val file = parse("::accordion\n    :::accordion-item{label=\"A\"}\n    Text **bold** A.\n    :::\n\n    :::accordion-item{label=\"B\"}\n    - one\n    - two\n    :::\n::\n")
+        assertEquals(listOf("accordion"), file.components.map { it.componentName })
+        assertEquals(listOf("accordion", "accordion-item", "accordion-item"), file.allComponents().map { it.componentName })
+        val second = file.allComponents().last()
+        assertNotNull(PsiTreeUtil.findChildOfType(second, MarkdownList::class.java))
+    }
+
+    fun testIndentedOpenerStartingABlockIsAComponentInNuxtDialect() {
+        assertEquals(listOf("alert"), parse("Text\n\n    ::alert\n    ::\n").allComponents().map { it.componentName })
+        assertEquals(listOf("alert"), parse("    ::alert\n    x\n    ::\n").allComponents().map { it.componentName })
+        assertEquals(listOf("a", "b"), parse("::a\n        :::b\n        deep\n        :::\n::\n").allComponents().map { it.componentName })
+        assertEquals(listOf("a", "b"), parse("::a\n\t:::b\n\tx\n\t:::\n::\n").allComponents().map { it.componentName })
+    }
+
+    fun testIndentedOpenerUnderTextOrInCodeIsNotAComponentInNuxtDialect() {
+        // directly under a paragraph line it continues the paragraph
+        assertEquals(listOf("a"), parse("::a\ntext\n    :::b\n    x\n    :::\n::\n").allComponents().map { it.componentName })
+        // inside an indented code block it is code
+        assertEquals(listOf("a"), parse("::a\n\n    code line\n    :::b\n    x\n    :::\n::\n").allComponents().map { it.componentName })
+    }
+
+    fun testCloserFourColumnsDeeperThanItsOpenerIsTextInNuxtDialect() {
+        val file = parse("::a\n:::b\nx\n      :::\n::\n")
+        val b = file.allComponents().single { it.componentName == "b" }
+        assertTrue(b.text.contains("      :::"))
+        // a closer less indented than its (indented) opener still closes it
+        val nested = parse("::a\n    :::b\n    x\n  :::\n::\n")
+        assertNotNull(nested.allComponents().single { it.componentName == "b" }.closeMarker)
     }
 
     fun testUnclosedComponentRunsToEnd() {
