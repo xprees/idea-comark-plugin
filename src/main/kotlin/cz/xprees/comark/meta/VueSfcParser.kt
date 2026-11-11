@@ -248,8 +248,7 @@ object VueSfcParser {
         }
 
         private fun stringLiterals(from: Int, to: Int): List<Pair<String, Int>> = splitTopLevel(text, from, to).mapNotNull { range ->
-            val c = text[range.first]
-            if (c == '"' || c == '\'' || c == '`') text.subSequence(range.first + 1, range.last).toString() to range.first + 1 else null
+            quoted(text, range)?.let { it to range.first + 1 }
         }
 
         private fun runtimeProp(entry: ScriptScanner.ObjectEntry): ComarkProp {
@@ -330,7 +329,8 @@ object VueSfcParser {
             for (arg in args) {
                 val c = text[arg.first]
                 if (c == '"' || c == '\'' || c == '`') {
-                    name = text.subSequence(arg.first + 1, arg.last).toString()
+                    // a half-typed `defineModel('` has no complete name yet
+                    name = quoted(text, arg) ?: continue
                     offset = arg.first + 1
                 } else if (c == '{') {
                     val close = findClosing(text, arg.first, arg.last + 1)
@@ -502,19 +502,88 @@ object VueSfcParser {
         private fun moduleResolver(target: TypeModule) =
             TypeResolver(target.text, listOf(Block("script", "", 0, 0, target.text.length, null)), target, context)
 
-        /** [members] declared in [text], tagged with the module's file (offsets are only kept when there is a file to point at). */
-        private fun local(members: List<ScriptScanner.TypeMember>): List<ScriptScanner.TypeMember> {
-            val module = module ?: return members
-            return members.map { ScriptScanner.TypeMember(it.name, if (module.file != null) it.nameStart else -1, it.optional, it.type, it.isMethod, it.doc, module.file) }
+        /**
+         * [members] declared in [text]: a member type naming a type alias is replaced by the aliased type ([memberType]), and
+         * members of a module are tagged with its file (offsets are only kept when there is a file to point at).
+         */
+        private fun local(members: List<ScriptScanner.TypeMember>): List<ScriptScanner.TypeMember> = members.map {
+            val nameStart = if (module == null || module.file != null) it.nameStart else -1
+            ScriptScanner.TypeMember(it.name, nameStart, it.optional, memberType(it.type), it.isMethod, it.doc, module?.file ?: it.file)
         }
 
-        private fun keyLiterals(from: Int, to: Int): Set<String> = ScriptScanner.splitType(text, from, to, '|').mapNotNull { r ->
-            val c = text[r.first]
-            if (c == '"' || c == '\'' || c == '`') text.subSequence(r.first + 1, r.last).toString() else null
-        }.toSet()
+        /**
+         * [type] with a type alias it consists of (`Variant`, also `Variant | undefined`) replaced by the aliased type when that is
+         * no object type (`type Variant = 'solid' | 'outline'` turns `Variant` into `'solid' | 'outline'`), so literal values and
+         * the kind of a prop are known. Aliases are looked up like named types: in [text], then through imports.
+         */
+        private fun memberType(type: String?): String? {
+            if (type == null) return null
+            val name = ComarkProp.cleanType(type)
+            return if (isAliasCandidate(name)) aliasedType(name) ?: type else type
+        }
+
+        /**
+         * The type a type alias [name] stands for, as text, when it is declared in [text] (or imported / re-exported from another
+         * module) and is no object type; null otherwise. An alias of another alias is followed in the module declaring it.
+         */
+        fun aliasedType(name: String): String? {
+            val key = (module?.file ?: module?.text ?: text) to "type $name"
+            if (context.depth > MAX_TYPE_DEPTH || !context.resolving.add(key)) return null
+            context.depth++
+            try {
+                when (val declaration = declaration(name)) {
+                    is Declaration.Alias -> {
+                        val expression = ScriptScanner.normalize(text.subSequence(declaration.start, declaration.end))
+                        if (expression.isEmpty() || expression.startsWith("{")) return null
+                        return if (isAliasCandidate(expression)) aliasedType(expression) ?: expression else expression
+                    }
+
+                    is Declaration.Interface -> return null
+                    null -> {}
+                }
+                imports.aliases[name]?.let { local -> return aliasedType(local) }
+                val resolver = context.modules ?: return null
+                imports.named[name]?.let { (imported, specifier) ->
+                    return resolver.resolve(specifier, module)?.let { moduleResolver(it).aliasedType(imported) }
+                }
+                for (specifier in imports.star) {
+                    ProgressManager.checkCanceled()
+                    val target = resolver.resolve(specifier, module) ?: continue
+                    moduleResolver(target).aliasedType(name)?.let { return it }
+                }
+                return null
+            } finally {
+                context.depth--
+                context.resolving.remove(key)
+            }
+        }
+
+        /** Whether [type] is a bare type name that may be an alias (`Variant`, `Ns.Variant`; not `string`). */
+        private fun isAliasCandidate(type: String): Boolean =
+            type.isNotEmpty() && isIdentStart(type[0]) && type.all { isIdentPart(it) || it == '.' } && type !in BUILT_IN_TYPES
+
+        private fun keyLiterals(from: Int, to: Int): Set<String> =
+            ScriptScanner.splitType(text, from, to, '|').mapNotNull { quoted(text, it) }.toSet()
 
         /** Members of an `interface Name { ... }` (with its `extends`) or `type Name = ...` declared in [text], or null. */
-        private fun declaredMembers(name: String): List<ScriptScanner.TypeMember>? {
+        private fun declaredMembers(name: String): List<ScriptScanner.TypeMember>? = when (val declaration = declaration(name)) {
+            null -> null
+            is Declaration.Alias -> members(declaration.start, declaration.end)
+            is Declaration.Interface -> {
+                if (declaration.open < 0 || declaration.close < 0) {
+                    emptyList()
+                } else {
+                    val own = local(typeMembers(text, declaration.open, declaration.close))
+                    val inherited = Regex("""\bextends\s+(.+)""", RegexOption.DOT_MATCHES_ALL).find(declaration.heritage)?.groupValues?.get(1)
+                        ?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+                        ?.flatMap { base -> resolveName(base) }.orEmpty()
+                    (own + inherited).distinctBy { it.name }
+                }
+            }
+        }
+
+        /** The first `interface Name` or `type Name = ...` declared in [scripts] of [text], or null. */
+        private fun declaration(name: String): Declaration? {
             for (script in scripts) {
                 val s = script.contentStart
                 val e = script.contentEnd
@@ -528,15 +597,8 @@ object VueSfcParser {
                             val n = skipTrivia(text, i + 9, e)
                             if (isWordAt(text, n, name, e)) {
                                 val open = ScriptScanner.indexOf(text, "{", n, e)
-                                if (open < 0) return emptyList()
-                                val close = findClosing(text, open, e)
-                                if (close < 0) return emptyList()
-                                val own = local(typeMembers(text, open, close))
-                                val heritage = text.subSequence(n + name.length, open).toString()
-                                val inherited = Regex("""\bextends\s+(.+)""", RegexOption.DOT_MATCHES_ALL).find(heritage)?.groupValues?.get(1)
-                                    ?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
-                                    ?.flatMap { base -> resolveName(base) }.orEmpty()
-                                return (own + inherited).distinctBy { it.name }
+                                if (open < 0) return Declaration.Interface("", -1, -1)
+                                return Declaration.Interface(text.subSequence(n + name.length, open).toString(), open, findClosing(text, open, e))
                             }
                             i = n
                         }
@@ -545,11 +607,14 @@ object VueSfcParser {
                             val n = skipTrivia(text, i + 4, e)
                             if (isWordAt(text, n, name, e)) {
                                 var eq = skipTrivia(text, n + name.length, e)
-                                if (eq < e && text[eq] == '<') eq = skipTrivia(text, findClosing(text, eq, e) + 1, e)
+                                if (eq < e && text[eq] == '<') {
+                                    val close = findClosing(text, eq, e)
+                                    eq = if (close < 0) e else skipTrivia(text, close + 1, e)
+                                }
                                 // `import { type Name }` and `export { type Name }` mention the name without declaring it
                                 if (eq < e && text[eq] == '=') {
                                     val exprStart = skipTrivia(text, eq + 1, e)
-                                    return members(exprStart, ScriptScanner.memberEnd(text, exprStart, e))
+                                    return Declaration.Alias(exprStart, ScriptScanner.memberEnd(text, exprStart, e))
                                 }
                             }
                             i = n
@@ -569,6 +634,21 @@ object VueSfcParser {
 
         private fun ScriptScanner.TypeMember.copy(optional: Boolean) = ScriptScanner.TypeMember(name, nameStart, optional, type, isMethod, doc, file)
     }
+
+    /** A named type declared in a script: an interface ([open] / [close] of its body, -1 when missing) or a type alias. */
+    private sealed class Declaration {
+        class Interface(val heritage: String, val open: Int, val close: Int) : Declaration()
+
+        /** `type Name = <expression>`, the expression spanning [start] until [end]. */
+        class Alias(val start: Int, val end: Int) : Declaration()
+    }
+
+    /** Types that are never aliases, so member types naming them need no lookup. */
+    private val BUILT_IN_TYPES = setOf(
+        "string", "number", "boolean", "bigint", "symbol", "object", "any", "unknown", "never", "void", "null", "undefined",
+        "true", "false", "String", "Number", "Boolean", "Object", "Function", "Array", "Date", "RegExp", "Promise", "Map", "Set",
+        "Element", "HTMLElement", "Event",
+    )
 
     /**
      * Named imports and re-exports of a module (local name to imported name and specifier), its `export *` specifiers and its
@@ -933,6 +1013,14 @@ object VueSfcParser {
 
     /** How deeply type expressions may nest (aliases of aliases, imports of imports) before resolution gives up. */
     private const val MAX_TYPE_DEPTH = 8
+
+    /** The content of the complete string literal spanning [range] of [text], or null when it is no (complete) string literal. */
+    private fun quoted(text: CharSequence, range: IntRange): String? {
+        if (range.last <= range.first || range.last >= text.length) return null
+        val quote = text[range.first]
+        if (quote != '"' && quote != '\'' && quote != '`' || text[range.last] != quote) return null
+        return text.subSequence(range.first + 1, range.last).toString()
+    }
 
     private fun indexOfChar(text: CharSequence, c: Char, from: Int): Int {
         for (i in from until text.length) if (text[i] == c) return i
