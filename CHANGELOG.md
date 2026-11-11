@@ -17,6 +17,8 @@
 - Component props from imported types: `defineProps<Props>()` with `Props` imported from a TypeScript file (relative paths and
   the Nuxt `~/`, `@/`, `~~/`, `@@/` aliases, `index.ts` / `.d.ts`, re-exports, `extends` and `A & B` of imported types); editing
   the imported file updates completion, and Go to Declaration opens it at the prop
+- Find Usages and Rename for components: component names in Comark files reference their `.vue` file, Find Usages on the file
+  (or on a usage) lists block, nested and inline usages, and renaming the file updates them in the style they were written in
 - Nuxt Content route links (`/guide/install#setup`) resolve to their content files: Go to Declaration, anchors in the target page
   and route completion
 

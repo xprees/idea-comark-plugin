@@ -5,9 +5,12 @@ import com.intellij.lang.ASTNode
 import com.intellij.navigation.ItemPresentation
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.FileViewProvider
+import com.intellij.psi.HintedReferenceHost
 import com.intellij.psi.LiteralTextEscaper
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiLanguageInjectionHost
+import com.intellij.psi.PsiReference
+import com.intellij.psi.PsiReferenceService
 import com.intellij.psi.impl.source.tree.LeafElement
 import com.intellij.psi.impl.source.tree.LeafPsiElement
 import com.intellij.psi.tree.ILeafElementType
@@ -15,6 +18,7 @@ import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.util.elementType
 import cz.xprees.comark.ComarkIcons
 import cz.xprees.comark.lang.ComarkFlavour
+import cz.xprees.comark.navigation.ComarkComponentReferences
 import cz.xprees.comark.parser.ComarkElementType
 import cz.xprees.comark.parser.ComarkTypes
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownFile
@@ -24,10 +28,26 @@ import javax.swing.Icon
  * A Comark document. It is a [MarkdownFile] (so every Markdown editor feature that checks for one keeps working) whose language
  * is [cz.xprees.comark.lang.ComarkLanguage], found by `PsiFileBase` through the dialect relationship.
  */
-class ComarkFile(viewProvider: FileViewProvider) : MarkdownFile(viewProvider, ComarkFlavour.INSTANCE) {
+class ComarkFile(viewProvider: FileViewProvider) : MarkdownFile(viewProvider, ComarkFlavour.INSTANCE), HintedReferenceHost {
     /** Top level block components, in document order. */
     val components: List<ComarkBlockComponent>
         get() = PsiTreeUtil.getChildrenOfTypeAsList(this, ComarkBlockComponent::class.java)
+
+    /**
+     * References from inline component names (`:badge[New]`) to their `.vue` files. Inline components are text inside Markdown
+     * paragraphs, headings, table cells and component `[content]`, none of which is Comark PSI, so the file holds them; with an
+     * offset hint only the name at that offset is looked at. Block component names carry their own ([ComarkComponentName]).
+     */
+    override fun getReferences(hints: PsiReferenceService.Hints): Array<PsiReference> {
+        if (hints.target != null && !ComarkComponentReferences.mayTarget(hints.target)) return PsiReference.EMPTY_ARRAY
+        val offset = hints.offsetInElement
+        return if (offset != null) ComarkComponentReferences.inlineReferenceAt(this, offset)?.let { arrayOf(it) } ?: PsiReference.EMPTY_ARRAY
+        else ComarkComponentReferences.inlineReferences(this).toTypedArray()
+    }
+
+    override fun getReferences(): Array<PsiReference> = getReferences(PsiReferenceService.Hints.NO_HINTS)
+
+    override fun shouldAskParentForReferences(hints: PsiReferenceService.Hints): Boolean = false
 
     override fun toString(): String = "ComarkFile:$name"
 }
@@ -117,6 +137,19 @@ class ComarkAttribute(node: ASTNode) : ASTWrapperPsiElement(node) {
     val valueElement: PsiElement? get() = node.findChildByType(ComarkTypes.ATTR_VALUE)?.psi
 
     override fun toString(): String = "ComarkAttribute(${nameElement?.text})"
+}
+
+/** Leaf type of block component names (`::name`, `:::name`); its leaves reference the component's `.vue` file. */
+class ComarkComponentNameElementType : ComarkElementType("COMPONENT_NAME"), ILeafElementType {
+    override fun createLeafNode(leafText: CharSequence): LeafElement = ComarkComponentName(this, leafText)
+}
+
+/** The name of a block component. Its soft reference resolves to the component's `.vue` file when one is known. */
+class ComarkComponentName(type: ComarkComponentNameElementType, text: CharSequence) : LeafPsiElement(type, text) {
+    override fun getReferences(): Array<PsiReference> =
+        ComarkComponentReferences.blockReference(this)?.let { arrayOf<PsiReference>(it) } ?: PsiReference.EMPTY_ARRAY
+
+    override fun getReference(): PsiReference? = references.firstOrNull()
 }
 
 /** Leaf type of the YAML text inside a props block; its leaves are injection hosts for YAML. */

@@ -9,7 +9,7 @@ Rider and other JetBrains IDEs.
       YAML props blocks, named slots (<code>#footer</code>), inline components (<code>:badge[New]{color="blue"}</code>), spans and attributes</li>
   <li><b>Reformat Code</b> with a port of the VS Code extension's formatter, and indentation on Enter that matches it</li>
   <li><b>Component completion</b>, <b>Go to Declaration</b> and <b>documentation</b> for components, props and slots, from your
-      <code>components/</code> Vue files and nuxt-component-meta output</li>
+      <code>components/</code> Vue files and nuxt-component-meta output; <b>Find Usages</b> and <b>Rename</b> of component files</li>
   <li>Folding, matching <code>::</code> pairs, YAML editing in props, live templates, auto-closing of components, breadcrumbs and a
       structure view; components rendered in the Markdown preview</li>
 </ul>
@@ -41,7 +41,7 @@ Markdown plugin offers (preview, structure view, lists, tables, header anchors, 
 | Highlighting | Component markers, names, closers, attributes (`#id`, `.class`, `key="value"`, `:binding`), slots, props fences; inline components, spans, attribute groups and `{{ bindings }}` in text. Colours in *Settings › Editor › Color Scheme › Comark* |
 | Inspections | *Unclosed block component* (with a fix inserting the closer), *Ignored text after component opener*, *Unknown Comark component* (off by default). Markdown's unresolved-link and unresolved-anchor inspections understand Comark spans and `{#id}` anchors |
 | Formatting | *Code › Reformat Code* uses a line-by-line port of the VS Code extension's formatter (monarch-mdc), checked byte for byte against the original on ~59,000 cases. Indent size: *Settings › Editor › Code Style › Comark* (2 by default; EditorConfig wins). Enter indents new lines the same way |
-| Components | Completion of component names (`::`, `:::`, inline `:`), props inside `{…}` and in props YAML, prop values from string unions, slot names after `#`; Go to Declaration to the `.vue` file, prop and `<slot>`; quick documentation. Sources: Vue SFCs in `components/` (Nuxt naming), `.nuxt/component-meta.mjs` / `.json`, an optional metadata URL. Props come from `defineProps<…>()` type literals, local or imported interfaces and type aliases (`import type { Props } from './types'`, relative paths and the `~/`, `@/`, `~~/`, `@@/` aliases, `extends`, `A & B`, re-exports), runtime `defineProps({…})`, `withDefaults` and the options API. No Vue plugin needed |
+| Components | Completion of component names (`::`, `:::`, inline `:`), props inside `{…}` and in props YAML, prop values from string unions, slot names after `#`; Go to Declaration to the `.vue` file, prop and `<slot>`; quick documentation; Find Usages of a `.vue` file (or from a usage) lists its block and inline usages in Comark files, and renaming the file renames them, keeping each usage's style (`prose-alert`, `ProseAlert`, Nuxt Content's bare-name alias). Sources: Vue SFCs in `components/` (Nuxt naming), `.nuxt/component-meta.mjs` / `.json`, an optional metadata URL. Props come from `defineProps<…>()` type literals, local or imported interfaces and type aliases (`import type { Props } from './types'`, relative paths and the `~/`, `@/`, `~~/`, `@@/` aliases, `extends`, `A & B`, re-exports), runtime `defineProps({…})`, `withDefaults` and the options API. No Vue plugin needed |
 | Route links | In Nuxt Content packages, page routes in links (`[Install](/guide/install#setup)`) resolve to their content file (`content/1.guide/2.install.md`, `index` files for directories, ordering prefixes and extensions dropped): Go to Declaration opens the page, `#anchor` resolves and completes against its headings, and routes complete after `](/`. Routes that match no content file are not reported (custom pages may exist) |
 | Editor | Folding of components, slots and props (Markdown folds kept); matching `::name` / `::` highlighting and navigation; YAML highlighting and checks in props blocks; live templates from the VS Code snippets; Enter after an unclosed opener inserts its closer; breadcrumbs and sticky lines; structure view with headers, components and slots; spellchecking of component content and attribute values |
 | Preview | Components, props and slots render as labelled blocks in the built-in (JCEF) Markdown preview |
@@ -63,6 +63,8 @@ the Markdown one), component completion, an optional component metadata URL and 
   or `tsconfig` `paths` other than the Nuxt aliases), and mapped or conditional types, generics and default exports are not
   evaluated (the members that can be found are used). Components inside `node_modules` are known only through
   nuxt-component-meta output or the metadata URL.
+- Find Usages and Rename cover component names in Comark files only (not Vue templates or plain Markdown), skip Markdown examples
+  in code fences, and don't update usages when a component file is moved to another directory.
 - Route links follow Nuxt Content's default routing from the package's `content/` directory; collection `prefix` / `source` settings
   in `content.config.ts` and custom routes in front matter (`path:`) are not read, so such links don't resolve (and aren't reported).
 
