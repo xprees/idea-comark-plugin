@@ -44,8 +44,17 @@ enum class ImageDirKind {
  * @property layer the path of the Nuxt layer it belongs to.
  * @property label the path shown to the user: relative to the Nuxt root (`public`, `app/assets/images`, `layers/base/public`), or
  * the settings entry as written for [ImageDirKind.OVERRIDE].
+ * @property isPublic the directory is a layer's public directory, so its files are also served as is (from the CDN, when there is
+ * one). True for an [ImageDirKind.IMAGE] directory that is the public directory too (Nuxt Image's default `image.dir`).
  */
-data class ImageDir(val path: String, val kind: ImageDirKind, val layer: String, val label: String, val exists: Boolean)
+data class ImageDir(
+    val path: String,
+    val kind: ImageDirKind,
+    val layer: String,
+    val label: String,
+    val exists: Boolean,
+    val isPublic: Boolean = kind == ImageDirKind.PUBLIC,
+)
 
 /**
  * The image directories of one Nuxt project, in priority order (the first directory holding a path wins), and how its URLs are
@@ -323,7 +332,9 @@ class NuxtImageDirectories(private val project: Project) : Disposable {
                 dirs += dir(root, layer, NuxtPaths.resolve(layer.dir.path, layer.config.publicDir ?: PUBLIC), ImageDirKind.PUBLIC)
             }
         }
-        val distinct = dirs.distinctBy { it.path }
+        // an image directory that is also a public one stays first in the order, but keeps knowing it is public
+        val publicPaths = dirs.filter { it.kind == ImageDirKind.PUBLIC }.mapTo(HashSet()) { it.path }
+        val distinct = dirs.distinctBy { it.path }.map { if (!it.isPublic && it.path in publicPaths) it.copy(isPublic = true) else it }
         distinct.forEach { watched += it.path }
         val ordered = layers.values.toList()
         val cdnURL = settings.imageCdnUrl.ifBlank { null } ?: ordered.firstNotNullOfOrNull { it.config.cdnURL }
