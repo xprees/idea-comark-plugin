@@ -1,2 +1,22 @@
 <idea-plugin>
+    <!-- Syntax highlighting, inline Comark highlighting, color settings and syntax inspections -->
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Comark files keep the Markdown file type; the editor finds this through the substituted language -->
+        <lang.syntaxHighlighterFactory language="Comark" implementationClass="cz.xprees.comark.highlighting.ComarkSyntaxHighlighterFactory"/>
+        <colorSettingsPage implementation="cz.xprees.comark.highlighting.ComarkColorSettingsPage"/>
+
+        <!-- Inline syntax lives in Markdown-language PSI (paragraphs, headings, cells): registered for Markdown, active in Comark files -->
+        <annotator language="Markdown" implementationClass="cz.xprees.comark.highlighting.ComarkInlineAnnotator"/>
+        <daemon.highlightInfoFilter implementation="cz.xprees.comark.highlighting.ComarkSpanHighlightInfoFilter"/>
+        <lang.inspectionSuppressor language="Markdown" implementationClass="cz.xprees.comark.highlighting.ComarkMarkdownInspectionSuppressor"/>
+
+        <localInspection language="Comark" shortName="ComarkUnclosedComponent" enabledByDefault="true" level="WEAK WARNING"
+                         bundle="messages.ComarkBundle" key="highlighting.inspection.unclosed.component.name"
+                         groupBundle="messages.ComarkBundle" groupKey="highlighting.inspection.group"
+                         implementationClass="cz.xprees.comark.highlighting.ComarkUnclosedComponentInspection"/>
+        <localInspection language="Comark" shortName="ComarkIgnoredOpenerText" enabledByDefault="true" level="WARNING"
+                         bundle="messages.ComarkBundle" key="highlighting.inspection.ignored.opener.text.name"
+                         groupBundle="messages.ComarkBundle" groupKey="highlighting.inspection.group"
+                         implementationClass="cz.xprees.comark.highlighting.ComarkIgnoredOpenerTextInspection"/>
+    </extensions>
 </idea-plugin>

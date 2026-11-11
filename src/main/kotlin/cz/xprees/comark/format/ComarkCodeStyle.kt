@@ -1,0 +1,82 @@
+package cz.xprees.comark.format
+
+import com.intellij.application.options.CodeStyle
+import com.intellij.application.options.CodeStyleAbstractConfigurable
+import com.intellij.application.options.CodeStyleAbstractPanel
+import com.intellij.application.options.IndentOptionsEditor
+import com.intellij.application.options.TabbedLanguageCodeStylePanel
+import com.intellij.lang.Language
+import com.intellij.psi.PsiFile
+import com.intellij.psi.codeStyle.CodeStyleConfigurable
+import com.intellij.psi.codeStyle.CodeStyleSettings
+import com.intellij.psi.codeStyle.CommonCodeStyleSettings
+import com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider
+import cz.xprees.comark.lang.ComarkLanguage
+
+/**
+ * Settings | Editor | Code Style | Comark: the indentation the Comark formatter and Enter use.
+ *
+ * Comark files keep the Markdown file type, so without this they used the Markdown code style's indent (4 by default), while the
+ * VS Code extension's formatter (monarch-mdc) and Nuxt projects use 2. The default here is 2.
+ */
+class ComarkCodeStyleSettingsProvider : LanguageCodeStyleSettingsProvider() {
+    override fun getLanguage(): Language = ComarkLanguage
+
+    override fun getConfigurableDisplayName(): String = "Comark"
+
+    override fun customizeDefaults(commonSettings: CommonCodeStyleSettings, indentOptions: CommonCodeStyleSettings.IndentOptions) {
+        indentOptions.INDENT_SIZE = DEFAULT_INDENT
+        indentOptions.CONTINUATION_INDENT_SIZE = DEFAULT_INDENT
+        indentOptions.TAB_SIZE = DEFAULT_INDENT
+        indentOptions.USE_TAB_CHARACTER = false
+    }
+
+    override fun getIndentOptionsEditor(): IndentOptionsEditor = IndentOptionsEditor()
+
+    override fun getCodeSample(settingsType: SettingsType): String = SAMPLE
+
+    override fun createConfigurable(baseSettings: CodeStyleSettings, modelSettings: CodeStyleSettings): CodeStyleConfigurable =
+        object : CodeStyleAbstractConfigurable(baseSettings, modelSettings, configurableDisplayName) {
+            override fun createPanel(settings: CodeStyleSettings): CodeStyleAbstractPanel =
+                object : TabbedLanguageCodeStylePanel(ComarkLanguage, currentSettings, settings) {
+                    override fun initTabs(settings: CodeStyleSettings) {
+                        addIndentOptionsTab(settings)
+                    }
+                }
+        }
+
+    companion object {
+        const val DEFAULT_INDENT = 2
+
+        private val SAMPLE = """
+            ::card{title="Comark"}
+            ---
+            icon: i-lucide-box
+            links:
+              - label: Docs
+                to: /docs
+            ---
+            Default slot content
+
+            #footer
+              :::badge{color="primary"}
+              Nested component
+              :::
+            ::
+        """.trimIndent()
+    }
+}
+
+/** The indentation step of a Comark file for the formatter and Enter. */
+internal object ComarkIndent {
+    /**
+     * EditorConfig or detected indentation of this file when present (they override language settings), otherwise the Comark code
+     * style's indent size. The file-type based lookup alone would give the Markdown code style's, as Comark files are Markdown files.
+     */
+    fun indentSize(file: PsiFile): Int {
+        val fileOptions = CodeStyle.getIndentOptions(file)
+        if (fileOptions.isOverrideLanguageOptions) return fileOptions.INDENT_SIZE.coerceAtLeast(0)
+        val comark = CodeStyle.getSettings(file).getCommonSettings(ComarkLanguage).indentOptions
+        return (comark?.INDENT_SIZE ?: fileOptions.INDENT_SIZE).coerceAtLeast(0)
+    }
+}

@@ -8,7 +8,7 @@ import org.jetbrains.annotations.PropertyKey
 @NonNls
 private const val BUNDLE = "messages.ComarkBundle"
 
-object ComarkBundle : DynamicBundle(BUNDLE) {
+object ComarkBundle : DynamicBundle(ComarkBundle::class.java, BUNDLE) {
     @Nls
     fun message(@PropertyKey(resourceBundle = BUNDLE) key: String, vararg params: Any): String = getMessage(key, *params)
 }
