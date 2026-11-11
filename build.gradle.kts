@@ -206,6 +206,13 @@ tasks.register<Exec>("recordStudioOracle") {
     workingDir = studioOracleDir.asFile
     commandLine("node", "record.mjs")
 }
+tasks.register<Exec>("recordStudioVectors") {
+    group = "verification"
+    description = "Records src/test/testData/studio/yaml-vectors.json and render-vectors.json from js-yaml and comark under Node."
+    dependsOn(installStudioOracle)
+    workingDir = studioOracleDir.asFile
+    commandLine("node", "record-vectors.mjs")
+}
 
 tasks {
     named("signPlugin") { dependsOn(checkPublishable) }
