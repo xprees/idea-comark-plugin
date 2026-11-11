@@ -7,6 +7,7 @@ import com.intellij.psi.SyntaxTraverser
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.elementType
+import cz.xprees.comark.navigation.ComarkContentRoutes
 import cz.xprees.comark.parser.ComarkInlineScanner
 import cz.xprees.comark.parser.ComarkTypes
 import cz.xprees.comark.psi.ComarkFile
@@ -125,8 +126,8 @@ object ComarkAnchors {
     }
 
     /**
-     * True when the link destination [destination] (`#anchor` or `path#anchor`, resolved against [context]'s file) points at an
-     * anchor that a Comark document defines.
+     * True when the link destination [destination] (`#anchor`, `path#anchor` resolved against [context]'s file, or a Nuxt Content
+     * route `/page#anchor`, see [ComarkContentRoutes]) points at an anchor that a Comark document defines.
      */
     fun isComarkAnchor(context: PsiElement, destination: String): Boolean {
         val hash = destination.indexOf('#')
@@ -134,8 +135,11 @@ object ComarkAnchors {
         val anchor = destination.substring(hash + 1)
         val path = destination.substring(0, hash)
         val contextFile = context.containingFile?.originalFile ?: return false
+        val route = ComarkContentRoutes.parseRouteLink(destination)
         val target = if (path.isEmpty()) {
             contextFile
+        } else if (route != null) {
+            ComarkContentRoutes.resolve(contextFile, route.path)?.let { PsiManager.getInstance(context.project).findFile(it) }
         } else {
             val directory = contextFile.virtualFile?.parent ?: return false
             val file = directory.findFileByRelativePath(path) ?: return false
