@@ -29,7 +29,7 @@ class ComarkLanguageSubstitutor : LanguageSubstitutor() {
         const val MDC_EXTENSION = "mdc"
 
         fun isComarkFile(file: VirtualFile, project: Project): Boolean {
-            if (project.isDisposed) return false
+            if (project.isDisposed || ComarkDynamicPluginListener.unloading) return false
             if (file.extension.equals(MDC_EXTENSION, ignoreCase = true)) return true
             if (ComarkExclusions.isExcluded(file, project)) return false
             return when (ComarkSettings.getInstance().mode) {
