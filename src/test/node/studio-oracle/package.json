@@ -1,0 +1,31 @@
+{
+  "name": "comark-studio-oracle",
+  "private": true,
+  "type": "module",
+  "description": "Records Nuxt Studio 1.8.0 save-pipeline outputs (oracle) for the IDE's Nuxt Studio formatting style.",
+  "scripts": {
+    "record": "node record.mjs"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "dependencies": {
+    "@nuxtjs/mdc": "0.23.3",
+    "@shikijs/langs": "4.6.0",
+    "comark": "0.7.0",
+    "consola": "3.4.2",
+    "destr": "2.0.5",
+    "js-yaml": "5.5.0",
+    "micromark-util-sanitize-uri": "2.0.1",
+    "minimark": "0.2.0",
+    "nuxt-studio": "1.8.0",
+    "ohash": "2.0.12",
+    "remark-emoji": "5.0.2",
+    "remark-mdc": "3.11.1",
+    "scule": "1.3.0",
+    "shiki": "4.6.0",
+    "slugify": "1.6.9",
+    "ufo": "1.6.4",
+    "unist-util-visit": "5.2.0"
+  }
+}
