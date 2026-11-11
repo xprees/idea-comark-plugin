@@ -52,9 +52,29 @@ class ComarkUnknownComponentInspection : LocalInspectionTool() {
             }
 
             private fun check(element: PsiElement, name: String, rangeInElement: TextRange) {
-                if (index.find(name, context) != null) return
+                if (index.find(name, context) != null || isHtmlElement(name)) return
                 holder.registerProblem(element, rangeInElement, ComarkBundle.message("inspection.unknown.component.message", name))
             }
         }
+    }
+
+    companion object {
+        /**
+         * Standard HTML element names (Vue's `isHTMLTag` list and `search`) plus the `svg` and `math` roots. Comark renders a
+         * component with such a name as the plain element (`::div`, `:br`, `::table`), so it needs no component. Other SVG and
+         * MathML element names (`text`, `image`, `path`, ...) are left out: they only mean something inside `svg` / `math` and
+         * are common component names.
+         */
+        private val HTML_ELEMENTS = (
+            "html,body,base,head,link,meta,style,title,address,article,aside,footer,header,hgroup,h1,h2,h3,h4,h5,h6,nav,section," +
+                "div,dd,dl,dt,figcaption,figure,picture,hr,img,li,main,ol,p,pre,ul,a,b,abbr,bdi,bdo,br,cite,code,data,dfn,em,i,kbd," +
+                "mark,q,rp,rt,ruby,s,samp,small,span,strong,sub,sup,time,u,var,wbr,area,audio,map,track,video,embed,object,param," +
+                "source,canvas,script,noscript,del,ins,caption,col,colgroup,table,thead,tbody,td,th,tr,button,datalist,fieldset,form," +
+                "input,label,legend,meter,optgroup,option,output,progress,select,textarea,details,dialog,menu,summary,template," +
+                "blockquote,iframe,tfoot,search,svg,math"
+            ).split(',').toSet()
+
+        /** Whether [name] is a standard HTML element name (case-insensitive), which Comark renders without a component. */
+        fun isHtmlElement(name: String): Boolean = name.lowercase() in HTML_ELEMENTS
     }
 }

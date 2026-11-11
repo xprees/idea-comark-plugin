@@ -44,6 +44,32 @@ class UnknownComponentInspectionTest : ComponentsTestBase() {
         myFixture.checkHighlighting(false, false, true)
     }
 
+    fun testHtmlElementComponentsAreNotUnknown() {
+        addStandardComponents()
+        configure(
+            """
+            ::div
+            **Bold text** :br
+            *Italic* :br
+            ::
+
+            ::table{attr="value"}
+            | a |
+            |---|
+            | b |
+            ::
+
+            ::UL
+            ::
+
+            ::blockquote
+            Quote with :<weak_warning descr="Unknown component 'text'">text</weak_warning>
+            ::
+            """.trimIndent(),
+        )
+        myFixture.checkHighlighting(false, false, true)
+    }
+
     fun testSilentWithoutDiscoveredComponents() {
         configure("::whatever\n::\n\nAnd :inline too.")
         myFixture.checkHighlighting(false, false, true)
