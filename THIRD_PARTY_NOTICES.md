@@ -91,3 +91,42 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Nuxt Studio formatting style
+
+`cz.xprees.comark.format.studio` reproduces what [Nuxt Studio](https://github.com/nuxt-content/nuxt-studio) 1.8.0 writes when
+it saves a document. It contains Kotlin ports of parts of these projects (all MIT-licensed unless noted):
+
+- Nuxt Studio 1.8.0 (`utils/document/legacy.js`, `generate.js`): Copyright (c) 2025 Vercel, Inc.
+- Comark 0.7.0 (parser plugins, token processing, `renderMarkdown`, emoji table): Copyright (c) 2026 Comark team and
+  contributors.
+- markdown-exit 1.1.0-beta.2, a fork of markdown-it (block and inline parser): Copyright (c) 2014 Vitaly Puzrin, Alex
+  Kocharin; Copyright (c) 2025 SerKo.
+- mdurl 2 (URL parse, format, encode, decode): Copyright (c) 2015 Vitaly Puzrin, Alex Kocharin.
+- js-yaml 5.5.0 (loader and dumper): Copyright (C) 2011-2015 by Vitaly Puzrin.
+- htmlparser2 12 (tokenizer and parser): Copyright 2010, 2011, Chris Winberry.
+- punycode.js 2: Copyright Mathias Bynens.
+- character-entities 2 and character-entities-legacy 3 (named character reference tables): Copyright (c) 2015 Titus Wormer.
+- entities 7/8 (character reference decoding rules), BSD-2-Clause: Copyright (c) Felix Böhm.
+
+The MIT License text above applies to each MIT-licensed project with its own copyright line. The entities license:
+
+```
+Copyright (c) Felix Böhm
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
+conditions are met:
+
+Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the distribution.
+
+THIS IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```

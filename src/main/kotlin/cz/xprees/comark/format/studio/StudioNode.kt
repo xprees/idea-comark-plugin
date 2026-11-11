@@ -30,11 +30,17 @@ data class StudioElement(
 /** A comment `[null, attrs, text]`. [text] is `null` when the tuple has no third item (rendered as `undefined`, like comark). */
 data class StudioComment(val text: String?, val attrs: Map<String, Any?> = emptyMap()) : StudioNode
 
-/** A document: the front matter object, comark's `meta` (unused by the renderer) and the top-level nodes. */
+/**
+ * A document: the front matter object, comark's `meta` (unused by the renderer) and the top-level nodes.
+ *
+ * [frontmatterValue] is what comark's front matter parse really returned; it differs from [frontmatter] only when the YAML is
+ * not a mapping (a string, a list, a number, ...), which `renderFrontmatter` then dumps as it is.
+ */
 data class StudioDocument(
     val frontmatter: Map<String, Any?> = emptyMap(),
     val nodes: List<StudioNode> = emptyList(),
     val meta: Map<String, Any?> = emptyMap(),
+    val frontmatterValue: Any? = frontmatter,
 )
 
 /** JavaScript `undefined` as a value (an object property that exists but holds `undefined`). */
