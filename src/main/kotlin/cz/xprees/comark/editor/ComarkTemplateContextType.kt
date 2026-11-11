@@ -36,6 +36,7 @@ class ComarkTemplateContextType : TemplateContextType(ComarkBundle.message("live
         PsiTreeUtil.findFirstParent(element, false) { it is ComarkFile || it.elementType in EXCLUDED }.let { it != null && it !is ComarkFile }
 
     private companion object {
+        /** `FRONT_MATTER_HEADER` is experimental API, as is every other way to recognise front matter (its PSI class included). */
         val EXCLUDED = TokenSet.create(
             MarkdownElementTypes.CODE_FENCE,
             MarkdownElementTypes.CODE_BLOCK,

@@ -57,6 +57,7 @@ class ComarkPsiDocumentationTargetProvider : PsiDocumentationTargetProvider {
  * is known.
  */
 class ComarkDocumentationTarget(private val project: Project, val symbol: ComarkSymbol) : DocumentationTarget {
+    /** [Pointer] is experimental API, but [DocumentationTarget] requires it; there is no other way to provide a target. */
     override fun createPointer(): Pointer<out DocumentationTarget> = Pointer.hardPointer(this)
 
     override val navigatable: Navigatable?
