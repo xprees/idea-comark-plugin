@@ -2,6 +2,7 @@ package cz.xprees.comark.parser
 
 import com.intellij.psi.tree.IElementType
 import cz.xprees.comark.lang.ComarkLanguage
+import cz.xprees.comark.psi.ComarkComponentNameElementType
 import cz.xprees.comark.psi.ComarkPropsContentElementType
 import org.intellij.markdown.MarkdownElementType
 import org.intellij.plugins.markdown.lang.MarkdownElementType as PlatformMarkdownElementType
@@ -54,7 +55,7 @@ object ComarkTypes {
 
     // ---- tokens -------------------------------------------------------------------------------------------------
     val COMPONENT_MARKER_PAIR = token("COMPONENT_MARKER")
-    val COMPONENT_NAME_PAIR = token("COMPONENT_NAME")
+    val COMPONENT_NAME_PAIR = token("COMPONENT_NAME", ComarkComponentNameElementType())
     val COMPONENT_CLOSE_PAIR = token("COMPONENT_CLOSE")
     val CONTENT_LBRACKET_PAIR = token("CONTENT_LBRACKET")
     val CONTENT_RBRACKET_PAIR = token("CONTENT_RBRACKET")

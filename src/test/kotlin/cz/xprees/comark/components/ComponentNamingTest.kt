@@ -59,4 +59,17 @@ class ComponentNamingTest {
         assertEquals(listOf("LayoutHero"), ComponentNaming.componentNames("global/layout/Hero.vue"))
         assertEquals(listOf("Callout"), ComponentNaming.componentNames("content/callout/index.vue"))
     }
+
+    @Test
+    fun renamedUsageKeepsStyleAndPrefix() {
+        assertEquals("callout", ComponentNaming.renamedUsage("alert", "content/Callout.vue"))
+        assertEquals("Callout", ComponentNaming.renamedUsage("Alert", "content/Callout.vue"))
+        assertEquals("prose-info-box", ComponentNaming.renamedUsage("prose-card", "content/prose/InfoBox.vue"))
+        assertEquals("ProseInfoBox", ComponentNaming.renamedUsage("ProseCard", "content/prose/InfoBox.vue"))
+        assertEquals("proseInfoBox", ComponentNaming.renamedUsage("proseCard", "content/prose/InfoBox.vue"))
+        // Nuxt Content's bare file name alias stays an alias
+        assertEquals("info-box", ComponentNaming.renamedUsage("card", "content/prose/InfoBox.vue"))
+        // outside content/ the directory is always part of the name
+        assertEquals("layout-banner", ComponentNaming.renamedUsage("layout-hero", "global/layout/Banner.vue"))
+    }
 }

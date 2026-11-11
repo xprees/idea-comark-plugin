@@ -7,6 +7,8 @@
         <typedHandler implementation="cz.xprees.comark.completion.ComarkCompletionAutoPopupHandler"/>
 
         <gotoDeclarationHandler implementation="cz.xprees.comark.navigation.ComarkGotoDeclarationHandler"/>
+        <!-- Find Usages / Rename of a component's .vue file: kebab-case and PascalCase usages in Comark files -->
+        <referencesSearch implementation="cz.xprees.comark.navigation.ComarkComponentReferenceSearcher"/>
 
         <platform.backend.documentation.targetProvider
                 implementation="cz.xprees.comark.navigation.ComarkDocumentationTargetProvider"/>

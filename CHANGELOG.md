@@ -13,6 +13,8 @@
 - Component completion, navigation and documentation from Vue components and nuxt-component-meta
 - Markdown plugin compatibility (HTML blocks, TODOs, Fill Paragraph) and components in the Markdown preview
 - Code style page for Comark (indent 2 by default) and spellchecking of component content and attribute values
+- Find Usages and Rename for components: component names in Comark files reference their `.vue` file, Find Usages on the file
+  (or on a usage) lists block, nested and inline usages, and renaming the file updates them in the style they were written in
 
 ### Fixed
 

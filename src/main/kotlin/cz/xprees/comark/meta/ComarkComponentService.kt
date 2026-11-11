@@ -117,6 +117,15 @@ class ComarkComponentService(private val project: Project) : Disposable {
     @RequiresReadLock
     fun sfcInfo(file: VirtualFile): SfcInfo? = cachedParse(file, sfcCache, MAX_SFC_SIZE) { VueSfcParser.parse(it) }
 
+    /**
+     * Path of the `.vue` [file] relative to the `components/` directory it is a component of (`content/prose/Alert.vue`), or null
+     * when it is not below one. Computed from the file's current location, so it also works for a file that was just renamed.
+     */
+    fun componentPath(file: VirtualFile): String? {
+        val root = topLevelContentRoots().firstOrNull { VfsUtilCore.isAncestor(it, file, true) } ?: return null
+        return componentFile(file, root)?.relativePath
+    }
+
     /** Forgets everything and rediscovers components (and re-fetches remote metadata) on the next request. */
     fun refresh() {
         sfcCache.clear()
