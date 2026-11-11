@@ -126,8 +126,42 @@ object ComponentNaming {
      */
     fun renamedUsage(written: String, relativePath: String): String? {
         val name = componentNames(relativePath).firstOrNull() ?: return null
-        return inStyleOf(written, name)
+        val short = proseShortName(name)
+        return inStyleOf(written, if (short != null && !isProsePrefixed(written)) short else name)
     }
+
+    // ---- Prose components -------------------------------------------------------------------------------------------
+
+    private const val PROSE = "Prose"
+
+    /**
+     * Tags Nuxt Content and Comark render through `Prose*` components on their own (`p` -> `ProseP`). Their prose components replace
+     * plain Markdown and are not written as `::p`, so they get no short name.
+     */
+    private val PROSE_TAGS = setOf(
+        "h1", "h2", "h3", "h4", "h5", "h6", "p", "a", "strong", "em", "s", "code", "span", "blockquote", "pre", "hr", "img",
+        "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "script",
+    )
+
+    /** True when [name] starts with the `prose` word (`prose-alert`, `ProseAlert`, `proseAlert`). */
+    fun isProsePrefixed(name: String): Boolean = splitByCase(name).let { it.size > 1 && it[0].equals(PROSE, ignoreCase = true) }
+
+    /**
+     * The name a `Prose*` component is written under without its prefix (`ProseAccordionItem` -> `accordion-item`), or null when
+     * [name] is not a prose component or is one of the [PROSE_TAGS] renderers.
+     *
+     * Comark's Vue renderer resolves every tag to `Prose<Tag>` before `<Tag>`, and Nuxt UI maps its prose components the same way
+     * for Nuxt Content (`mdc.components.map`: `accordion-item` -> `ProseAccordionItem`), so `::accordion-item` and
+     * `::prose-accordion-item` render the same component.
+     */
+    fun proseShortName(name: String): String? {
+        if (!isProsePrefixed(name)) return null
+        val short = splitByCase(name).drop(1).joinToString("-") { it.lowercase() }
+        return short.takeUnless { it.isEmpty() || it in PROSE_TAGS }
+    }
+
+    /** The lookup key of the `Prose*` component the unprefixed [name] can stand for (`accordion-item` -> `ProseAccordionItem`). */
+    fun proseLookupKey(name: String): String = PROSE + lookupKey(name)
 
     /** [name] in the case style of [written]: kebab-case (`prose-alert`, also for all lower case), PascalCase or camelCase. */
     fun inStyleOf(written: String, name: String): String = when {

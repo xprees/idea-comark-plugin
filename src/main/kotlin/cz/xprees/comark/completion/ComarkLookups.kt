@@ -39,8 +39,8 @@ object ComarkLookups {
         val contextFile = context.containingFile?.originalFile?.virtualFile
         val sink = result.withPrefixMatcher(site.prefix)
         when (site) {
-            is CompletionSite.BlockName -> index.visible(contextFile).forEach { sink.addElement(componentItem(it, context, site, block = true)) }
-            is CompletionSite.InlineName -> index.visible(contextFile).forEach { sink.addElement(componentItem(it, context, site, block = false)) }
+            is CompletionSite.BlockName -> index.visible(contextFile).forEach { sink.addElement(componentItem(it, index, context, site, block = true)) }
+            is CompletionSite.InlineName -> index.visible(contextFile).forEach { sink.addElement(componentItem(it, index, context, site, block = false)) }
             is CompletionSite.Attribute -> index.find(site.componentName, contextFile)?.let { component ->
                 for (prop in component.props) {
                     if (ComponentNaming.looseKey(prop.name) in site.existing) continue
@@ -92,14 +92,20 @@ object ComarkLookups {
 
     // ---- Components -------------------------------------------------------------------------------------------------
 
-    private fun componentItem(component: ComarkComponent, context: PsiElement, site: CompletionSite, block: Boolean): LookupElement {
+    /**
+     * A `Prose*` component is offered under its unprefixed name (`accordion-item` for `ProseAccordionItem`), which renders the
+     * same component; typing the `prose` prefix still finds it and keeps the prefix.
+     */
+    private fun componentItem(component: ComarkComponent, index: ComponentIndex, context: PsiElement, site: CompletionSite, block: Boolean): LookupElement {
         val pascalTyped = site.prefix.firstOrNull()?.isUpperCase() == true
-        return LookupElementBuilder.create(ComarkLookupObject(context, ComarkSymbol(component)), component.kebabName)
+        val contextFile = context.containingFile?.originalFile?.virtualFile
+        val name = if (site.prefix.startsWith("prose", ignoreCase = true)) component.kebabName else index.shortName(component, contextFile)
+        return LookupElementBuilder.create(ComarkLookupObject(context, ComarkSymbol(component)), name)
             .withLookupStrings(component.allNames + component.allNames.map { ComponentNaming.kebabCase(it) })
             .withIcon(ComarkSymbol(component).icon)
             .withTailText(component.description?.let { " " + summary(it) }, true)
             .withTypeText(sourceText(component), true)
-            .withInsertHandler(ComponentInsertHandler(component, pascalTyped, block))
+            .withInsertHandler(ComponentInsertHandler(if (name == component.kebabName) component.name else ComponentNaming.pascalCase(name), pascalTyped, block))
     }
 
     private fun sourceText(component: ComarkComponent): String {
@@ -113,12 +119,12 @@ object ComarkLookups {
      * Inserts the component name (PascalCase when the user started typing PascalCase) and, for a block component that is not
      * closed yet, the closing marker with an empty line for the content, like the VS Code extension's snippet.
      */
-    private class ComponentInsertHandler(private val component: ComarkComponent, private val pascal: Boolean, private val block: Boolean) :
+    private class ComponentInsertHandler(private val pascalName: String, private val pascal: Boolean, private val block: Boolean) :
         InsertHandler<LookupElement> {
         override fun handleInsert(context: InsertionContext, item: LookupElement) {
             val document = context.document
             if (pascal) {
-                document.replaceString(context.startOffset, context.tailOffset, component.name)
+                document.replaceString(context.startOffset, context.tailOffset, pascalName)
                 context.editor.caretModel.moveToOffset(context.tailOffset)
             }
             if (!block) return

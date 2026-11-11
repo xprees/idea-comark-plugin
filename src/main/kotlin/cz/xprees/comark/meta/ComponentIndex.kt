@@ -9,6 +9,9 @@ import com.intellij.openapi.vfs.VirtualFile
  * Names are matched by [ComponentNaming.lookupKey] (so `prose-alert`, `proseAlert` and `ProseAlert` are the same name) with
  * [ComponentNaming.looseKey] as a fallback. When several components share a name (two Nuxt apps in a monorepo each with an
  * `Alert`), the one whose app contains the Markdown file wins, then the richer metadata source.
+ *
+ * A `Prose*` component is also found under its name without the prefix (`accordion-item` finds `ProseAccordionItem`), the way
+ * Comark's renderer and Nuxt UI's Nuxt Content mapping resolve it, unless a component of that exact name exists.
  */
 class ComponentIndex(val components: List<ComarkComponent>) {
     private val byKey: Map<String, List<ComarkComponent>>
@@ -32,9 +35,26 @@ class ComponentIndex(val components: List<ComarkComponent>) {
     /** The component [name] (as written in Markdown) refers to, as seen from [context] (the Markdown file), or null. */
     fun find(name: String, context: VirtualFile? = null): ComarkComponent? {
         if (name.isEmpty()) return null
-        val candidates = byKey[ComponentNaming.lookupKey(name)] ?: byLooseKey[ComponentNaming.looseKey(name)] ?: return null
+        val candidates = byKey[ComponentNaming.lookupKey(name)]
+            ?: prose(byKey[ComponentNaming.proseLookupKey(name)])
+            ?: byLooseKey[ComponentNaming.looseKey(name)]
+            ?: prose(byLooseKey[ComponentNaming.looseKey(ComponentNaming.proseLookupKey(name))])
+            ?: return null
         return best(candidates, context)
     }
+
+    /**
+     * The name completion inserts for [component] (kebab-case): the unprefixed name of a `Prose*` component when it finds that
+     * component from [context] (no other component takes it), else [ComarkComponent.kebabName].
+     */
+    fun shortName(component: ComarkComponent, context: VirtualFile? = null): String {
+        val short = ComponentNaming.proseShortName(component.name) ?: return component.kebabName
+        return if (find(short, context) === component) short else component.kebabName
+    }
+
+    /** The prose components among [candidates] that have a short name, or null when there are none. */
+    private fun prose(candidates: List<ComarkComponent>?): List<ComarkComponent>? =
+        candidates?.filter { ComponentNaming.proseShortName(it.name) != null }?.takeIf { it.isNotEmpty() }
 
     /** One component per primary name (the best one for [context]), sorted by name: what completion offers. */
     fun visible(context: VirtualFile? = null): List<ComarkComponent> =
