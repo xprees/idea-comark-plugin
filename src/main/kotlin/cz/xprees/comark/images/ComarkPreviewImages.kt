@@ -1,6 +1,6 @@
 package cz.xprees.comark.images
 
-import com.intellij.openapi.application.runReadAction
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.io.FileUtil
@@ -32,13 +32,13 @@ sealed class PreviewImage {
  */
 class ComarkPreviewImages(project: Project, private val file: VirtualFile) : (String) -> PreviewImage? {
     private val directories = NuxtImageDirectories.getInstance(project)
-    private val roots: ImageRoots? by lazy { runReadAction { directories.forFile(file) } }
+    private val roots: ImageRoots? by lazy { ReadAction.compute<ImageRoots?, RuntimeException> { directories.forFile(file) } }
 
     override fun invoke(raw: String): PreviewImage? {
         val roots = roots ?: return null
         val src = ImagePaths.normalize(raw, roots.baseURL, roots.cdnURL, roots.aliases) ?: return null
         src.remoteUrl?.let { return PreviewImage.Remote(it) }
-        val hit = runReadAction { directories.resolve(file, raw) } ?: return if (roots.isNuxt) PreviewImage.Missing else null
+        val hit = ReadAction.compute<ResolvedImage?, RuntimeException> { directories.resolve(file, raw) } ?: return if (roots.isNuxt) PreviewImage.Missing else null
         val cdn = roots.cdnURL?.trim()?.trimEnd('/').orEmpty()
         if (ComarkSettings.getInstance().previewImagesFromCdn && cdn.isNotEmpty() && hit.dir.isPublic) {
             // a public file is served from the CDN root as is (Nuxt's `app.cdnURL` replaces the base URL)
