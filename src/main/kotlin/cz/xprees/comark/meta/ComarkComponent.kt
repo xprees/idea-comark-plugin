@@ -105,8 +105,8 @@ class ComarkSlotInfo(
  * Everything known about one component, merged from all metadata sources.
  *
  * [name] is the PascalCase component name Nuxt registers (`ProseAlert`); Markdown usually writes it in kebab-case
- * ([kebabName], `prose-alert`). [aliases] are further names the same component resolves under (for example the plain file name
- * that Nuxt Content registers for `components/content/` files). [file] is the `.vue` file when one is known, [root] the
+ * ([kebabName], `prose-alert`). [aliases] are further names the same component resolves under (the name a `.vue` file was
+ * discovered under when metadata names it differently). [file] is the `.vue` file when one is known, [root] the
  * directory of the Nuxt app it belongs to, used to prefer an app's own components in a monorepo.
  */
 class ComarkComponent(

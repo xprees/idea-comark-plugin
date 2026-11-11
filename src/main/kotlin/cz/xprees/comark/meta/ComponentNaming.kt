@@ -76,58 +76,56 @@ object ComponentNaming {
 
     // ---- Nuxt component names from file paths ----------------------------------------------------------------------
 
-    /** Directories directly under `components/` that Nuxt (and Nuxt Content) register as component directories of their own. */
-    private val OWN_DIRECTORIES = setOf("content", "global")
+    /**
+     * Directories directly under `components/` that are component directories of their own: Nuxt registers `islands/` and
+     * `global/`, Nuxt Content (and Comark's Nuxt module) `content/`.
+     */
+    private val OWN_DIRECTORIES = setOf("content", "global", "islands")
+
+    /** Nuxt's `MODE_REPLACEMENT_RE`: `.client` / `.server`, then any `.global` / `.island` markers ending a file name. */
+    private val MODE_SUFFIX = Regex("""(?:\.(?:client|server))?(?:\.global|\.island)*$""")
+
+    /** Nuxt's grouping folders (`components/(forms)/Input.vue`), which only organise files and are not part of names. */
+    private val GROUPING_FOLDER = Regex("""^\(.*\)$""")
 
     /**
      * Names of the component in [relativePath], a path relative to a Nuxt `components/` directory (`content/prose/Alert.vue`).
-     * The first name is the primary one, the rest are aliases.
+     * Nuxt registers one name per file, so the list has at most one entry (empty when the path names no component).
      *
-     * `components/global/` and `components/content/` are component directories of their own (Nuxt registers the first, Nuxt
-     * Content the second), so their name is not part of the component name: `content/prose/Alert.vue` is `ProseAlert`.
-     * Nuxt Content registers `components/content/` without path prefixes, which makes the plain file name (`Alert`) the name it
-     * resolves at runtime; that name is kept as an alias so both spellings resolve.
+     * `components/global/`, `components/islands/` and `components/content/` are component directories of their own (Nuxt
+     * registers the first two, Nuxt Content the third), so their name is not part of the component name. Nuxt Content registers
+     * `components/content/` without path prefixes, and Nuxt skips its files when it scans `components/` afterwards, so
+     * `content/prose/Alert.vue` is only ever registered as `Alert`, never as `ProseAlert`.
      */
     fun componentNames(relativePath: String): List<String> {
         val segments = relativePath.split('/').filter { it.isNotEmpty() }
         if (segments.isEmpty()) return emptyList()
         val fileName = segments.last().substringBeforeLast('.')
         var directories = segments.dropLast(1)
-        val names = LinkedHashSet<String>()
         val own = directories.firstOrNull()?.takeIf { it in OWN_DIRECTORIES }
         if (own != null) directories = directories.drop(1)
-        names += nuxtComponentName(directories, fileName, pathPrefix = true)
-        if (own == "content") names += nuxtComponentName(directories, fileName, pathPrefix = false)
-        return names.filter { it.isNotEmpty() }
+        return listOf(nuxtComponentName(directories, fileName, pathPrefix = own != "content")).filter { it.isNotEmpty() }
     }
 
     /**
      * Nuxt's name for the file [fileName] (without extension) in [directories] below a component directory registered with
-     * `pathPrefix` = [pathPrefix]. `.client` / `.server` / `.global` suffixes are mode markers, not part of the name, and an
-     * `index` file is named after its directory.
+     * `pathPrefix` = [pathPrefix]. `.client` / `.server` / `.global` / `.island` suffixes are mode markers, not part of the
+     * name, grouping folders (`(forms)`) are not part of the prefix, and an `index` file is named after its directory.
      */
     fun nuxtComponentName(directories: List<String>, fileName: String, pathPrefix: Boolean): String {
-        var name = fileName
-        while (true) {
-            val stripped = name.removeSuffix(".client").removeSuffix(".server").removeSuffix(".global")
-            if (stripped == name) break
-            name = stripped
-        }
+        var name = fileName.replace(MODE_SUFFIX, "")
         if (name.equals("index", ignoreCase = true)) name = if (pathPrefix) "" else directories.lastOrNull().orEmpty()
-        val prefixParts = if (pathPrefix) directories.flatMap(::splitByCase) else emptyList()
+        val prefixParts = if (pathPrefix) directories.filterNot { GROUPING_FOLDER.matches(it) }.flatMap(::splitByCase) else emptyList()
         return pascalCase(resolveComponentNameSegments(name.replace("\"", "").replace("'", ""), prefixParts))
     }
 
     /**
      * What a usage written as [written] (`prose-alert`, `ProseAlert`, `alert`) becomes when its component's file moves to
      * [relativePath] (relative to the `components/` directory, as for [componentNames]), or null when that path names no
-     * component. A usage that spelled out the directory prefix keeps it, one that used Nuxt Content's bare file name alias keeps
-     * using the alias, and the usage's case style is kept ([inStyleOf]).
+     * component. The usage's case style is kept ([inStyleOf]).
      */
     fun renamedUsage(written: String, relativePath: String): String? {
-        val names = componentNames(relativePath)
-        if (names.isEmpty()) return null
-        val name = if (names.size > 1 && !spellsDirectoryPrefix(written, relativePath)) names[1] else names[0]
+        val name = componentNames(relativePath).firstOrNull() ?: return null
         return inStyleOf(written, name)
     }
 
@@ -138,13 +136,6 @@ object ComponentNaming {
         else -> camelCase(name)
     }
 
-    /** True when [written] starts with the directory prefix of [relativePath] (or there is none to start with). */
-    private fun spellsDirectoryPrefix(written: String, relativePath: String): Boolean {
-        var directories = relativePath.split('/').filter { it.isNotEmpty() }.dropLast(1)
-        if (directories.firstOrNull() in OWN_DIRECTORIES) directories = directories.drop(1)
-        val prefix = looseKey(directories.joinToString(""))
-        return prefix.isEmpty() || looseKey(written).startsWith(prefix)
-    }
 
     /**
      * Port of Nuxt's `resolveComponentNameSegments`: joins directory and file name parts, dropping a directory prefix the file

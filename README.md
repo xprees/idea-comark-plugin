@@ -29,26 +29,30 @@ gives its `since-build`) and verified against the latest IDEA, WebStorm and Ride
 | File | Comark when |
 |---|---|
 | `*.mdc` | always |
-| `*.md` | *Auto* (default): a `package.json` in the file's directory or above depends on `@nuxt/content`, `@nuxtjs/mdc`, `comark`, `@comark/*`, `docus` or `@nuxt/ui-pro`; *All .md files*; or never |
+| `*.md` | *Auto* (default): a `package.json` in the file's directory or above depends on `@nuxt/content`, `@nuxtjs/mdc`, `comark`, `@comark/*`, `docus` or `@nuxt/ui-pro`; *All .md files*; or never. Files matching an exclusion pattern are never Comark |
 
-The setting lives in *Settings › Languages & Frameworks › Comark*. Comark files keep the Markdown file type, so everything the
-Markdown plugin offers (preview, structure view, lists, tables, header anchors, code fence injection, …) still applies.
+The setting lives in *Settings › Languages & Frameworks › Comark*, together with exclusion patterns: globs, one per line, matched
+like `.gitignore` entries against the path relative to the project directory (`CHANGELOG.md` or `legacy` match a name at any level,
+`docs/legacy/**` or `/README.md` match from the project directory, and a matching directory excludes everything in it).
+
+Comark files show the Comark icon. They keep the Markdown file type, so everything the Markdown plugin offers (preview, structure
+view, lists, tables, header anchors, code fence injection, …) still applies.
 
 ## Features
 
 | Area | What you get |
 |---|---|
 | Highlighting | Component markers, names, closers, attributes (`#id`, `.class`, `key="value"`, `:binding`), slots, props fences; inline components, spans, attribute groups and `{{ bindings }}` in text. Colours in *Settings › Editor › Color Scheme › Comark* |
-| Inspections | *Unclosed block component* (with a fix inserting the closer), *Ignored text after component opener*, *Unknown Comark component* (off by default). Markdown's unresolved-link and unresolved-anchor inspections understand Comark spans and `{#id}` anchors |
+| Inspections | *Unclosed block component* (with a fix inserting the closer), *Ignored text after component opener*, *Unknown Comark component* (off by default; HTML element names such as `::div` and `:br` are not reported). Markdown's unresolved-link and unresolved-anchor inspections understand Comark spans and `{#id}` anchors |
 | Formatting | *Code › Reformat Code* uses a line-by-line port of the VS Code extension's formatter (monarch-mdc), checked byte for byte against the original on ~59,000 cases. Where the original would change what a document says, the IDE keeps it instead (see *Known limitations*); everywhere else the result is the same as in VS Code. Indent size: *Settings › Editor › Code Style › Comark* (2 by default; EditorConfig wins); indentation is always spaces. Enter and *Code › Auto-Indent Lines* indent lines the same way |
-| Components | Completion of component names (`::`, `:::`, inline `:`), props inside `{…}` and in props YAML, prop values from string unions, slot names after `#`; Go to Declaration to the `.vue` file, prop and `<slot>`; quick documentation; Find Usages of a `.vue` file (or from a usage) lists its block and inline usages in Comark files, and renaming the file renames them, keeping each usage's style (`prose-alert`, `ProseAlert`, Nuxt Content's bare-name alias). Sources: Vue SFCs in `components/` (Nuxt naming), `.nuxt/component-meta.mjs` / `.json`, an optional metadata URL. Props come from `defineProps<…>()` type literals, local or imported interfaces and type aliases (`import type { Props } from './types'`, relative paths and the `~/`, `@/`, `~~/`, `@@/` aliases, `extends`, `A & B`, re-exports), runtime `defineProps({…})`, `withDefaults` and the options API. No Vue plugin needed |
+| Components | Completion of component names (`::`, `:::`, inline `:`), props inside `{…}` and in props YAML, prop values from string unions, slot names after `#`; Go to Declaration to the `.vue` file, prop and `<slot>`; quick documentation; Find Usages of a `.vue` file (or from a usage) lists its block and inline usages in Comark files, and renaming the file renames them, keeping each usage's style (`info-box`, `InfoBox`, `infoBox`). Sources: Vue SFCs in `components/` (Nuxt naming, including grouping folders and `islands/`; files in `components/content/` subfolders get Nuxt Content's name without the folder prefix), `.nuxt/component-meta.mjs` / `.json`, an optional metadata URL. Props come from `defineProps<…>()` type literals, local or imported interfaces and type aliases (`import type { Props } from './types'`, relative paths and the `~/`, `@/`, `~~/`, `@@/` aliases, `extends`, `A & B`, re-exports, member types that name type aliases such as `variant?: Variant`), runtime `defineProps({…})`, `withDefaults` and the options API. No Vue plugin needed |
 | Route links | In Nuxt Content packages, page routes in links (`[Install](/guide/install#setup)`) resolve to their content file (`content/1.guide/2.install.md`, `index` files for directories, ordering prefixes and extensions dropped): Go to Declaration opens the page, `#anchor` resolves and completes against its headings, and routes complete after `](/`. Routes that match no content file are not reported (custom pages may exist) |
 | Editor | Folding of components, slots and props (Markdown folds kept); matching `::name` / `::` highlighting and navigation; YAML highlighting and checks in props blocks; live templates from the VS Code snippets; Enter after an unclosed opener inserts its closer; breadcrumbs and sticky lines; structure view with headers, components and slots; spellchecking of component content and attribute values |
 | Preview | Components, props and slots render as labelled blocks in the built-in (JCEF) Markdown preview |
 
 ## Settings
 
-*Settings › Languages & Frameworks › Comark*: which `.md` files are Comark, whether Reformat Code uses the Comark formatter (otherwise
+*Settings › Languages & Frameworks › Comark*: which `.md` files are Comark and which are excluded, whether Reformat Code uses the Comark formatter (otherwise
 the Markdown one), component completion, an optional component metadata URL and its cache time.
 *Settings › Editor › Code Style › Comark*: indentation used by the formatter and Enter.
 The platform's formatter controls apply: *Code Style › Formatter › Do not format* entries, and formatter markers in comments

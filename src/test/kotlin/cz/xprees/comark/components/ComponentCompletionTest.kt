@@ -40,7 +40,9 @@ class ComponentCompletionTest : ComponentsTestBase() {
     // ---- Block component names --------------------------------------------------------------------------------------
 
     fun testBlockComponentNames() {
-        assertContainsElements(complete("::<caret>"), "alert", "badge", "prose-card")
+        assertContainsElements(complete("::<caret>"), "alert", "badge", "card")
+        // Nuxt Content registers components/content/prose/Card.vue only as `Card`
+        assertDoesntContain(complete("::<caret>"), "prose-card")
     }
 
     fun testBlockComponentInsertsClosingMarker() {
@@ -68,7 +70,19 @@ class ComponentCompletionTest : ComponentsTestBase() {
     }
 
     fun testPascalCaseInputInsertsPascalCase() {
-        assertCompletes("::ProseC<caret>", "::ProseCard\n<caret>\n::")
+        assertCompletes("::Car<caret>", "::Card\n<caret>\n::")
+    }
+
+    fun testNuxtContentNestedComponentCompletesWithItsRegisteredName() {
+        // Nuxt Content registers components/content with pathPrefix: false, before ~/components; Nuxt skips the files again
+        // when it scans ~/components, so components/content/prose/Card.vue is only ever `Card` at runtime.
+        configure("::car<caret>")
+        val items = myFixture.completeBasic()
+        if (items != null) {
+            myFixture.lookup.currentItem = items.first()
+            myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR)
+        }
+        assertEquals("::card\n\n::", myFixture.editor.document.text)
     }
 
     fun testLookupPresentation() {
@@ -245,7 +259,7 @@ class ComponentCompletionTest : ComponentsTestBase() {
     }
 
     fun testSlotsOfTheInnermostComponent() {
-        val items = complete("::alert\n:::prose-card\n#<caret>\n:::\n::")
+        val items = complete("::alert\n:::card\n#<caret>\n:::\n::")
         assertContainsElements(items, "footer")
         assertDoesntContain(items, "title")
     }
@@ -259,7 +273,7 @@ class ComponentCompletionTest : ComponentsTestBase() {
     fun testPropsBlockKeyInsertion() {
         assertCompletes("::alert\n---\ntit<caret>\n---\n::", "::alert\n---\ntitle: <caret>\n---\n::")
         assertCompletes("::alert\n---\ndismi<caret>\n---\n::", "::alert\n---\ndismissible: true<caret>\n---\n::")
-        assertCompletes("::prose-card\n---\nite<caret>\n---\n::", "::prose-card\n---\nitems:\n  - <caret>\n---\n::")
+        assertCompletes("::card\n---\nite<caret>\n---\n::", "::card\n---\nitems:\n  - <caret>\n---\n::")
     }
 
     fun testPropsBlockSkipsExistingAndNestedKeys() {

@@ -2,6 +2,8 @@ package cz.xprees.comark.components
 
 import cz.xprees.comark.meta.PropKind
 import cz.xprees.comark.meta.SfcInfo
+import cz.xprees.comark.meta.TypeModule
+import cz.xprees.comark.meta.TypeModuleResolver
 import cz.xprees.comark.meta.VueSfcParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,6 +15,104 @@ class VueSfcParserTest {
     private fun parse(text: String): SfcInfo = VueSfcParser.parse(text.trimIndent())
 
     private fun SfcInfo.prop(name: String) = findProp(name) ?: throw AssertionError("no prop $name in ${props.map { it.name }}")
+
+    private companion object {
+        val FUZZ_TYPES = """
+            import type { Base } from './base'
+            export * from './more'
+            export { Local as Exported } from './local'
+            /** Shared props. */
+            export interface Shared extends Base, Pick<Other, 'a' | "b"> {
+              /** @default 'x' */
+              shared?: 'x' | 'y'
+              ['computed']: string
+            }
+            export type Mode = `a-${'$'}{string}` | 'b'
+            type Local = Omit<Shared, 'shared'> & { local: Mode }
+            export { type Local as Alias }
+        """.trimIndent()
+
+        val FUZZ_COMPONENTS = listOf(
+            """
+            <!-- A component with everything. -->
+            <script setup lang="ts" generic="T extends string">
+            import type { Shared, Mode } from './types'
+            import { computed, useSlots } from 'vue'
+            /** Highlights important information. */
+            type Variant = 'solid' | 'outline' | "ghost"
+            interface Props extends Shared {
+              /** Visual style */
+              variant?: Variant
+              title: string // the title
+              items?: Array<{ id: number; label: string }>
+              onClose?: (reason: 'x' | 'y') => void
+              'aria-label'?: string
+              mode: Mode
+            }
+            const { variant = 'solid', title: heading = "Hi", ...rest } = withDefaults(defineProps<Partial<Omit<Props, 'mode'>> & Pick<Props, "mode">>(), {
+              variant: 'solid',
+              items: () => [],
+              size: () => ({ a: 1 }),
+            })
+            const model = defineModel<string>('value', { required: true, default: 'x' })
+            const open = defineModel({ type: Boolean })
+            const slots = defineSlots<{ default(props: { item: T }): any; footer?: () => any }>()
+            const has = computed(() => !!slots.header || ${'$'}slots['side-bar'])
+            const re = /[<'"`]/g
+            const s = `template ${'$'}{'literal'} with <slot>`
+            </script>
+            <template>
+              <div :class="['a', { b: true }]" @click="emit('x')">
+                <!-- @slot The heading -->
+                <slot name="title" :heading="heading" />
+                <template v-if="${'$'}slots.footer"><slot name="footer"></slot></template>
+                <slot :name="dynamic" />
+                <slot />
+              </div>
+            </template>
+            <docs>
+            Renders **things**.
+            </docs>
+            """.trimIndent(),
+            """
+            <script lang="ts">
+            /** Options API component. */
+            import { defineComponent, type PropType, type SlotsType } from 'vue'
+            const shared = { tone: { type: String, default: 'info' } }
+            export default defineComponent({
+              name: 'Legacy',
+              props: {
+                /** The size */
+                size: { type: [String, Number] as PropType<'sm' | 'md'>, required: true, default: () => 'sm' },
+                items: Array as PropType<string[]>,
+                'data-x': String,
+                flag: Boolean,
+              },
+              slots: Object as SlotsType<{ default: { item: string }; empty: {} }>,
+            })
+            </script>
+            <script setup>
+            defineProps(['a', "b", `c`])
+            defineProps(shared)
+            </script>
+            <template><slot name='x' /><slot/></template>
+            """.trimIndent(),
+            """
+            <template>
+              <section>
+                <template #header><slot name="header" /></template>
+              </section>
+            </template>
+            <script setup lang="ts">
+            export interface Props { a?: string; b: number }
+            const props = defineProps<Props>()
+            const { a = 'x' } = defineProps<{ a?: string }>()
+            defineModel('count')
+            defineModel("name", { default: "n" })
+            </script>
+            """.trimIndent(),
+        )
+    }
 
     @Test
     fun typeLiteralProps() {
@@ -397,6 +497,75 @@ class VueSfcParserTest {
         parse("<script>export default { props: { a: { type: String, ")
         val info = parse("<template>\n<slot name=\"ok\" />\n<script setup>defineProps<{ b: number }>()</script>")
         assertTrue(info.slots.any { it.name == "ok" })
+    }
+
+    @Test
+    fun halfTypedDefineModel() {
+        val variants = listOf(
+            "<script setup lang=\"ts\">\nconst model = defineModel('\n</script>\n<template><slot/></template>\n",
+            "<script setup lang=\"ts\">\nconst model = defineModel(')\n</script>\n<template><slot/></template>\n",
+            "<script setup lang=\"ts\">\nconst model = defineModel(\"\n</script>\n<template><slot/></template>\n",
+        )
+        val failures = variants.mapNotNull { v ->
+            try {
+                VueSfcParser.parse(v)
+                null
+            } catch (e: Throwable) {
+                "${e.javaClass.simpleName}: ${e.message} for ${v.lines()[1]}"
+            }
+        }
+        assertEquals(emptyList<String>(), failures)
+    }
+
+    /** Every prefix of realistic components (as while typing them) parses without an exception. */
+    @Test
+    fun truncatedComponentsNeverThrow() {
+        val modules = TypeModuleResolver { specifier, _ -> if (specifier == "./types") TypeModule(FUZZ_TYPES) else null }
+        val failures = ArrayList<String>()
+        for (sfc in FUZZ_COMPONENTS) {
+            for (length in 0..sfc.length) {
+                val text = sfc.substring(0, length)
+                for (variant in listOf(text, text + "\n</script>\n<template><slot /></template>\n")) {
+                    try {
+                        VueSfcParser.parse(variant, modules)
+                    } catch (e: Throwable) {
+                        failures += "${e.javaClass.simpleName}: ${e.message} at length $length of:\n${variant.takeLast(80)}"
+                    }
+                }
+            }
+        }
+        for (length in 0..FUZZ_TYPES.length) {
+            val types = FUZZ_TYPES.substring(0, length)
+            try {
+                VueSfcParser.parse(FUZZ_COMPONENTS.first()) { _, _ -> TypeModule(types) }
+            } catch (e: Throwable) {
+                failures += "${e.javaClass.simpleName}: ${e.message} in a module truncated at $length"
+            }
+        }
+        assertTrue(failures.take(5).joinToString("\n\n"), failures.isEmpty())
+    }
+
+    @Test
+    fun localTypeAliasesOfMembersAreExpanded() {
+        val info = parse(
+            """
+            <script setup lang="ts">
+            type Variant = 'solid' | 'outline'
+            type Size = Sizes
+            type Sizes = 'sm' | 'md'
+            type Item = { label: string }
+            interface Props { variant?: Variant; label: string; size?: Size | undefined; item?: Item; other?: Unknown }
+            const props = withDefaults(defineProps<Props>(), { variant: 'solid' })
+            </script>
+            """,
+        )
+        assertEquals(listOf("solid", "outline"), info.prop("variant").literalValues)
+        assertEquals(PropKind.STRING, info.prop("variant").kind)
+        assertEquals("'solid'", info.prop("variant").defaultValue)
+        assertEquals(true, info.prop("label").required)
+        assertEquals(listOf("sm", "md"), info.prop("size").literalValues)
+        assertEquals("Item", info.prop("item").type)
+        assertEquals("Unknown", info.prop("other").type)
     }
 
     @Test

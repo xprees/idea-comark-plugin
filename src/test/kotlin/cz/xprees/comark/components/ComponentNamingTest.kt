@@ -52,8 +52,9 @@ class ComponentNamingTest {
 
     @Test
     fun contentAndGlobalDirectoriesAreComponentRoots() {
-        // components/content/prose/Alert.vue -> ProseAlert; Nuxt Content's runtime name (no path prefix) is an alias
-        assertEquals(listOf("ProseAlert", "Alert"), ComponentNaming.componentNames("content/prose/Alert.vue"))
+        // Nuxt Content registers components/content without path prefixes and Nuxt skips its files when it scans
+        // components/ afterwards, so components/content/prose/Alert.vue is only ever `Alert`
+        assertEquals(listOf("Alert"), ComponentNaming.componentNames("content/prose/Alert.vue"))
         assertEquals(listOf("Alert"), ComponentNaming.componentNames("content/Alert.vue"))
         assertEquals(listOf("Hero"), ComponentNaming.componentNames("global/Hero.vue"))
         assertEquals(listOf("LayoutHero"), ComponentNaming.componentNames("global/layout/Hero.vue"))
@@ -61,15 +62,29 @@ class ComponentNamingTest {
     }
 
     @Test
-    fun renamedUsageKeepsStyleAndPrefix() {
+    fun groupingFoldersAreNotPartOfTheName() {
+        assertEquals("Button", ComponentNaming.componentNames("(forms)/Button.vue").first())
+        assertEquals("FormsInput", ComponentNaming.componentNames("forms/(inputs)/Input.vue").first())
+        assertEquals("FormsInput", ComponentNaming.componentNames("(group)/forms/FormsInput.vue").first())
+    }
+
+    @Test
+    fun islandsDirectoryIsAComponentRoot() {
+        assertEquals("Chart", ComponentNaming.componentNames("islands/Chart.vue").first())
+        assertEquals("Chart", ComponentNaming.componentNames("Chart.island.vue").first())
+        assertEquals("Chart", ComponentNaming.componentNames("Chart.server.island.vue").first())
+        assertEquals("Chart", ComponentNaming.componentNames("Chart.island.global.vue").first())
+    }
+
+    @Test
+    fun renamedUsageKeepsStyle() {
         assertEquals("callout", ComponentNaming.renamedUsage("alert", "content/Callout.vue"))
         assertEquals("Callout", ComponentNaming.renamedUsage("Alert", "content/Callout.vue"))
-        assertEquals("prose-info-box", ComponentNaming.renamedUsage("prose-card", "content/prose/InfoBox.vue"))
-        assertEquals("ProseInfoBox", ComponentNaming.renamedUsage("ProseCard", "content/prose/InfoBox.vue"))
-        assertEquals("proseInfoBox", ComponentNaming.renamedUsage("proseCard", "content/prose/InfoBox.vue"))
-        // Nuxt Content's bare file name alias stays an alias
         assertEquals("info-box", ComponentNaming.renamedUsage("card", "content/prose/InfoBox.vue"))
+        assertEquals("InfoBox", ComponentNaming.renamedUsage("Card", "content/prose/InfoBox.vue"))
+        assertEquals("infoBox", ComponentNaming.renamedUsage("infoCard", "content/prose/InfoBox.vue"))
         // outside content/ the directory is always part of the name
         assertEquals("layout-banner", ComponentNaming.renamedUsage("layout-hero", "global/layout/Banner.vue"))
+        assertEquals("LayoutBanner", ComponentNaming.renamedUsage("LayoutHero", "layout/Banner.vue"))
     }
 }
