@@ -5,6 +5,7 @@ import com.intellij.formatting.FormattingContext
 import com.intellij.formatting.service.AbstractDocumentFormattingService
 import com.intellij.formatting.service.FormattingNotificationService
 import com.intellij.formatting.service.FormattingService
+import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.RangeMarker
@@ -21,7 +22,9 @@ import cz.xprees.comark.settings.ComarkSettings
 /**
  * Makes Code | Reformat Code (and reformat on save, and every other caller of `CodeStyleManager.reformat*`) use
  * [ComarkFormatter], through [ComarkDocumentFormatter] (which keeps content monarch-mdc would change), for Comark files while
- * [ComarkSettings.formatterEnabled] is on. With the setting off, [canFormat] declines and the platform falls back to its
+ * [ComarkSettings.formatterEnabled] is on. When the file's code style selects a Nuxt Studio based style
+ * ([ComarkStyle.usesStudio], *Code Style › Comark › Style*), the document is formatted by [StudioStyleAdapter] instead, applied
+ * as described in [ComarkStudioFormatting]; everything below is about the VS Code style. With the setting off, [canFormat] declines and the platform falls back to its
  * formatting-model formatter, which for Comark files is the Markdown plugin's ([ComarkFormattingModelBuilder] hands over to it).
  *
  * Why a [FormattingService] and not a `FormattingModelBuilder`: the formatter is a text-to-text port of the VS Code extension's
@@ -67,6 +70,11 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
         val file = formattingContext.containingFile
         val ranges = formattingRanges.filter { it.startOffset <= document.textLength }
         if (ranges.isEmpty()) return
+        val style = ComarkStyle.of(file)
+        if (style.usesStudio) {
+            formatStudio(document, ranges, formattingContext, canChangeWhiteSpaceOnly, style)
+            return
+        }
         val indentSize = ComarkIndent.indentSize(file)
         PsiDocumentManager.getInstance(file.project).commitDocument(document)
         val structure = ComarkDocumentStructure.of(file)
@@ -96,6 +104,47 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
         }
     }
 
+    /** Reformat in a Nuxt Studio based style, see [ComarkStudioFormatting]. */
+    private fun formatStudio(
+        document: Document,
+        ranges: List<TextRange>,
+        context: FormattingContext,
+        whitespaceOnly: Boolean,
+        style: ComarkStyle,
+    ) {
+        val file = context.containingFile
+        PsiDocumentManager.getInstance(file.project).commitDocument(document)
+        val text = document.charsSequence
+        val result = try {
+            StudioStyleAdapter.format(text.toString(), ComarkStudioFormatting.context(file, style))
+        } catch (e: RuntimeException) {
+            if (e is ControlFlowException) throw e
+            LOG.warn("Nuxt Studio style failed on ${file.name}", e)
+            null
+        }
+        if (result == null) {
+            FormattingNotificationService.getInstance(context.project).reportError(
+                NOTIFICATION_GROUP,
+                ComarkBundle.message("formatter.failed.title"),
+                ComarkBundle.message("formatter.failed.studio"),
+            )
+            return
+        }
+        ProgressManager.checkCanceled()
+        val whole = ranges.any { it.startOffset <= 0 && it.endOffset >= document.textLength }
+        val protected = ComarkFormatterControl.protectedLines(file, text)
+        val edits = ComarkStudioFormatting.computeEdits(text, result, ranges, whole, protected, whitespaceOnly)
+        val markers = ranges.map { document.createRangeMarker(it).apply { isGreedyToRight = true } }
+        try {
+            if (edits.isNotEmpty()) applyEdits(document, edits)
+            // Studio aligns tables itself; the Markdown plugin's table formatting would undo that
+            runPostFormatProcessors(file, document, markers, whitespaceOnly, skipMarkdown = true)
+        } finally {
+            markers.forEach(RangeMarker::dispose)
+        }
+        if (whole) file.originalFile.virtualFile?.let { ComarkStudioFormatting.scheduleFileNormalization(file.project, it) }
+    }
+
     private fun reportFailure(document: Document, context: FormattingContext, e: ComarkFormatterException) {
         LOG.debug("Comark formatter failed on ${context.containingFile.name}", e)
         val line = e.line.coerceIn(0, maxOf(document.lineCount - 1, 0))
@@ -113,10 +162,18 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
      * Commits the edits so the PSI matches the text and lets the registered [PostFormatProcessor]s process each formatted range,
      * as `CoreFormattingService` does after model-based formatting.
      */
-    private fun runPostFormatProcessors(file: PsiFile, document: Document, markers: List<RangeMarker>, whitespaceOnly: Boolean) {
+    private fun runPostFormatProcessors(
+        file: PsiFile,
+        document: Document,
+        markers: List<RangeMarker>,
+        whitespaceOnly: Boolean,
+        skipMarkdown: Boolean = false,
+    ) {
         PsiDocumentManager.getInstance(file.project).commitDocument(document)
         val settings = CodeStyle.getSettings(file)
-        val processors = PostFormatProcessor.EP_NAME.extensionList.filter { !whitespaceOnly || it.isWhitespaceOnly }
+        val processors = PostFormatProcessor.EP_NAME.extensionList.filter {
+            (!whitespaceOnly || it.isWhitespaceOnly) && !(skipMarkdown && it.javaClass.name.startsWith(MARKDOWN_PACKAGE))
+        }
         for (marker in markers) {
             if (!marker.isValid || !file.isValid) continue
             var range = marker.textRange
@@ -126,6 +183,8 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
 
     companion object {
         private val LOG = logger<ComarkFormattingService>()
+
+        private const val MARKDOWN_PACKAGE = "org.intellij.plugins.markdown."
 
         /** Registered in `comark-formatter.xml`. */
         const val NOTIFICATION_GROUP: String = "Comark Formatter"
