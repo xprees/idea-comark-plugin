@@ -51,9 +51,12 @@ class ComarkCodeStyleSettings(container: CodeStyleSettings) : CustomCodeStyleSet
     @JvmField
     var PROPS_INLINE_MAX: Int = STUDIO_PROPS_INLINE_MAX
 
-    /** Sort component props by name. */
+    /**
+     * Order component props as Nuxt Studio's database path does (by how often each name occurs on the same tag in the document);
+     * off keeps the order of the source.
+     */
     @JvmField
-    var SORT_PROPS: Boolean = false
+    var SORT_PROPS: Boolean = true
 
     /** What happens to the front matter. */
     @JvmField
@@ -71,7 +74,7 @@ class ComarkCodeStyleSettings(container: CodeStyleSettings) : CustomCodeStyleSet
         FENCE_MARKER = FenceMarker.BACKTICK
         MAX_BLANK_LINES = 1
         PROPS_INLINE_MAX = STUDIO_PROPS_INLINE_MAX
-        SORT_PROPS = false
+        SORT_PROPS = true
         FRONT_MATTER = FrontMatterMode.STUDIO
     }
 
@@ -86,7 +89,7 @@ class ComarkCodeStyleSettings(container: CodeStyleSettings) : CustomCodeStyleSet
         maxBlankLines = MAX_BLANK_LINES.coerceIn(1, MAX_BLANK_LINES_LIMIT),
         propsInlineMax = PROPS_INLINE_MAX.coerceIn(0, PROPS_INLINE_MAX_LIMIT),
         sortProps = SORT_PROPS,
-        keepFrontMatter = FRONT_MATTER == FrontMatterMode.KEEP,
+        frontMatter = FRONT_MATTER,
     )
 
     companion object {
@@ -122,8 +125,14 @@ enum class EmphasisMarker(val char: Char) { ASTERISK('*'), UNDERSCORE('_') }
 enum class FenceMarker(val char: Char) { BACKTICK('`'), TILDE('~') }
 
 enum class FrontMatterMode {
-    /** Nuxt Studio's front matter: re-dumped by js-yaml (and, once supported, completed by its data rules). */
+    /**
+     * Nuxt Studio's front matter data rules for the file's collection: a missing title and description added for page
+     * collections, keys in Nuxt Content's column order, `navigation: true`, nulls and empty lists dropped, js-yaml's dump.
+     */
     STUDIO,
+
+    /** The data kept as it is and only re-dumped by js-yaml, as Studio's code editor does. */
+    REDUMP,
 
     /** The front matter is left exactly as written. */
     KEEP,

@@ -45,15 +45,27 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
         WriteCommandAction.runWriteCommandAction(project) { CodeStyleManager.getInstance(project).reformatText(myFixture.file, start, end) }
     }
 
+    /**
+     * Opens [text] as `content/[name]` of a data collection (a `content.config.ts` next to `content/`), where Studio adds no
+     * front matter, so the examples show the body alone.
+     */
+    private fun configureInDataCollection(name: String, text: String) {
+        myFixture.addFileToProject("content.config.ts", DATA_CONFIG)
+        myFixture.configureFromExistingVirtualFile(myFixture.addFileToProject("content/$name", text).virtualFile)
+    }
+
     private val messy = "# Title\nSome *text*\n* a\n* b\n\n\n::card{a=\"1\" b=\"2\" c=\"3\" d=\"4\"}\nbody\n::\n"
 
     fun testWholeFileInTheNuxtStudioStyle() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
         myFixture.configureByText("page.mdc", messy)
         reformat()
-        myFixture.checkResult("# Title\n\nSome *text*\n\n- a\n- b\n\n::card\n---\na: '1'\nb: '2'\nc: '3'\nd: '4'\n---\nbody\n::\n")
+        // no content.config.ts: a page collection with Studio's defaults, so the title and description are added
+        val expected = "---\ntitle: Title\ndescription: Some text\n---\n\n" +
+            "# Title\n\nSome *text*\n\n- a\n- b\n\n::card\n---\na: '1'\nb: '2'\nc: '3'\nd: '4'\n---\nbody\n::\n"
+        myFixture.checkResult(expected)
         // a fixed point
         reformat()
-        myFixture.checkResult("# Title\n\nSome *text*\n\n- a\n- b\n\n::card\n---\na: '1'\nb: '2'\nc: '3'\nd: '4'\n---\nbody\n::\n")
+        myFixture.checkResult(expected)
     }
 
     fun testVsCodeStyleIsUnchanged() = withStyle(ComarkStylePreset.VSCODE) {
@@ -67,13 +79,13 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
         custom.BULLET_MARKER = BulletMarker.ASTERISK
         custom.EMPHASIS_MARKER = EmphasisMarker.UNDERSCORE
     }) {
-        myFixture.configureByText("page.mdc", "Some *text*\n- a\n- b\n")
+        configureInDataCollection("page.mdc", "Some *text*\n- a\n- b\n")
         reformat()
         myFixture.checkResult("Some _text_\n\n* a\n* b\n")
     }
 
     fun testKeptBlocksStayAsWritten() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
-        myFixture.configureByText("page.mdc", "* a\n\n<div>\n*raw*  html\n</div>\n")
+        configureInDataCollection("page.mdc", "* a\n\n<div>\n*raw*  html\n</div>\n")
         reformat()
         myFixture.checkResult("- a\n\n<div>\n*raw*  html\n</div>\n")
     }
@@ -90,7 +102,7 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
     fun testFormatterOffRegionsAreKept() = withStyle(ComarkStylePreset.NUXT_STUDIO, {
         it.FORMATTER_TAGS_ENABLED = true
     }) {
-        myFixture.configureByText(
+        configureInDataCollection(
             "page.mdc",
             "* a\n\n<!-- @formatter:off -->\n\n* keep   *this*\n* as is\n\n<!-- @formatter:on -->\n\n* change\n",
         )
@@ -100,7 +112,7 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
 
     fun testEditsAreMinimal() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
         val text = "* first item with words\n* second\n"
-        myFixture.configureByText("page.mdc", text)
+        configureInDataCollection("page.mdc", text)
         val document = myFixture.editor.document
         val start = text.indexOf("words")
         val marker = document.createRangeMarker(start, start + "words".length)
@@ -118,13 +130,14 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
         val result = StudioStyleAdapter.format(text, StudioStyleContext("page.md"))!!
         val edits = ComarkStudioFormatting.computeEdits(text, result, listOf(TextRange(0, text.length)), true, null, whitespaceOnly = true)
         val applied = StringBuilder(text).apply { for (e in edits.asReversed()) replace(e.start, e.end, e.text) }.toString()
-        // trailing whitespace goes, the list marker stays
+        // trailing whitespace goes, the list marker and the front matter Studio adds (title, description) do not
         assertEquals("Some text\n\n* a\n", applied)
     }
 
     fun testEditsAtTheEndOfTheText() {
+        val data = StudioCollection("data", StudioCollection.Type.DATA)
         for ((text, expected) in listOf("# A\ntext" to "# A\n\ntext\n", "text\n\n\n" to "text\n", "a\nb" to "a\nb\n")) {
-            val result = StudioStyleAdapter.format(text, StudioStyleContext("page.md"))!!
+            val result = StudioStyleAdapter.format(text, StudioStyleContext("page.md", data))!!
             assertEquals(expected, result.text)
             val edits = ComarkStudioFormatting.computeEdits(text, result, listOf(TextRange(0, text.length)), true, BitSet())
             val applied = StringBuilder(text).apply { for (e in edits.asReversed()) replace(e.start, e.end, e.text) }.toString()
@@ -151,7 +164,7 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
         assertTrue(ComarkStudioFormatting.needsNormalization(file))
         reformat()
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-        assertEquals("- a\n- b\n", String(file.contentsToByteArray()))
+        assertEquals("---\ntitle: Crlf\n---\n\n- a\n- b\n", String(file.contentsToByteArray()))
         assertEquals("\n", file.detectedLineSeparator)
         assertNull(file.bom)
     }
@@ -164,5 +177,9 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
         reformatRange(0, 1)
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
         assertEquals("\r\n", file.detectedLineSeparator)
+    }
+
+    private companion object {
+        const val DATA_CONFIG = "export default defineContentConfig({ collections: { data: defineCollection({ type: 'data', source: '**' }) } })\n"
     }
 }
