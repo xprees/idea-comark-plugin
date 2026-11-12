@@ -257,7 +257,7 @@ Markdown plugin builds its own.
 ./gradlew verifyPlugin  # JetBrains Plugin Verifier against IDEA, WebStorm and Rider
 ```
 
-Requires JDK 21.
+Requires JDK 21. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development setup.
 
 ### Versions and releases
 
@@ -272,6 +272,12 @@ The plugin version is `major.minor.patch`, derived from git tags:
 The draft release already has the built plugin attached: `comark-<version>.zip`, plus `comark-<version>-signed.zip` when the signing secrets (`CERTIFICATE_CHAIN`, `PRIVATE_KEY`, `PRIVATE_KEY_PASSWORD`) are configured. That zip is also what you upload by hand for the very first Marketplace release.
 
 To start a new line (say `0.2`), change the two variables; the next merge is tagged `0.2.0`. To ship a build, publish its draft release: the *Release* workflow then builds that exact tag, signs it and publishes it to the Marketplace (`PUBLISH_TOKEN` secret). Signing and publishing are refused for builds that aren't from a tag. For a beta, edit the draft's tag before publishing (e.g. `0.2.0-beta.1`).
+
+## Contributing
+
+Bug reports, fixes and features are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to set up the project, the coding
+and testing guidelines, and how pull requests are reviewed. Please follow the [Code of Conduct](CODE_OF_CONDUCT.md), and report
+security problems privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

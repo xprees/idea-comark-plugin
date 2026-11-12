@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Comark files doesn't work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please check the [known limitations](https://github.com/xprees/idea-comark-plugin#known-limitations)
+        and existing issues first. Security problems go through [private reporting](https://github.com/xprees/idea-comark-plugin/security/policy), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Minimal Markdown sample
+      description: The smallest document that shows the problem. For formatting problems, include the text before and after *Reformat Code*.
+      render: markdown
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Highlighting or parsing
+        - Reformat Code (VS Code style)
+        - Reformat Code (Nuxt Studio or Custom style)
+        - Completion, navigation, Find Usages or Rename
+        - Nuxt image paths
+        - Markdown preview
+        - Settings, file detection (which files are Comark)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Settings › Plugins › Installed › Comark
+      placeholder: "2026.3.8"
+    validations:
+      required: true
+  - type: input
+    id: ide
+    attributes:
+      label: IDE and version
+      description: Help › About (the first lines are enough), and your operating system.
+      placeholder: WebStorm 2026.3 (WS-263.7307.202), macOS 26
+    validations:
+      required: true
+  - type: textarea
+    id: project
+    attributes:
+      label: Project setup
+      description: Relevant versions from package.json (@nuxt/content, nuxt-studio, @nuxt/ui, ...), and content.config.ts if it matters.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Exceptions or logs
+      description: Stack traces from the IDE error reporter or idea.log (Help › Show Log in ...).
+      render: text
