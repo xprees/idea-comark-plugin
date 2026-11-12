@@ -47,7 +47,14 @@ class ComarkCodeStyleSettings(container: CodeStyleSettings) : CustomCodeStyleSet
     @JvmField
     var MAX_BLANK_LINES: Int = 1
 
-    /** A block component with more props than this writes them as a YAML block below its opener, otherwise inline `{...}`. */
+    /** Where block components write their props: inline, in a YAML block, or inline up to [PROPS_INLINE_MAX] of them. */
+    @JvmField
+    var PROPS_LAYOUT: PropsLayout = PropsLayout.UP_TO
+
+    /**
+     * With [PropsLayout.UP_TO], a block component with more props than this writes them as a YAML block below its opener,
+     * otherwise inline `{...}`.
+     */
     @JvmField
     var PROPS_INLINE_MAX: Int = STUDIO_PROPS_INLINE_MAX
 
@@ -73,6 +80,7 @@ class ComarkCodeStyleSettings(container: CodeStyleSettings) : CustomCodeStyleSet
         STRONG_MARKER = EmphasisMarker.ASTERISK
         FENCE_MARKER = FenceMarker.BACKTICK
         MAX_BLANK_LINES = 1
+        PROPS_LAYOUT = PropsLayout.UP_TO
         PROPS_INLINE_MAX = STUDIO_PROPS_INLINE_MAX
         SORT_PROPS = true
         FRONT_MATTER = FrontMatterMode.STUDIO
@@ -87,7 +95,7 @@ class ComarkCodeStyleSettings(container: CodeStyleSettings) : CustomCodeStyleSet
         strongMarker = STRONG_MARKER.char,
         fenceMarker = FENCE_MARKER.char,
         maxBlankLines = MAX_BLANK_LINES.coerceIn(1, MAX_BLANK_LINES_LIMIT),
-        propsInlineMax = PROPS_INLINE_MAX.coerceIn(0, PROPS_INLINE_MAX_LIMIT),
+        propsInlineMax = PROPS_LAYOUT.inlineMax(PROPS_INLINE_MAX),
         sortProps = SORT_PROPS,
         frontMatter = FRONT_MATTER,
     )
@@ -123,6 +131,26 @@ enum class OrderedDelimiter(val char: Char) { DOT('.'), PARENTHESIS(')') }
 enum class EmphasisMarker(val char: Char) { ASTERISK('*'), UNDERSCORE('_') }
 
 enum class FenceMarker(val char: Char) { BACKTICK('`'), TILDE('~') }
+
+/** Where a block component writes its props. Object and array props always go in a YAML block: inline, they would not parse. */
+enum class PropsLayout {
+    /** Inline up to [ComarkCodeStyleSettings.PROPS_INLINE_MAX] props, a YAML block for more (Nuxt Studio: up to 3). */
+    UP_TO,
+
+    /** Always on the opening line, `::name{a="1" b="2"}`, however many there are. */
+    INLINE,
+
+    /** Always in a YAML props block below the opener (`---` ... `---`). */
+    BLOCK,
+    ;
+
+    /** The most props kept inline, with [upTo] as the [UP_TO] count. */
+    fun inlineMax(upTo: Int): Int = when (this) {
+        UP_TO -> upTo.coerceIn(0, ComarkCodeStyleSettings.PROPS_INLINE_MAX_LIMIT)
+        INLINE -> Int.MAX_VALUE
+        BLOCK -> 0
+    }
+}
 
 enum class FrontMatterMode {
     /**

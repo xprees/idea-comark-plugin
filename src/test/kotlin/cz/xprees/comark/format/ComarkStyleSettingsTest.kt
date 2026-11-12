@@ -94,6 +94,7 @@ class ComarkStyleSettingsTest : BasePlatformTestCase() {
         custom.applyPreset(ComarkStylePreset.CUSTOM)
         custom.FENCE_MARKER = FenceMarker.TILDE
         custom.PROPS_INLINE_MAX = 1
+        custom.PROPS_LAYOUT = PropsLayout.BLOCK
         val element = Element("code_scheme")
         settings.writeExternal(element)
         val xml = JDOMUtil.writeElement(element)
@@ -107,6 +108,7 @@ class ComarkStyleSettingsTest : BasePlatformTestCase() {
         assertEquals(ComarkStylePreset.CUSTOM, read.STYLE_PRESET)
         assertEquals(FenceMarker.TILDE, read.FENCE_MARKER)
         assertEquals(1, read.PROPS_INLINE_MAX)
+        assertEquals(PropsLayout.BLOCK, read.PROPS_LAYOUT)
         // defaults are not written
         val defaults = Element("code_scheme").also { CodeStyle.createTestSettings().writeExternal(it) }
         assertFalse(JDOMUtil.writeElement(defaults).contains("ComarkCodeStyleSettings"))
@@ -118,13 +120,29 @@ class ComarkStyleSettingsTest : BasePlatformTestCase() {
         assertEquals("comark", mapper.languageDomainId)
         val names = mapper.enumProperties()
         for (name in listOf("style_preset", "bullet_marker", "ordered_delimiter", "emphasis_marker", "strong_marker", "fence_marker",
-            "max_blank_lines", "props_inline_max", "sort_props", "front_matter", "indent_size")) {
+            "max_blank_lines", "props_layout", "props_inline_max", "sort_props", "front_matter", "indent_size")) {
             assertTrue("$name in $names", name in names)
         }
         val accessor = mapper.getAccessor("style_preset")!!
         assertTrue(accessor.setFromString("nuxt_studio"))
         assertEquals(ComarkStylePreset.NUXT_STUDIO, ComarkCodeStyleSettings.getInstance(settings).STYLE_PRESET)
         assertEquals("nuxt_studio", accessor.asString)
+        assertTrue(mapper.getAccessor("props_layout")!!.setFromString("inline"))
+        assertEquals(PropsLayout.INLINE, ComarkCodeStyleSettings.getInstance(settings).PROPS_LAYOUT)
+    }
+
+    fun testPropsLayoutGivesTheFormatterItsInlineLimit() {
+        val custom = ComarkCodeStyleSettings.getInstance(CodeStyle.createTestSettings())
+        custom.PROPS_INLINE_MAX = 5
+        assertEquals(5, custom.toOptions(2).propsInlineMax)
+        custom.PROPS_LAYOUT = PropsLayout.INLINE
+        assertEquals(Int.MAX_VALUE, custom.toOptions(2).propsInlineMax)
+        custom.PROPS_LAYOUT = PropsLayout.BLOCK
+        assertEquals(0, custom.toOptions(2).propsInlineMax)
+        // a preset resets it to Nuxt Studio's rule
+        custom.applyPreset(ComarkStylePreset.NUXT_STUDIO)
+        assertEquals(PropsLayout.UP_TO, custom.PROPS_LAYOUT)
+        assertEquals(3, custom.toOptions(2).propsInlineMax)
     }
 
     /**

@@ -84,6 +84,30 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
         myFixture.checkResult("Some _text_\n\n* a\n* b\n")
     }
 
+    fun testComponentPropsLayout() {
+        val props = (1..25).joinToString(" ") { "p$it=\"$it\"" }
+        val text = "::few{a=\"1\"}\nbody\n::\n\n::many{$props}\nbody\n::\n"
+        val yaml = (1..25).joinToString("") { "p$it: '$it'\n" }
+        fun reformatted(layout: PropsLayout): String {
+            var result = ""
+            withStyle(ComarkStylePreset.CUSTOM, {
+                ComarkCodeStyleSettings.getInstance(it).PROPS_LAYOUT = layout
+                ComarkCodeStyleSettings.getInstance(it).SORT_PROPS = false
+            }) {
+                configureInDataCollection("${layout.name.lowercase()}.mdc", text)
+                reformat()
+                result = myFixture.file.text
+            }
+            return result
+        }
+        // always inline, past the old limit of 20 props
+        assertEquals(text, reformatted(PropsLayout.INLINE))
+        // always a YAML block, even for one prop
+        assertEquals("::few\n---\na: '1'\n---\nbody\n::\n\n::many\n---\n$yaml---\nbody\n::\n", reformatted(PropsLayout.BLOCK))
+        // Nuxt Studio's rule: up to 3 inline
+        assertEquals("::few{a=\"1\"}\nbody\n::\n\n::many\n---\n$yaml---\nbody\n::\n", reformatted(PropsLayout.UP_TO))
+    }
+
     fun testKeptBlocksStayAsWritten() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
         configureInDataCollection("page.mdc", "* a\n\n<div>\n*raw*  html\n</div>\n")
         reformat()

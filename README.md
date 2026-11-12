@@ -129,8 +129,9 @@ nuxt-studio but still use the VS Code style get a one-time notification instead 
 scheme if needed), *Not now* or *Don't ask again*.
 
 **Options of the Custom style**: indent size (component nesting), bullet marker, ordered list delimiter, emphasis and strong
-markers (`_` only where CommonMark allows it), code fence character, blank lines kept between top-level blocks, props written
-inline at most (Studio: 3), props in Studio's order or in the order written, front matter with Studio's data rules, only
+markers (`_` only where CommonMark allows it), code fence character, blank lines kept between top-level blocks, component props
+always inline (`::name{a="1" b="2"}`), always in a YAML props block, or inline up to a number of props (Studio: up to 3; object
+and array props always use a block), props in Studio's order or in the order written, front matter with Studio's data rules, only
 re-dumped by js-yaml (as Studio's code editor does) or kept as written. The options are applied to a block only where the result
 reads the same (with an indent of 4 or more, blocks with nested components keep Studio's two spaces, which would otherwise read
 as code); with any option other than Studio's, Studio rewrites the file to its own style when it saves it. Picking a preset sets
@@ -147,7 +148,8 @@ the options; changing an option switches to Custom.
 | `ij_comark_emphasis_marker`, `ij_comark_strong_marker` | `asterisk`, `underscore` |
 | `ij_comark_fence_marker` | `backtick`, `tilde` |
 | `ij_comark_max_blank_lines` | `1` and up |
-| `ij_comark_props_inline_max` | `0` to `20` |
+| `ij_comark_props_layout` | `up_to` (default), `inline`, `block` |
+| `ij_comark_props_inline_max` | `0` to `20`, the count for `up_to` |
 | `ij_comark_sort_props` | `false`, `true` |
 | `ij_comark_front_matter` | `studio`, `redump`, `keep` |
 

@@ -4,6 +4,10 @@
 
 ### Added
 
+- *Code Style › Comark › Style*, Custom style: *Component props* picks how block components write their props: always inline
+  (`::card{title="A" icon="i-x"}`, any number of props), always in a YAML props block, or inline up to a number of props (Nuxt
+  Studio's rule, up to 3). Object and array props always use a YAML block. In `.editorconfig`: `ij_comark_props_layout =
+  inline`, `block` or `up_to`
 - *Code Style › Comark › Style*: Reformat Code can write the **Nuxt Studio** style, next to the VS Code formatter (the default).
   The result is a form Nuxt Studio's code editor keeps unchanged when it saves the file, and its visual editor too wherever the
   engine can emulate that save path (other blocks are reported as not checked). Content Studio would damage is kept as written.
