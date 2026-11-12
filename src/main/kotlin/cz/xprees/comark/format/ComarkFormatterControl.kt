@@ -26,9 +26,31 @@ object ComarkFormatterControl {
 
     fun protectedLines(text: CharSequence, settings: CodeStyleSettings): BitSet? {
         if (!settings.FORMATTER_TAGS_ENABLED) return null
-        val offTag = settings.FORMATTER_OFF_TAG.orEmpty()
-        val onTag = settings.FORMATTER_ON_TAG.orEmpty()
-        val regexp = settings.FORMATTER_TAGS_ACCEPT_REGEXP
+        return protectedLines(text, settings.FORMATTER_OFF_TAG.orEmpty(), settings.FORMATTER_ON_TAG.orEmpty(), settings.FORMATTER_TAGS_ACCEPT_REGEXP)
+    }
+
+    /**
+     * Lines that formatter markers mark as kept in [file], whether or not markers are enabled in its code style: the configured
+     * markers when they are, else the default `@formatter:off` / `@formatter:on`. For the Nuxt Studio inspections, whose
+     * *Suppress for this block* fix writes these markers.
+     */
+    fun markedLines(file: PsiFile, text: CharSequence): BitSet? {
+        val settings = CodeStyle.getSettings(file)
+        return if (settings.FORMATTER_TAGS_ENABLED) protectedLines(text, settings) else protectedLines(text, DEFAULT_OFF_TAG, DEFAULT_ON_TAG, false)
+    }
+
+    /** The off and on markers [file] uses, for writing them: the configured ones unless they are regular expressions or disabled. */
+    fun markers(file: PsiFile): Pair<String, String> {
+        val settings = CodeStyle.getSettings(file)
+        val usable = settings.FORMATTER_TAGS_ENABLED && !settings.FORMATTER_TAGS_ACCEPT_REGEXP &&
+            !settings.FORMATTER_OFF_TAG.isNullOrBlank() && !settings.FORMATTER_ON_TAG.isNullOrBlank()
+        return if (usable) settings.FORMATTER_OFF_TAG to settings.FORMATTER_ON_TAG else DEFAULT_OFF_TAG to DEFAULT_ON_TAG
+    }
+
+    const val DEFAULT_OFF_TAG = "@formatter:off"
+    const val DEFAULT_ON_TAG = "@formatter:on"
+
+    fun protectedLines(text: CharSequence, offTag: String, onTag: String, regexp: Boolean): BitSet? {
         // compiled here from the current tags (the settings' own compiled patterns are cached)
         val offPattern = if (regexp) compile(offTag) else null
         val onPattern = if (regexp) compile(onTag) else null

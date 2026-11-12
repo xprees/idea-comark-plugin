@@ -1,0 +1,22 @@
+<html>
+<body>
+Reports content that Nuxt Studio would change when it saves the file, and that Reformat Code therefore leaves as written in the
+<b>Nuxt Studio</b> and <b>Custom</b> styles (<i>Settings | Editor | Code Style | Comark | Style</i>). The inspection is active only
+in these styles.
+<p>
+  Examples: raw HTML (Studio turns it into components), HTML comments (dropped), reference-style links (inlined), link reference
+  definitions (deleted), table column alignment (dropped), code fence line highlights, heading <code>{#id}</code> attributes
+  (dropped or escaped), YAML comments in front matter or props (dropped), components inside list items (moved out of the list).
+  The message says what Studio would do. The first line of the block is highlighted.
+</p>
+<p>Quick-fixes:</p>
+<ul>
+  <li><b>Remove column alignment</b>: writes the table's delimiter row without colons, the way Studio keeps it.</li>
+  <li><b>Remove the heading id</b>: removes the <code>{#id}</code> Studio would drop.</li>
+  <li><b>Suppress for this block</b>: puts <code>&lt;!-- @formatter:off --&gt;</code> and <code>&lt;!-- @formatter:on --&gt;</code>
+    around the block (the markers set in <i>Code Style | Formatter</i> when they are enabled). Blocks between these markers are
+    not reported. Reformat Code honours the markers only when they are enabled in the code style settings. Note that Studio
+    itself still changes the block, and drops the comments.</li>
+</ul>
+</body>
+</html>
