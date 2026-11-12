@@ -51,6 +51,32 @@ object StudioTreeBuilder {
      */
     const val MAX_TREE_DEPTH = 400
 
+    /**
+     * Not part of Studio: for every list of [text] in document order (markdown-it's `bullet_list_open` and
+     * `ordered_list_open`, which comark turns into `ul` / `ol` elements in the same order), whether markdown-it made it
+     * tight (the paragraphs of its items hidden), or `null` for a list whose items have no paragraph. [StudioDbBody] needs
+     * it: Nuxt Content's parse unwraps list paragraphs differently in tight and loose lists.
+     */
+    internal fun listTightness(text: String): List<Boolean?> {
+        val tokens = StudioMarkdownIt.parse(parseFrontmatter(text).first)
+        val result = ArrayList<Boolean?>()
+        for ((i, t) in tokens.withIndex()) {
+            if (t.type != "bullet_list_open" && t.type != "ordered_list_open") continue
+            var tight: Boolean? = null
+            var j = i + 1
+            while (j < tokens.size && !(tokens[j].level == t.level && tokens[j].nesting == -1)) {
+                val u = tokens[j]
+                if (u.type == "paragraph_open" && u.level == t.level + 2) {
+                    tight = u.hidden
+                    break
+                }
+                j++
+            }
+            result += tight
+        }
+        return result
+    }
+
     /** The element nesting depth of [nodes] (1 for a single element without element children), computed without recursion. */
     fun treeDepth(nodes: List<StudioNode>): Int {
         var max = 0

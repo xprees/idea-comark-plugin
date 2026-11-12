@@ -35,6 +35,7 @@ enum class StudioRewriteReason(val description: String) {
     NESTING_LIMIT("nesting past markdown-it's limit of 100 levels, whose content Studio drops, or a tree too deep to render safely"),
     DROPPED_BLOCK("a block Studio writes nothing for, so it is lost and the blocks around it may merge"),
     NOT_IDEMPOTENT("Studio's rewrite of this block changes again on the next save"),
+    DB_PATH_REWRITE("content Studio's database path (a document opened from Nuxt Content) rewrites into a different document"),
 }
 
 /** The front matter, or one top-level block of the body. */
@@ -75,7 +76,23 @@ object StudioSafety {
 
     internal class Analysis(val doc: StudioSegmentedDocument, val blocks: List<AnalyzedBlock>)
 
-    internal fun analyze(text: String): Analysis? {
+    /**
+     * Memoized results for one caller that analyzes related documents (such as [StudioStyle]'s passes over a document and its
+     * own output): whole analyses by text, and the convergence checks of single blocks by their rendering.
+     */
+    internal class Cache {
+        val analyses = HashMap<String, Analysis?>()
+        val converges = HashMap<String, Boolean>()
+    }
+
+    internal fun analyze(text: String, cache: Cache?): Analysis? {
+        if (cache == null) return analyze(text)
+        return cache.analyses.getOrPut(text) { analyzeUncached(text, cache) }
+    }
+
+    internal fun analyze(text: String): Analysis? = analyzeUncached(text, null)
+
+    private fun analyzeUncached(text: String, cache: Cache?): Analysis? {
         val doc = try {
             StudioTreeBuilder.buildSegmented(text)
         } catch (_: StudioTextPathException) {
@@ -92,7 +109,9 @@ object StudioSafety {
             }
             if (fm.yaml != null && StudioYamlLoader.hasComment(fm.yaml)) reasons += StudioRewriteReason.FRONTMATTER_COMMENT
             val yaml = if (fm.error != null) null else StudioRenderer.frontmatterYaml(fm.data)
-            if (reasons.isEmpty() && yaml != null && !frontmatterConverges(yaml)) reasons += StudioRewriteReason.NOT_IDEMPOTENT
+            if (reasons.isEmpty() && yaml != null && !memo(cache, "\u0000fm\u0000" + yaml) { frontmatterConverges(yaml) }) {
+                reasons += StudioRewriteReason.NOT_IDEMPOTENT
+            }
             val raw = fm.raw.replace(Regex("\r\n?"), "\n")
             val output = if (fm.error != null) null else yaml?.let { "---\n$it\n---" } ?: ""
             blocks += AnalyzedBlock(StudioBlock(StudioBlockKind.FRONTMATTER, 0, fm.contentLine + 1, raw, reasons, output), null)
@@ -117,7 +136,7 @@ object StudioSafety {
                 // a dropped block: the blocks around it may then merge, which only the next save would show
                 reasons += StudioRewriteReason.DROPPED_BLOCK
             }
-            if (reasons.isEmpty() && rendered != null && !converges(StudioJs.trimEnd(rendered))) {
+            if (reasons.isEmpty() && rendered != null && !StudioJs.trimEnd(rendered).let { piece -> memo(cache, piece) { converges(piece) } }) {
                 reasons += StudioRewriteReason.NOT_IDEMPOTENT
             }
             val block = StudioBlock(
@@ -133,6 +152,9 @@ object StudioSafety {
      * Studio's text path leaves the block it wrote unchanged on the next save. [piece] is the block's output as it stands in
      * the document, after a blank line; checked alone, with no front matter.
      */
+    private inline fun memo(cache: Cache?, key: String, check: () -> Boolean): Boolean =
+        if (cache == null) check() else cache.converges.getOrPut(key, check)
+
     private fun converges(piece: String): Boolean {
         val written = StudioPostProcess.padBlankLinesInComponents(piece)
         return StudioFormatter.format("\n" + written + "\n") == written + "\n"

@@ -1,4 +1,4 @@
-// Derived from @nuxt/content 3.16.2 (MIT, Copyright (c) NuxtLabs); used only to record test data.
+// Derived from @nuxt/content 3.16.2 (MIT, Copyright (c) Nuxt Project); used only to record test data.
 // Emulation of @nuxt/content 3.16.2 turning a .md file into the row that Nuxt Studio reads
 // from the browser-side SQLite database. Line refs: @nuxt/content-3.16.2 dist/module.mjs
 //   createParser            1464-1554   (parserOptions, remark-emoji default, highlight plugin, schema split, seo, path-meta)
@@ -8,9 +8,14 @@
 //   _getHighlightPlugin     1413-1461   (shiki, default theme material-theme-palenight, compress style map)
 //   pageStandardSchema/meta 2203-2333   generateCollectionInsert 2528-2558 (SQL value coercion)
 //   runtime/internal/collection.js refineContentFields (JSON.parse json columns, Boolean() booleans)
-//   runtime/internal/schema.js getOrderedSchemaKeys (id, title, ...sorted)
+//   runtime/internal/schema.js getOrderedSchemaKeys (id, title, ...sorted), describeProperty/getPropertyType (SQL types)
+//   formatDate / formatDateTime / toUtcDate 428-467 (DATE and DATETIME columns)
 // Assumptions (configurable by env):
 //   CTYPE=page|data (default page)   SCHEMA=extra,schema,keys (strings)   HIGHLIGHT=0 to disable shiki
+//   opts.schema entries are either a key name (a VARCHAR column) or { name, type, default } where type is the column kind
+//   a user schema field gets: 'string' (z.string, VARCHAR), 'number' (z.number, INT), 'boolean' (z.boolean, BOOLEAN),
+//   'date' (z.date, DATE: zodToJsonSchema with dateStrategy 'format:date', module.mjs 3116), 'datetime' (DATETIME) or
+//   'json' (z.array / z.object, a JSON TEXT column).
 //   no user remark/rehype plugins, no mdc.highlight config, default pathMeta.
 import { parseMarkdown, createShikiHighlighter, rehypeHighlight } from '@nuxtjs/mdc/runtime'
 import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
@@ -92,6 +97,34 @@ async function getHighlightPlugin() {
   return highlightPlugin
 }
 
+// ---- module.mjs 428-467
+const formatDate = (date) => {
+  const d = toUtcDate(date)
+  if (Number.isNaN(d.getTime())) throw new TypeError(`Invalid date value: "${date}"`)
+  return d.toISOString().slice(0, 10)
+}
+const formatDateTime = (datetime) => {
+  const d = toUtcDate(datetime)
+  if (Number.isNaN(d.getTime())) throw new TypeError(`Invalid datetime value: "${datetime}"`)
+  return d.toISOString().slice(0, 19).replace('T', ' ')
+}
+const STRUCTURED = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/i
+function toUtcDate(value) {
+  if (value instanceof Date) return value
+  const input = String(value).trim()
+  const match = STRUCTURED.exec(input)
+  if (!match) return new Date(input)
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3])
+  const hour = Number(match[4] || 0), minute = Number(match[5] || 0), second = Number(match[6] || 0)
+  const offset = match[7]
+  const utc = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
+  if (utc.getUTCFullYear() !== year || utc.getUTCMonth() + 1 !== month || utc.getUTCDate() !== day || utc.getUTCHours() !== hour || utc.getUTCMinutes() !== minute || utc.getUTCSeconds() !== second) {
+    return new Date(Number.NaN)
+  }
+  if (offset && offset.toUpperCase() !== 'Z') return new Date(input.includes('T') ? input : input.replace(' ', 'T'))
+  return utc
+}
+
 // ---- schema (pageStandardSchema + metaStandardSchema), getOrderedSchemaKeys
 function schemaFor(collectionType, extra) {
   // type: 'string' | 'json' | 'boolean' ; default
@@ -100,7 +133,12 @@ function schemaFor(collectionType, extra) {
     path: { t: 'string' }, title: { t: 'string' }, description: { t: 'string' },
     seo: { t: 'json', default: {} }, body: { t: 'json' }, navigation: { t: 'json', default: true },
   })
-  for (const k of extra) s[k] = s[k] || { t: 'string' }
+  for (const k of extra) {
+    const f = typeof k === 'string' ? { name: k, type: 'string' } : k
+    const p = { t: f.type }
+    if ('default' in f) p.default = f.default
+    s[f.name] = s[f.name] || p
+  }
   const keys = Array.from(new Set([s.id ? 'id' : undefined, s.title ? 'title' : undefined, ...Object.keys(s).sort()].filter(Boolean)))
   return { s, keys }
 }
@@ -143,6 +181,13 @@ export async function nuxtContentParse(id, source, opts = {}) {
     if (v === null) { row[key] = null; continue }
     if (p.t === 'json') row[key] = JSON.parse(JSON.stringify(v))
     else if (p.t === 'boolean') row[key] = !!v
+    else if (p.t === 'number') {
+      // INT column: Number(value) is written into the SQL text; NaN/Infinity are not SQL literals, so the insert fails
+      const n = Number(v)
+      if (!Number.isFinite(n)) throw new TypeError(`Invalid number value: "${v}"`)
+      row[key] = n
+    } else if (p.t === 'date') row[key] = formatDate(v)
+    else if (p.t === 'datetime') row[key] = formatDateTime(v)
     else row[key] = String(v)
   }
   return row

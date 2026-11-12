@@ -48,19 +48,28 @@ object StudioFormatter {
     }
 
     private fun formatPreservingChecked(text: String): PreservingResult? {
-        val analysis = StudioSafety.analyze(text) ?: return null
+        val state = preservingState(text) ?: return null
+        return PreservingResult(state.assembled.text, state.blocks.map { it.block })
+    }
+
+    /** [formatPreserving]'s final decision: the blocks (kept or rendered) and their assembly. */
+    internal class PreservingState(val blocks: List<StudioSafety.AnalyzedBlock>, val assembled: Assembled)
+
+    /** [formatPreserving] with the analyzed blocks it settled on, for [StudioStyle]; `null` when [text] cannot be parsed. */
+    internal fun preservingState(text: String, cache: StudioSafety.Cache? = null): PreservingState? {
+        val analysis = StudioSafety.analyze(text, cache) ?: return null
         var blocks = analysis.blocks
         for (round in 0 until MAX_REPAIRS) {
-            val assembled = assemble(analysis, blocks)
-            val again = StudioSafety.analyze(assembled.text)?.let { assemble(it, it.blocks).text }
-            if (again == assembled.text) return PreservingResult(assembled.text, blocks.map { it.block })
+            val assembled = assemble(blocks)
+            // analyze is deterministic: when nothing changed, the next pass is this one
+            val again = if (round == 0 && assembled.text == text) text else StudioSafety.analyze(assembled.text, cache)?.let { assemble(it.blocks).text }
+            if (again == assembled.text) return PreservingState(blocks, assembled)
             val culprit = culprit(blocks, assembled, firstDifferentLine(assembled.text, again ?: "")) ?: break
             blocks = blocks.mapIndexed { i, b -> if (i != culprit) b else notIdempotent(b) }
         }
         // no fixed point found by single repairs: keep every block Studio would change
         blocks = blocks.map { b -> if (!b.block.kept && b.block.studioOutput != b.block.source) notIdempotent(b) else b }
-        val assembled = assemble(analysis, blocks)
-        return PreservingResult(assembled.text, blocks.map { it.block })
+        return PreservingState(blocks, assemble(blocks))
     }
 
     private fun notIdempotent(b: StudioSafety.AnalyzedBlock) =
@@ -97,7 +106,7 @@ object StudioFormatter {
         if (analysis.blocks.any { it.block.kind == StudioBlockKind.FRONTMATTER && it.block.studioOutput == null }) return null
         if (StudioRewriteReason.INVALID_YAML in analysis.blocks.flatMap { it.block.reasons }) return null
         val blocks = analysis.blocks.map { StudioSafety.AnalyzedBlock(it.block.copy(reasons = emptySet()), it.rendered) }
-        return assemble(analysis, blocks).text
+        return assemble(blocks).text
     }
 
     private fun firstDifferentLine(a: String, b: String): Int {
@@ -109,9 +118,13 @@ object StudioFormatter {
     }
 
     /** The assembled text and, per output line, the index of the block that wrote it (-1 for separators). */
-    private class Assembled(val text: String, val lineOwners: List<Int>)
+    internal class Assembled(val text: String, val lineOwners: List<Int>)
 
-    private fun assemble(analysis: StudioSafety.Analysis, blocks: List<StudioSafety.AnalyzedBlock>): Assembled {
+    /**
+     * Joins [blocks] as [formatPreserving] does: the front matter's [StudioBlock.studioOutput] (or its source when kept),
+     * then the body blocks' renderings (or their sources when kept).
+     */
+    internal fun assemble(blocks: List<StudioSafety.AnalyzedBlock>): Assembled {
         // the body: rendered blocks concatenated as comark concatenates its top-level output, kept blocks in between
         val body = StringBuilder()
         val owners = ArrayList<Pair<IntRange, Int>>() // character ranges of the body and the block that wrote them

@@ -109,7 +109,48 @@ it saves a document. It contains Kotlin ports of parts of these projects (all MI
 - character-entities 2 and character-entities-legacy 3 (named character reference tables): Copyright (c) 2015 Titus Wormer.
 - entities 7/8 (character reference decoding rules), BSD-2-Clause: Copyright (c) Felix Böhm.
 
-The MIT License text above applies to each MIT-licensed project with its own copyright line. The entities license:
+The database-path emulation (`StudioDbPath`, `StudioDbBody`, `StudioDbFrontMatter`, `StudioDbAutolink`, `StudioCollection`,
+`StudioHastProperties`) also ports parts of these MIT-licensed projects:
+
+- Nuxt Studio 1.8.0 (`utils/document/schema.js` `cleanDataKeys`, `tree.js` `sanitizeDocumentTree`, `legacy.js`
+  `mdcToComark`): Copyright (c) 2025 Vercel, Inc.
+- @nuxt/content 3.16.2 (row building, `getOrderedSchemaKeys`, path meta and `generateTitle`, SQL value conversion,
+  `formatDate`/`formatDateTime`, the `.md` link handler): Copyright (c) Nuxt Project.
+- @nuxtjs/mdc 0.23.3 (`contentHeading`, `compileHast`, `validateProps`, the code handler's `parseThematicBlock`):
+  Copyright (c) NuxtLabs.
+- remark-mdc 3.11.1 (attribute names, `bindData`, label and span rules): Copyright (c) NuxtLabs.
+- flat 6.0.1 (`unflatten`, `flatten`), BSD-3-Clause: Copyright (c) 2014, Hugh Kennedy.
+- scule 1.3.0 (`splitByCase`, `pascalCase`, `kebabCase`): Copyright (c) Pooya Parsa.
+- property-information 7.2.0 (the HTML attribute table), rehype-sort-attributes 5 (attribute order),
+  mdast-util-gfm-autolink-literal 2 (`findUrl`, `isCorrectDomain`, `splitUrl`), hast-util-to-parse5 8
+  (`createProperty`), detab 3: Copyright (c) Titus Wormer.
+
+The MIT License text above applies to each MIT-licensed project with its own copyright line. The flat license:
+
+```
+Copyright (c) 2014, Hugh Kennedy
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
+conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
+   disclaimer in the documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the  nor the names of its contributors may be used to endorse or promote products derived from this
+   software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT
+NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+The entities license:
 
 ```
 Copyright (c) Felix Böhm
@@ -130,3 +171,12 @@ COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
 INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## Test tooling (not shipped)
+
+The Nuxt Studio oracle recorders under `src/test/node/studio-oracle` contain code derived from these MIT-licensed projects;
+they only run to record test data:
+
+- @nuxt/content 3.16.2 (`lib/nuxt-content-parse.mjs`: the markdown parse options, path meta, schema split, SQL value
+  conversion and `formatDate`/`formatDateTime`; `lib/nuxt-content-runtime.mjs`): Copyright (c) Nuxt Project.
+- Comark 0.7.0 (`lib/db-diff.mjs`: `applyAutoUnwrap`): Copyright (c) 2026 Comark team and contributors.
