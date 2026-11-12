@@ -2,19 +2,18 @@
 
 ## [Unreleased]
 
-## [2026.3.8] - 2026-11-11
-
 ### Added
 
-- *Code Style › Comark › Style*: Reformat Code can write the **Nuxt Studio** style (the form Nuxt Studio's code editor keeps
-  unchanged when it saves the file, and its visual editor too wherever the engine can emulate that save path (other blocks are
-  reported as not checked), with content Studio would damage kept as written, and the front
-  matter completed by Studio's data rules for the file's collection in `content.config.ts`: title and description added, keys in
-  Nuxt Content's column order with schema defaults, `navigation: true`, nulls and empty lists dropped) or a **Custom** variant
-  of it (bullet and ordered list markers, emphasis and strong markers, fence character, blank lines between blocks, props inline
-  or as YAML, prop order, front matter rules, re-dump only or kept, indent size), next to the VS Code formatter (the default). Stored in the code style scheme and readable from `.editorconfig`
-  (`ij_comark_style_preset = nuxt_studio`, ...). Selection reformat rewrites only the blocks it touches, formatter off/on markers are
-  honoured, and a whole-file reformat in the Studio style converts the file to `\n` line breaks without a BOM
+- *Code Style › Comark › Style*: Reformat Code can write the **Nuxt Studio** style, next to the VS Code formatter (the default).
+  The result is a form Nuxt Studio's code editor keeps unchanged when it saves the file, and its visual editor too wherever the
+  engine can emulate that save path (other blocks are reported as not checked). Content Studio would damage is kept as written.
+  The front matter is completed by Studio's data rules for the file's collection in `content.config.ts`: title and description
+  added, keys in Nuxt Content's column order with schema defaults, `navigation: true`, nulls and empty lists dropped
+- A **Custom** variant of the Nuxt Studio style: bullet and ordered list markers, emphasis and strong markers, fence character,
+  blank lines between blocks, props inline or as YAML, prop order, front matter rules (Studio's, re-dump only, or kept) and
+  indent size. Stored in the code style scheme and readable from `.editorconfig` (`ij_comark_style_preset = nuxt_studio`, ...).
+  Selection reformat rewrites only the blocks it touches, formatter off/on markers are honoured, and a whole-file reformat in
+  the Studio styles converts the file to `\n` line breaks without a BOM
 - *Nuxt Studio will rewrite this* inspection (Nuxt Studio and Custom styles): marks the blocks Reformat Code keeps as written
   because Studio would damage them on save (raw HTML, HTML comments, reference links, table alignment, heading ids, YAML
   comments, ...) and says what Studio would do, with fixes to remove table alignment or a heading id, or to suppress the warning
@@ -27,6 +26,10 @@
   per version
 - Projects that depend on nuxt-studio and still use the VS Code style (and do not set the preset in `.editorconfig`) are
   offered the Nuxt Studio style once (*Use Nuxt Studio style*, *Not now*, *Don't ask again*)
+
+## [2026.3.8] - 2026-11-11
+
+### Added
 
 - `Prose*` components can be written without the prefix (`::accordion-item` for `ProseAccordionItem`), as Comark and Nuxt UI
   resolve them: completion offers the short name (typing `prose-` keeps the prefix), and both names are known to the inspection,
