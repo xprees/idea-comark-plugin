@@ -42,6 +42,33 @@ class ComarkStylePanelTest : BasePlatformTestCase() {
         }
     }
 
+    fun testComponentPropsChoice() {
+        val settings = CodeStyle.createTestSettings()
+        val panel = ComarkStylePanel(null, settings)
+        try {
+            panel.reset(settings)
+            panel.preset.item = ComarkStylePreset.NUXT_STUDIO
+            assertEquals(PropsLayout.UP_TO, panel.propsLayout.item)
+            assertTrue(panel.propsInline.isEnabled)
+            // the count is only for "inline up to"; picking another layout switches to Custom
+            panel.propsLayout.item = PropsLayout.BLOCK
+            assertFalse(panel.propsInline.isEnabled)
+            assertEquals(ComarkStylePreset.CUSTOM, panel.preset.item)
+            panel.apply(settings)
+            assertEquals(PropsLayout.BLOCK, ComarkCodeStyleSettings.getInstance(settings).PROPS_LAYOUT)
+            assertFalse(panel.isModified(settings))
+            panel.propsLayout.item = PropsLayout.UP_TO
+            assertTrue(panel.propsInline.isEnabled)
+            assertTrue(panel.isModified(settings))
+            // the VS Code style has none of the options
+            panel.preset.item = ComarkStylePreset.VSCODE
+            assertFalse(panel.propsLayout.isEnabled)
+            assertFalse(panel.propsInline.isEnabled)
+        } finally {
+            Disposer.dispose(panel)
+        }
+    }
+
     fun testTypedNumbersAreAppliedWithoutEnter() {
         val settings = CodeStyle.createTestSettings()
         ComarkCodeStyleSettings.getInstance(settings).STYLE_PRESET = ComarkStylePreset.CUSTOM

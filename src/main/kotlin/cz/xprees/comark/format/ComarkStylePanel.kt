@@ -43,6 +43,15 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
     private val strong = combo(EmphasisMarker.entries) { "${it.char}${it.char}text${it.char}${it.char}" }
     private val fence = combo(FenceMarker.entries) { it.char.toString().repeat(3) }
     internal val blankLines = spinner(1, 1, ComarkCodeStyleSettings.MAX_BLANK_LINES_LIMIT)
+    internal val propsLayout = combo(PropsLayout.entries) {
+        ComarkBundle.message(
+            when (it) {
+                PropsLayout.UP_TO -> "codestyle.style.props.layout.up.to"
+                PropsLayout.INLINE -> "codestyle.style.props.layout.inline"
+                PropsLayout.BLOCK -> "codestyle.style.props.layout.block"
+            },
+        )
+    }
     internal val propsInline = spinner(3, 0, ComarkCodeStyleSettings.PROPS_INLINE_MAX_LIMIT)
     private val sortProps = JBCheckBox(ComarkBundle.message("codestyle.style.sort.props"))
     private val frontMatter = combo(FrontMatterMode.entries) {
@@ -54,7 +63,7 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
             },
         )
     }
-    internal val options: List<JComponent> = listOf(bullet, ordered, emphasis, strong, fence, blankLines, propsInline, sortProps, frontMatter)
+    internal val options: List<JComponent> = listOf(bullet, ordered, emphasis, strong, fence, blankLines, propsLayout, propsInline, sortProps, frontMatter)
 
     /** True while the controls are being filled, so that the change listeners don't switch the preset to Custom. */
     private var updating = false
@@ -72,8 +81,9 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
             .addLabeledComponent(ComarkBundle.message("codestyle.style.strong"), strong)
             .addLabeledComponent(ComarkBundle.message("codestyle.style.fence"), fence)
             .addLabeledComponent(ComarkBundle.message("codestyle.style.blank.lines"), blankLines)
+            .addLabeledComponent(ComarkBundle.message("codestyle.style.props.layout"), propsLayout)
             .addLabeledComponent(ComarkBundle.message("codestyle.style.props.inline"), propsInline)
-            .addComponentToRightColumn(comment(ComarkBundle.message("codestyle.style.props.inline.comment")))
+            .addComponentToRightColumn(comment(ComarkBundle.message("codestyle.style.props.layout.comment")))
             .addComponentToRightColumn(sortProps)
             .addLabeledComponent(ComarkBundle.message("codestyle.style.front.matter"), frontMatter)
             .addComponentFillVertically(JPanel(), 0)
@@ -104,7 +114,7 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
                 somethingChanged()
             }
         }
-        for (control in listOf(bullet, ordered, emphasis, strong, fence, frontMatter)) control.addActionListener { toCustom() }
+        for (control in listOf(bullet, ordered, emphasis, strong, fence, propsLayout, frontMatter)) control.addActionListener { toCustom() }
         blankLines.addChangeListener { toCustom() }
         propsInline.addChangeListener { toCustom() }
         sortProps.addActionListener { toCustom() }
@@ -130,6 +140,8 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
     private fun updateEnabled() {
         val enabled = preset.item != ComarkStylePreset.VSCODE
         for (option in options) option.isEnabled = enabled
+        // the count only means something for "inline up to"
+        propsInline.isEnabled = enabled && propsLayout.item == PropsLayout.UP_TO
     }
 
     /** Puts [values]' options (not the preset) into the controls. */
@@ -143,6 +155,7 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
             strong.item = values.STRONG_MARKER
             fence.item = values.FENCE_MARKER
             blankLines.value = values.MAX_BLANK_LINES.coerceIn(1, ComarkCodeStyleSettings.MAX_BLANK_LINES_LIMIT)
+            propsLayout.item = values.PROPS_LAYOUT
             propsInline.value = values.PROPS_INLINE_MAX.coerceIn(0, ComarkCodeStyleSettings.PROPS_INLINE_MAX_LIMIT)
             sortProps.isSelected = values.SORT_PROPS
             frontMatter.item = values.FRONT_MATTER
@@ -166,6 +179,7 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
         target.STRONG_MARKER = strong.item ?: EmphasisMarker.ASTERISK
         target.FENCE_MARKER = fence.item ?: FenceMarker.BACKTICK
         target.MAX_BLANK_LINES = blankLines.value as Int
+        target.PROPS_LAYOUT = propsLayout.item ?: PropsLayout.UP_TO
         target.PROPS_INLINE_MAX = propsInline.value as Int
         target.SORT_PROPS = sortProps.isSelected
         target.FRONT_MATTER = frontMatter.item ?: FrontMatterMode.STUDIO
@@ -184,6 +198,7 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
             edited.ORDERED_DELIMITER != current.ORDERED_DELIMITER || edited.EMPHASIS_MARKER != current.EMPHASIS_MARKER ||
             edited.STRONG_MARKER != current.STRONG_MARKER || edited.FENCE_MARKER != current.FENCE_MARKER ||
             edited.MAX_BLANK_LINES != current.MAX_BLANK_LINES || edited.PROPS_INLINE_MAX != current.PROPS_INLINE_MAX ||
+            edited.PROPS_LAYOUT != current.PROPS_LAYOUT ||
             edited.SORT_PROPS != current.SORT_PROPS || edited.FRONT_MATTER != current.FRONT_MATTER ||
             preset.item == ComarkStylePreset.NUXT_STUDIO && settings.getCommonSettings(ComarkLanguage).WRAP_ON_TYPING != NO_WRAP
     }
