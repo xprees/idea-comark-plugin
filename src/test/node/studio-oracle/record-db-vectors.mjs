@@ -147,6 +147,13 @@ FM_PROBES.forEach((fm, i) => FM_BODIES.forEach((body, j) => {
   inputs.push({ source: `fm-probe:${i}.${j}`, x: (fm ? '---\n' + fm + '---\n\n' : '') + body, text: null })
 }))
 
+// Database-path reproducers (db-reproducers.json): documents on which a seeded local fuzz run of the Kotlin emulation
+// (StudioDbPath) against this recorder's D found a difference (`fuzz`, each already a text-path output y), and hand-written
+// documents exercising the constructs the emulation follows (`probes`, recorded through T like the other inputs).
+const reproducers = JSON.parse(fs.readFileSync(path.join(here, 'db-reproducers.json'), 'utf8'))
+reproducers.fuzz.forEach((y, i) => inputs.push({ source: `db-fuzz:${i}`, x: y, text: null }))
+reproducers.probes.forEach((x, i) => inputs.push({ source: `db-probe:${i}`, x, text: null }))
+
 const byY = new Map()
 const order = []
 for (const it of inputs) {
@@ -245,6 +252,7 @@ const summary = {
   inputsFromOracle: inputs.filter((it) => it.source.startsWith('oracle:')).length,
   inputsFromTextVectors: inputs.filter((it) => it.source.startsWith('text-vectors:')).length,
   inputsFromFrontMatterProbes: inputs.filter((it) => it.source.startsWith('fm-probe:')).length,
+  inputsFromDbReproducers: inputs.filter((it) => it.source.startsWith('db-fuzz:') || it.source.startsWith('db-probe:')).length,
   vectors: vectors.length,
   yStable,
   byConfig: stats,
@@ -252,7 +260,7 @@ const summary = {
 const header = {
   description: `Nuxt Studio 1.8.0 database path D on text-path output: for ${vectors.length} distinct documents y = T(x) ` +
     `(x = every oracle.json input and text-vectors.json input where T succeeds, and ${FM_PROBES.length * FM_BODIES.length} ` +
-    'front matter probes), D(y), T(D(y)) and D(D(y)) under ' +
+    'front matter probes, and the database-path reproducers of db-reproducers.json), D(y), T(D(y)) and D(D(y)) under ' +
     `${CONFIG_NAMES.length} collection configurations. Re-record with \`node record-db-vectors.mjs\` in ` +
     'src/test/node/studio-oracle; see DB-PATH.md and README.md.',
   versions,

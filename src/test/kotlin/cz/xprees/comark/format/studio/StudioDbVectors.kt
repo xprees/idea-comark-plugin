@@ -43,7 +43,10 @@ internal object StudioDbVectors {
 
     class Vector(
         val y: String,
-        /** `oracle:<case name>`, `text-vectors:<index>` or `fm-probe:<front matter>.<body>`: the first input whose T is y. */
+        /**
+         * `oracle:<case name>`, `text-vectors:<index>`, `fm-probe:<front matter>.<body>`, `db-fuzz:<index>` or
+         * `db-probe:<index>` (`db-reproducers.json`): the first input whose T is y.
+         */
         val source: String,
         /** How many recorded inputs have this T(x). */
         val inputs: Int,

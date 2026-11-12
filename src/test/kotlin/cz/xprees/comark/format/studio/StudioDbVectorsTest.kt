@@ -28,7 +28,7 @@ class StudioDbVectorsTest {
         assertEquals(CONFIGS, corpus.header.getAsJsonObject("configs").keySet().toList())
         val files = corpus.header.getAsJsonArray("files").map { it.asString }
         for (v in vectors) {
-            assertTrue(v.source, v.source.matches(Regex("(?s)^(oracle:.+|text-vectors:\\d+|fm-probe:\\d+\\.\\d+)$")))
+            assertTrue(v.source, v.source.matches(Regex("(?s)^(oracle:.+|text-vectors:\\d+|fm-probe:\\d+\\.\\d+|db-fuzz:\\d+|db-probe:\\d+)$")))
             assertTrue(v.source, v.inputs >= 1)
             for (name in CONFIGS) {
                 val c = v.byConfig.getValue(name)
@@ -74,10 +74,11 @@ class StudioDbVectorsTest {
             assertEquals(v.source, expected, v.y)
             checked++
         }
-        assertEquals(corpus.summary["vectors"].asInt - fmProbeVectors(), checked)
+        assertEquals(corpus.summary["vectors"].asInt - probeVectors(), checked)
     }
 
-    private fun fmProbeVectors() = vectors.count { it.source.startsWith("fm-probe:") }
+    /** Vectors whose source is not an oracle case or text vector (front matter probes, database-path reproducers). */
+    private fun probeVectors() = vectors.count { it.source.startsWith("fm-probe:") || it.source.startsWith("db-") }
 
     @Test
     fun summaryAgreesWithTheVectors() {

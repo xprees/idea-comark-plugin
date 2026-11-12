@@ -109,7 +109,7 @@ tags`). Reserved columns (`id`, `stem`, `extension`, `path`, `body`, `meta`, …
 A column with a `default` gets the default when the key is missing or its value stringifies to `"null"`
 (`generateCollectionInsert` 2533-2535). `navigation` (default `true`) and `seo` (default `{}`) are removed again by
 `cleanDataKeys` (`schema.js` 37-53), so with the default schema nothing shows; a user default such as
-`draft: z.boolean().default(false)` is written into every document (`draft: false`, 4603 of 4753 vectors in
+`draft: z.boolean().default(false)` is written into every document (`draft: false`, 4684 of 4839 vectors in
 `pageSchema`).
 
 ### FM-COERCE — column type coercion
@@ -171,9 +171,9 @@ and values whose YAML 1.2 resolution differs (FM-YAML).
 ## 3. Body rules
 
 Each rule names where the D tree differs from the T tree. Counts are over T-stable y in the `data` configuration (no front
-matter injection), out of 3943 documents D can read.
+matter injection), out of 4029 documents D can read.
 
-### B-ATTR-ORDER — attributes sorted by document-wide frequency (197)
+### B-ATTR-ORDER — attributes sorted by document-wide frequency (225)
 
 `rehype-sort-attributes` (`mdc/options.js` 31-33; `sort-attributes` 13-99) reorders the properties of **every element
 by how often that property name occurs on elements with the same tag name in the whole document**, most frequent first,
@@ -186,24 +186,24 @@ to one `::card` can reorder the props of every other `::card`.
 `rehype-sort-attribute-values` (`sort-attribute-values` 1-60) likewise reorders the values of space-separated list
 properties (`className`, `rel`, …) by document-wide frequency (**B-CLASS-ORDER**).
 
-### B-ATTR-UNBIND — `:prop` bindings lose their colon (109)
+### B-ATTR-UNBIND — `:prop` bindings lose their colon (120)
 
 `propsMDCToComark` → `unbindMDCProps` (`legacy.js` 311-366): a `:key` whose value parses as JSON and is not a boolean is
 replaced by `key` with the parsed value; arrays of primitives are joined with spaces (335-341). The renderer then writes a
 plain `key="1"` (or a YAML value). So `::badge{:count="5"}` → `::badge{count="5"}`, and in YAML props `:a: 1` becomes `a: 1`.
 `:key="true"`/`"false"` stay bound (348-353).
 
-### B-ATTR-CAMEL — hast property names (5)
+### B-ATTR-CAMEL — hast property names (14)
 
 Props pass through hast, so HTML attribute names become hast property names: `data-x` → `dataX`, `autoplay` →
 `autoPlay`, `class` → `className` (turned back into `class` by `propsMDCToComark` 322-330).
 
-### B-ATTR-REL — `rel` removed (3)
+### B-ATTR-REL — `rel` removed (5)
 
 `propsMDCToComark` deletes every `rel` (`legacy.js` 331-334), including a `rel` written in the source and the
 `rel="nofollow"` that `rehype-external-links` (`mdc/options.js` 25-27) adds to absolute `http(s)` links.
 
-### B-ATTR-UNSAFE, B-ATTR-ENTITY, B-ATTR-OTHER — other attribute differences (153 together)
+### B-ATTR-UNSAFE, B-ATTR-ENTITY, B-ATTR-OTHER — other attribute differences (187 together)
 
 - **B-ATTR-UNSAFE**: `validateProps` (`mdc/props.js` 90-113) drops `on*` handlers, `srcdoc`/`formaction`/…, and
   `href`/`src`/`action` values that `isAnchorLinkAllowed` (20-35) rejects (an unparsable URL such as
@@ -213,18 +213,18 @@ Props pass through hast, so HTML attribute names become hast property names: `da
   `Paragraph {.x}`) are attributes for comark but text for remark-mdc (written back as `\{.x}`); boolean HTML attributes
   become `true`; YAML props with dotted keys are unflattened; numeric attribute values become numbers.
 
-### B-LINK-MD — relative `.md` links rewritten (10)
+### B-LINK-MD — relative `.md` links rewritten (16)
 
 Nuxt Content's link handler (`module.mjs` 1284-1310) rewrites a relative link ending in `.md` (optionally with `#hash`) to
 `generatePath(link without .md)`: path segments slugified and numeric prefixes removed (`./other.md` → `./other`,
 `../dir/01.intro.md#Install` → `../dir/intro#Install`).
 
-### B-AUTOLINK — bare URLs become links (91)
+### B-AUTOLINK — bare URLs become links (97)
 
 `remark-gfm` (`mdc/options.js` 14-16) turns literal URLs and e-mail addresses into links; Studio's comark parse has
 `linkify: false` (`generate.js` 81). `See https://example.com` → `See [https://example.com](https://example.com)`.
 
-### B-HTML — raw HTML is parsed (245)
+### B-HTML — raw HTML is parsed (249)
 
 T keeps raw HTML as html-marked nodes (`$: {html: 1}`) and writes it back as HTML. D parses it with `rehype-raw`
 (`mdc/options.js` 34-39) into ordinary elements, which the renderer writes as Markdown or components (`<details>` →
@@ -237,20 +237,20 @@ spans blocks (`<div>` opened in one paragraph) restructures the document. The ID
 minimark's `fromHast` drops comment nodes (`minimark/hast` 9), so `<!-- … -->` disappears (and `<!--more-->` adds
 FM-EXCERPT). Kept verbatim by the IDE (HTML_COMMENT).
 
-### B-LI-PARAGRAPHS — list item paragraphs merged (25)
+### B-LI-PARAGRAPHS — list item paragraphs merged (34)
 
 `compileHast` (`mdc/compiler.js` 21-38) unwraps every `p` inside an `li` and puts a `br` before each paragraph after the
 first. A loose item `1. first\n\n   second` becomes `1. first  \nsecond` (a hard break), and a component after the first
 paragraph becomes inline (`:code-group[…]`). The IDE keeps components in list items verbatim (COMPONENT_IN_LIST_ITEM).
 
-### B-WHITESPACE — whitespace in text and code (253)
+### B-WHITESPACE — whitespace in text and code (271)
 
 - `detab` in the code handler (`mdc/code.js` 6) expands tabs in code blocks to spaces (4-column stops).
 - A paragraph followed by a nested block in a list item keeps a trailing `"\n"` (`li: [p "text\n", ul]`), which renders as
   a blank line before the nested list.
 - Trailing spaces/tabs at line ends are trimmed by remark.
 
-### B-CODE, B-CODE-HIGHLIGHTS — code blocks (187, 19)
+### B-CODE, B-CODE-HIGHLIGHTS — code blocks (188, 20)
 
 - **B-CODE**: an empty fenced code block has no `code` prop, so `sanitizeDocumentTree` (`tree.js` 13-31) does not rewrite
   it and the highlighter's `class="language-text shiki …"` survives: `` ``` `` + `` ``` `` becomes
@@ -259,12 +259,12 @@ paragraph becomes inline (`:code-group[…]`). The IDE keeps components in list 
   `propsMDCToComark` joins the array to the string `"2 4 5"` (`legacy.js` 335-341) and comark's `formatHighlights`
   spreads the string's characters: `{2,4-5}` → `{ , ,2,4,5}`. The IDE keeps highlights verbatim (FENCE_HIGHLIGHTS).
 
-### B-TABLE-ALIGN — column alignment lost (10)
+### B-TABLE-ALIGN — column alignment lost (14)
 
 The `align` of `th`/`td` does not survive minimark + `mdcToComark`, so `| :--- |` becomes `| --- |`. Kept verbatim by the
 IDE (TABLE_ALIGNMENT).
 
-### B-BINDING — `{{ }}` becomes `:binding` (22)
+### B-BINDING — `{{ }}` becomes `:binding` (27)
 
 `remark-mdc` parses `{{ expr || 'default' }}` into a `binding` text component (`remark-mdc` 623-634), which the renderer
 writes as `:binding{value="expr" defaultValue="default"}` (as a block component when it is alone in a slot).
@@ -275,19 +275,19 @@ A component whose first line is `---` opens a YAML props block for remark-mdc (`
 comark (T) reads it as a thematic break. D swallows the content up to the next `---` as props (often everything, giving
 an empty component).
 
-### B-BRACKET-SPAN, B-INLINE-COMPONENT — inline syntax only comark knows (70, 63)
+### B-BRACKET-SPAN, B-INLINE-COMPONENT — inline syntax only comark knows (71, 63)
 
 - **B-BRACKET-SPAN**: comark parses a bare `[text]` (no link, no attributes) as a `span`; remark-mdc as text, which the
   renderer escapes (`\[text\]`) where needed.
 - **B-INLINE-COMPONENT**: comark accepts inline components that remark-mdc does not (`:1.`, `:not_an_emoji:`, names with
   characters remark-mdc rejects); D keeps them as text.
 
-### B-SLOT — slot structure (11)
+### B-SLOT — slot structure (16)
 
 `#slot` lines that comark treats as text (no blank line before them, e.g. after a paragraph) are slots for remark-mdc
 (`template` elements), and a component alone in a slot becomes a block component.
 
-### B-EMOJI, B-CLOSING-MARKER, B-TEXT — text content (6, 4, 104)
+### B-EMOJI, B-CLOSING-MARKER, B-TEXT — text content (7, 4, 106)
 
 - **B-EMOJI**: `remark-emoji` (`module.mjs` 1493) converts `:name:` shortcodes that comark's emoji plugin left
   alone (in contexts comark does not convert); written back as the emoji character.
@@ -295,7 +295,7 @@ an empty component).
   a paragraph (an escaped `\::` in y is such a line for remark-mdc).
 - **B-TEXT**: other differences inside a text node (escapes, entity decoding, emphasis parsed differently).
 
-### B-STRUCTURE — other parse divergence (318)
+### B-STRUCTURE — other parse divergence (347)
 
 Element structure that differs for reasons not covered above: remark-mdc/micromark and comark/markdown-exit disagree on
 the block or inline structure (task list markers `[ ]` vs `[]`, emphasis runs, lazy continuation, attribute spans, nested
@@ -320,54 +320,106 @@ like the paragraph's children). Number/string attribute values that render the s
 | `RENDER` | the inputs are equal but the text differs (not expected; 0 on T-stable y) |
 | `FM-OTHER` / `B-STRUCTURE` | a difference no specific rule explains |
 
+## 5. The Kotlin emulation
+
+`StudioDbPath.emulate(y, collection)` (`src/main/kotlin/cz/xprees/comark/format/studio/StudioDbPath.kt`) computes D(y) for
+a T-normal y without Node. It does not port micromark or remark-mdc: it starts from the text path's own tree of y
+(`StudioTreeBuilder`, the tree T renders back to y) and applies the rules of sections 2 and 3 as tree and front matter
+transformations, then renders with the same renderer as T. `emulateOutcome` tells the three results apart: `Written`,
+`NoDocument` (Studio has none: an invalid date or number, a `seo` that is not an object) and `Unsupported` with a `Reason`.
+
+What it follows exactly:
+
+- **Front matter** (`StudioDbFrontMatter`): `flat.unflatten`, `contentHeading` (title from the first h1, description from
+  the paragraph after it, read from the compiled body before `mdcToComark` wraps inline runs), the `createParser` split into
+  columns and `meta`, the `seo` defaults, `pathMeta`'s title from the file name, column defaults, the SQL round trip of
+  every column type (`StudioCollection.ColumnType`), the JSON round trip, and `cleanDataKeys`.
+- **Attributes** (`StudioDbBody`): remark-mdc's names as the renderer's output is read back (inline syntax kebab-cased,
+  bare attributes bound to `"true"` on components and spans but `""` on links and images, YAML props through `bindData`),
+  `rehype-sort-attributes` with document-wide counts, hast-util-raw's `class` and `data-*` renaming, `validateProps`
+  (`on*`, unsafe URLs, `name` beside `:name`, Vue option keys), and `propsMDCToComark`.
+- **Text and structure**: literal autolinks (`StudioDbAutolink`, the shape both remark-gfm parts agree on), relative `.md`
+  links (`normaliseLink` with slugify), trailing whitespace before line endings, text nodes of line endings only and
+  whitespace-only paragraphs dropped, list item paragraphs merged in loose lists (looseness taken from markdown-it's own
+  tight flag, `StudioTreeBuilder.listTightness`) and the `"\n"` kept before a nested block in tight ones,
+  `normalizeMdcChildren`, paragraphs re-wrapped where comark auto-unwrapped them, `#default` slots unwrapped, code info
+  strings re-read with `parseThematicBlock` (`detab`, highlights joined), and table alignment dropped.
+
+What it declines (`StudioDbPath.Reason`), because the parsers read it differently in ways the port does not follow: raw
+HTML and comments, attributes on Markdown blocks, HTML attribute names hast-util-raw parses (booleans, numbers, lists),
+URLs outside a plain subset, components named like HTML elements parse5 treats specially, components starting with
+`---`, props `flat.unflatten` changes, slots in odd places, components in list items, empty code blocks (their output
+depends on the project's highlight theme), and inline constructs only one parser knows or reads with other boundaries:
+`{{ }}` bindings, e-mail addresses and other autolinks, footnotes, emoji shortcodes, emphasis next to non-ASCII symbols,
+multi-line or nested `[spans]`, inline components where remark-mdc reads them as blocks or with other names, unescaped
+punctuation in table cells, lines of colons that Studio's container repair reads as closing markers, and lists or indented
+code after a nested component.
+
+In the `data` configuration the emulation writes (or reports Studio's missing document) for 178 of the 279 T-stable y
+from the oracle corpus (hand-written documents, test data files and their mutations; the declined ones have HTML, comments,
+empty code blocks, components in list items, control characters and similar constructs) and for 1777 of the 3559 from
+`text-vectors.json`, whose random punctuation is mostly outside the domain on purpose.
+
+### Verification
+
+`StudioDbPathDifferentialTest` runs the emulation on every vector of `db-vectors.json` under its three configurations and
+pins the count of every outcome category; there are no mismatches: wherever the emulation writes a text, it is Studio's
+D(y) byte for byte, and wherever Studio has no document, the emulation says so or declines. The vectors include
+`db-reproducers.json` (see README.md): documents from a seeded local fuzz run of about 350,000 generated documents (corpus
+windows mutated with Markdown punctuation, and structured random documents with components, props, lists, links, code
+blocks, tables and front matter, each taken through T and kept when T(y) == y) on which the emulation differed from
+Studio while it was developed, with documents of the same categories, plus hand-written probes.
+
 ## Statistics
 
-From `db-vectors.json` (4753 distinct y; 3966 of them T-stable, T(y) == y). Configurations: `pageDefault` (page
+From `db-vectors.json` (4839 distinct y; 4052 of them T-stable, T(y) == y). Configurations: `pageDefault` (page
 collection, Studio's default schema), `pageSchema` (page collection with `date`, `author`, `tags`, `image`, `order`,
 `draft` (default `false`)), `data` (data collection). Counts over **T-stable y**:
 
 | | pageDefault | pageSchema | data |
 |---|---:|---:|---:|
-| D has no document | 23 | 35 | 23 |
-| D(y) == y | 330 | 0 | 2388 |
-| T(D(y)) == D(y) | 3645 / 3943 | 3633 / 3931 | 3645 / 3943 |
-| D(D(y)) == D(y) | 3632 / 3943 | 3619 / 3931 | 3636 / 3943 |
-| both (D(y) is a dual fixed point) | 3580 / 3943 | 3567 / 3931 | 3584 / 3943 |
+| D has no document | 23 | 38 | 23 |
+| D(y) == y | 333 | 0 | 2393 |
+| T(D(y)) == D(y) | 3708 / 4029 | 3694 / 4014 | 3708 / 4029 |
+| D(D(y)) == D(y) | 3694 / 4029 | 3679 / 4014 | 3698 / 4029 |
+| both (D(y) is a dual fixed point) | 3638 / 4029 | 3623 / 4014 | 3642 / 4029 |
 
 D(y) != y by rule (T-stable y; a document can have several rules):
 
 | rule | pageDefault | pageSchema | data |
 |------|---:|---:|---:|
-| FM-DEFAULT | | 3917 | |
-| FM-TITLE-FILE | 2688 | 2682 | |
-| FM-DESCRIPTION | 2061 | 2052 | |
-| FM-TITLE-H1 | 114 | 108 | |
-| FM-JSON | 52 | 52 | 52 |
-| FM-COERCE | 4 | 34 | |
-| FM-KEY-ORDER | 19 | 32 | |
-| FM-DROP-NULL / -EMPTY-LIST / -NAVIGATION / -EMPTY-TITLE | 13 / 9 / 5 / 4 | 13 / 9 / 5 / 6 | 13 / 9 / 0 / 4 |
-| FM-UNFLATTEN, FM-SEO, FM-RESERVED, FM-EXCERPT | 8, 4, 3, 2 | 8, 4, 3, 2 | 8, 0, 3, 2 |
-| FM-YAML, FM-OTHER | 11, 11 | 11, 11 | 11, 11 |
-| B-STRUCTURE | 389 | 394 | 318 |
-| B-ATTR-ORDER | 272 | 284 | 197 |
-| B-WHITESPACE | 258 | 261 | 253 |
-| B-HTML | 245 | 245 | 245 |
-| B-CODE | 188 | 188 | 187 |
-| B-ATTR-OTHER | 180 | 187 | 153 |
-| B-ATTR-UNBIND | 131 | 140 | 109 |
+| FM-DEFAULT |  | 3998 |  |
+| FM-TITLE-FILE | 2746 | 2740 |  |
+| FM-DESCRIPTION | 2094 | 2083 |  |
+| FM-TITLE-H1 | 117 | 111 |  |
+| FM-JSON | 53 | 52 | 53 |
+| FM-COERCE | 9 | 40 |  |
+| FM-KEY-ORDER | 24 | 37 |  |
+| FM-DROP-NULL / -EMPTY-LIST / -NAVIGATION / -EMPTY-TITLE | 14 / 15 / 6 / 4 | 14 / 14 / 6 / 6 | 14 / 15 / 0 / 4 |
+| FM-UNFLATTEN, FM-SEO, FM-RESERVED, FM-EXCERPT | 10, 4, 6, 2 | 10, 4, 6, 2 | 10, 0, 6, 2 |
+| FM-YAML, FM-OTHER | 11, 17 | 11, 16 | 11, 16 |
+| B-STRUCTURE | 418 | 422 | 347 |
+| B-WHITESPACE | 276 | 279 | 271 |
+| B-HTML | 249 | 249 | 249 |
+| B-ATTR-ORDER | 301 | 313 | 225 |
+| B-CODE | 189 | 189 | 188 |
+| B-ATTR-OTHER | 206 | 213 | 179 |
 | B-COMPONENT-HR | 124 | 124 | 124 |
-| B-TEXT | 104 | 104 | 104 |
-| B-AUTOLINK | 91 | 91 | 91 |
-| B-BRACKET-SPAN | 70 | 70 | 70 |
+| B-ATTR-UNBIND | 142 | 151 | 120 |
+| B-TEXT | 106 | 106 | 106 |
+| B-AUTOLINK | 97 | 97 | 97 |
+| B-BRACKET-SPAN | 71 | 71 | 71 |
 | B-INLINE-COMPONENT | 63 | 63 | 63 |
 | B-COMMENT | 38 | 38 | 38 |
-| B-LI-PARAGRAPHS | 25 | 25 | 25 |
-| B-BINDING | 22 | 22 | 22 |
-| B-CODE-HIGHLIGHTS | 21 | 21 | 19 |
-| B-SLOT | 11 | 11 | 11 |
-| B-LINK-MD, B-TABLE-ALIGN | 10, 10 | 10, 10 | 10, 10 |
-| B-EMOJI, B-ATTR-CAMEL, B-CLOSING-MARKER | 6, 5, 4 | 6, 5, 4 | 6, 5, 4 |
-| B-ATTR-ENTITY, B-ATTR-REL, B-ATTR-UNSAFE | 3, 3, 3 | 3, 3, 3 | 3, 3, 3 |
+| B-LI-PARAGRAPHS | 34 | 34 | 34 |
+| B-BINDING | 27 | 27 | 27 |
+| B-CODE-HIGHLIGHTS | 22 | 22 | 20 |
+| B-LINK-MD | 16 | 16 | 16 |
+| B-SLOT | 16 | 16 | 16 |
+| B-ATTR-CAMEL | 14 | 14 | 14 |
+| B-TABLE-ALIGN | 14 | 14 | 14 |
+| B-EMOJI, B-ATTR-REL, B-ATTR-UNSAFE | 7, 5, 5 | 7, 5, 5 | 7, 5, 5 |
+| B-CLOSING-MARKER, B-ATTR-ENTITY | 4, 3 | 4, 3 | 4, 3 |
 
 The body counts are higher for the page configurations because there nearly every document is classified (its front
 matter changes), so tree differences that happen not to change the text (for example the order of a code block's
@@ -376,16 +428,16 @@ changes.
 
 Reading the numbers:
 
-- For **page collections D almost never leaves y alone** (330 of 3943), and essentially always because of the front
+- For **page collections D almost never leaves y alone** (333 of 4029), and essentially always because of the front
   matter: the injected title (from the first h1 or the file name) and description, plus schema defaults. These are exact,
   data-only rules (section 2) that do not depend on the body parse beyond `contentHeading`.
-- With the front matter out of the way (`data`), **D(y) == y for 61% of T-stable documents**. The body rules that change
+- With the front matter out of the way (`data`), **D(y) == y for 59% of T-stable documents**. The body rules that change
   the remaining ones are dominated by attribute order (B-ATTR-ORDER), whitespace in code and lists, raw HTML, code blocks
   and parse divergences. Several of these (raw HTML, comments, components in list items, table alignment, highlights) are
   blocks the IDE already keeps verbatim.
-- **D's output is itself a dual fixed point for about 91%** of documents (3580 of 3943): T(D(y)) == D(y) and D(D(y)) ==
+- **D's output is itself a dual fixed point for about 90%** of documents (3638 of 4029): T(D(y)) == D(y) and D(D(y)) ==
   D(y). Where it is not, D(y) is not the stable target, and decision 1 (prefer the text-path form) applies.
-- The Kotlin text path (`StudioFormatter.format`) reproduces T on all 4753 y and on all 11317 recorded D(y) != y
+- The Kotlin text path (`StudioFormatter.format`) reproduces T on all 4839 y and on all 11564 recorded D(y) != y
   (`StudioDbVectorsTest`).
 
 ## Fidelity
