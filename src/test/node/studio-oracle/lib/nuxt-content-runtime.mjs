@@ -1,4 +1,4 @@
-// Derived from @nuxt/content 3.16.2 (MIT, Copyright (c) NuxtLabs); used only to record test data.
+// Derived from @nuxt/content 3.16.2 (MIT, Copyright (c) Nuxt Project); used only to record test data.
 // Stand-in for '@nuxt/content/runtime' as imported by nuxt-studio 1.8.0 utils/document/legacy.js:1.
 // Verbatim copy of the functions legacy.js uses from @nuxt/content 3.16.2 dist/runtime/index.js
 // (@nuxt/content itself is not installed: it pulls in Nuxt, a SQLite driver and the module builder).

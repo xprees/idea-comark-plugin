@@ -41,6 +41,29 @@ matter `renderMarkdown` receives (`tree`, `frontmatter`) and the text Studio wri
 Studio throws. One vector per line; recording twice gives identical bytes. `--count`, `--chars`, `--yaml`, `--seed`,
 `--mutations` and `--out` record other sets (for example a larger local fuzz run).
 
+`record-db-vectors.mjs` (Gradle: `recordStudioDbVectors`) records `db-vectors.json`, the ground truth for emulating the
+database path D on documents the IDE writes. For every oracle input and every `text-vectors.json` input where T succeeds,
+plus 128 front matter probes (`FM_PROBES` × `FM_BODIES`), it takes y = T(x) (each distinct y once) and records T(y) and,
+under three collection configurations, D(y), T(D(y)) and D(D(y)). The configurations are `pageDefault` (a page collection
+with Nuxt Content's standard schema), `pageSchema` (a page collection whose schema adds `date: z.date()`, `author`,
+`tags`, `image`, `order: z.number()` and `draft: z.boolean().default(false)`) and `data` (a data collection); the content
+id, whose file name decides an injected title, cycles through `files`. [DB-PATH.md](DB-PATH.md) describes every rule D
+applies, and each vector lists the rules that explain D(y) != y (`lib/db-diff.mjs`). One vector per line:
+
+| field | meaning |
+|-------|---------|
+| `y`, `source`, `inputs` | the document, the first input x with T(x) = y (`oracle:<case>`, `text-vectors:<index>`, `fm-probe:<i>.<j>`), and how many inputs gave it |
+| `yStable`, `ty` | T(y) == y; T(y) when not (a string or `{"error": ...}`) |
+| `<config>.id` | the content id used |
+| `<config>.d` | D(y), present when it differs from y; `{"error": ...}` when Studio has no document (Nuxt Content's parse failed, or a value does not fit its column) |
+| `<config>.dEqualsY`, `tOfDEqualsD`, `dOfDEqualsD` | D(y) == y, T(D(y)) == D(y), D(D(y)) == D(y) |
+| `<config>.td`, `dd` | T(D(y)) and D(D(y)), present when they differ from D(y) |
+| `<config>.rules` | the DB-PATH.md rule ids explaining D(y) != y |
+
+The header's `summary` has the counts per configuration, over all y and over T-stable y (`onTStable`), and the most
+frequent unexplained structure differences (`structureNotes`). `StudioDbVectorsTest` checks the file against the vectors
+and prints the statistics; `StudioDbVectors` loads it. Recording takes about two minutes and is deterministic.
+
 ## What runs
 
 All versions are pinned exactly in `package.json` and `package-lock.json`: nuxt-studio 1.8.0, comark 0.7.0, js-yaml 5.5.0,
@@ -106,8 +129,9 @@ instead.
 
 Top-level `studioFiles` and `rendererFiles` hold the sha256 of every nuxt-studio, comark and js-yaml file that ran (the
 renderer's files are those `comark/render` and comark's `internal/yaml.js` load). Recording stops when they differ from the
-published files (pass `--allow-other-studio` or `--allow-other-renderer` to record anyway), and `StudioOracleCorpusTest`
-compares them with its own copy of the published hashes.
+published files (pass `--allow-other-studio` or `--allow-other-renderer` to record anyway; the expected hashes live in
+`lib/pins.mjs`, shared with `record-db-vectors.mjs`), and `StudioOracleCorpusTest` compares them with its own copy of the
+published hashes (`StudioDbVectorsTest` requires `db-vectors.json` to carry the same ones).
 
 Values are encoded by `lib/encode.mjs`. Values that JSON cannot hold are written as
 `{"$type": "date" | "number" | "undefined" | "bigint", "value": ...}`, for example YAML timestamps (`Date`) and `.nan` or
@@ -122,8 +146,9 @@ integer-like keys come first, as the renderer sees them.
   - no user remark or rehype plugins;
   - no `content.build.markdown` options;
   - the default path meta;
-  - the standard page schema (`title`, `description`, `path`, `seo`, `body`, `navigation`) or the bare data schema, with no
-    custom schema fields;
+  - the standard page schema (`title`, `description`, `path`, `seo`, `body`, `navigation`) or the bare data schema, plus
+    optional user fields given as `opts.schema` (`{ name, type, default }`, with the SQL conversion of their column type;
+    used by `record-db-vectors.mjs`; `record.mjs` uses none);
   - `collection = null` in `sanitizeDocumentTree`, so keys hidden in the editor are not stripped.
 
   The SQLite round trip is emulated as a JSON round trip, with VARCHAR columns passed through `String()`.

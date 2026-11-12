@@ -130,3 +130,12 @@ COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
 INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## Test tooling (not shipped)
+
+The Nuxt Studio oracle recorders under `src/test/node/studio-oracle` contain code derived from these MIT-licensed projects;
+they only run to record test data:
+
+- @nuxt/content 3.16.2 (`lib/nuxt-content-parse.mjs`: the markdown parse options, path meta, schema split, SQL value
+  conversion and `formatDate`/`formatDateTime`; `lib/nuxt-content-runtime.mjs`): Copyright (c) Nuxt Project.
+- Comark 0.7.0 (`lib/db-diff.mjs`: `applyAutoUnwrap`): Copyright (c) 2026 Comark team and contributors.

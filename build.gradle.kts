@@ -220,6 +220,13 @@ tasks.register<Exec>("recordStudioTextVectors") {
     workingDir = studioOracleDir.asFile
     commandLine("node", "record-text-vectors.mjs")
 }
+tasks.register<Exec>("recordStudioDbVectors") {
+    group = "verification"
+    description = "Records src/test/testData/studio/db-vectors.json: Nuxt Studio's database path on text-path output, under Node."
+    dependsOn(installStudioOracle)
+    workingDir = studioOracleDir.asFile
+    commandLine("node", "record-db-vectors.mjs")
+}
 
 tasks {
     named("signPlugin") { dependsOn(checkPublishable) }
