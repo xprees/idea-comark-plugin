@@ -19,10 +19,12 @@ import cz.xprees.comark.ComarkBundle
 import cz.xprees.comark.lang.ComarkFileType
 import cz.xprees.comark.lang.ComarkLanguage
 import java.awt.BorderLayout
+import java.text.ParseException
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JSpinner
 import javax.swing.SpinnerNumberModel
+import javax.swing.text.DefaultFormatter
 
 /**
  * The *Style* tab of *Settings › Editor › Code Style › Comark*: the style preset and the options of the custom style
@@ -40,8 +42,8 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
     private val emphasis = combo(EmphasisMarker.entries) { "${it.char}text${it.char}" }
     private val strong = combo(EmphasisMarker.entries) { "${it.char}${it.char}text${it.char}${it.char}" }
     private val fence = combo(FenceMarker.entries) { it.char.toString().repeat(3) }
-    private val blankLines = JSpinner(SpinnerNumberModel(1, 1, ComarkCodeStyleSettings.MAX_BLANK_LINES_LIMIT, 1))
-    private val propsInline = JSpinner(SpinnerNumberModel(3, 0, ComarkCodeStyleSettings.PROPS_INLINE_MAX_LIMIT, 1))
+    internal val blankLines = spinner(1, 1, ComarkCodeStyleSettings.MAX_BLANK_LINES_LIMIT)
+    internal val propsInline = spinner(3, 0, ComarkCodeStyleSettings.PROPS_INLINE_MAX_LIMIT)
     private val sortProps = JBCheckBox(ComarkBundle.message("codestyle.style.sort.props"))
     private val frontMatter = combo(FrontMatterMode.entries) {
         ComarkBundle.message(
@@ -112,6 +114,14 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
     private fun <T> combo(values: List<T>, text: (T) -> String): ComboBox<T> =
         ComboBox(CollectionComboBoxModel(values)).apply { renderer = SimpleListCellRenderer.create { label, value, _ -> label.text = value?.let(text) ?: "" } }
 
+    /**
+     * A number spinner that takes a typed number as soon as it is valid: by default a spinner keeps it in its text field until
+     * Enter or a focus change, so OK, Apply and the preview would still see the old value.
+     */
+    private fun spinner(value: Int, min: Int, max: Int): JSpinner = JSpinner(SpinnerNumberModel(value, min, max, 1)).apply {
+        ((editor as? JSpinner.DefaultEditor)?.textField?.formatter as? DefaultFormatter)?.commitsOnValidEdit = true
+    }
+
     private fun comment(text: String) = JBLabel(text).apply {
         componentStyle = UIUtil.ComponentStyle.SMALL
         fontColor = UIUtil.FontColor.BRIGHTER
@@ -142,6 +152,13 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
     }
 
     private fun write(target: ComarkCodeStyleSettings) {
+        // a number still being typed (out of range, say) is taken if valid, else the last valid one is kept
+        for (spinner in listOf(blankLines, propsInline)) {
+            try {
+                spinner.commitEdit()
+            } catch (_: ParseException) {
+            }
+        }
         target.STYLE_PRESET = preset.item ?: ComarkStylePreset.VSCODE
         target.BULLET_MARKER = bullet.item ?: BulletMarker.DASH
         target.ORDERED_DELIMITER = ordered.item ?: OrderedDelimiter.DOT

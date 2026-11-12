@@ -2,17 +2,6 @@
 
 ## [Unreleased]
 
-### Changed
-
-- Nuxt Studio style: blocks that Studio's code editor rewrites because a damaged block before them runs into them (a kept
-  raw HTML block or `::a` component swallowing the next heading, for example) are now reported with *Nuxt Studio will rewrite
-  this*, naming the line of the block that causes it. The formatter finds them by running its exact port of the code editor's
-  save on its own output. Against the real nuxt-studio 1.8.0, the documents of the test corpora that Studio changes outside the
-  reported blocks drop from 138 to 40, none of them on the code editor's path
-- The raw HTML warning says when a tag is never closed (`<Counter />` included, since HTML ignores the `/>` of a non-void
-  element): Studio's database path puts everything after it inside that element. The footnote warning says the definitions move
-  to a section at the end of the document
-
 ### Added
 
 - *Code Style › Comark › Style*: Reformat Code can write the **Nuxt Studio** style, next to the VS Code formatter (the default).
@@ -37,6 +26,22 @@
   per version
 - Projects that depend on nuxt-studio and still use the VS Code style (and do not set the preset in `.editorconfig`) are
   offered the Nuxt Studio style once (*Use Nuxt Studio style*, *Not now*, *Don't ask again*)
+
+### Changed
+
+- Nuxt Studio style: blocks that Studio's code editor rewrites because a damaged block before them runs into them (a kept
+  raw HTML block or `::a` component swallowing the next heading, for example) are now reported with *Nuxt Studio will rewrite
+  this*, naming the line of the block that causes it. The formatter finds them by running its exact port of the code editor's
+  save on its own output. Against the real nuxt-studio 1.8.0, the documents of the test corpora that Studio changes outside the
+  reported blocks drop from 138 to 40, none of them on the code editor's path
+- The raw HTML warning says when a tag is never closed (`<Counter />` included, since HTML ignores the `/>` of a non-void
+  element): Studio's database path puts everything after it inside that element. The footnote warning says the definitions move
+  to a section at the end of the document
+
+### Fixed
+
+- *Code Style › Comark › Style*: a number typed into *Inline props, at most* or *Blank lines between blocks* is now saved when you
+  click OK or Apply right away; before, it was taken only after Enter or leaving the field, so Reformat Code kept the old value
 
 ## [2026.3.8] - 2026-11-11
 

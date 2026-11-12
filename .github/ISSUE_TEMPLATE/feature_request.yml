@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest something the plugin should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should the plugin do? A Markdown example of the input and the result helps.
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: Reference behaviour
+      description: How do Nuxt Content, Nuxt Studio, the comark parser or the VS Code extension handle it? Links to docs or source are welcome.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Workarounds you use now, or other ways to solve it.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to implement this myself (see CONTRIBUTING.md)
