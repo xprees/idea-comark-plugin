@@ -110,7 +110,7 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
     }
 
     private fun <T> combo(values: List<T>, text: (T) -> String): ComboBox<T> =
-        ComboBox(CollectionComboBoxModel(values)).apply { renderer = SimpleListCellRenderer.create("") { value -> value?.let(text) ?: "" } }
+        ComboBox(CollectionComboBoxModel(values)).apply { renderer = SimpleListCellRenderer.create { label, value, _ -> label.text = value?.let(text) ?: "" } }
 
     private fun comment(text: String) = JBLabel(text).apply {
         componentStyle = UIUtil.ComponentStyle.SMALL

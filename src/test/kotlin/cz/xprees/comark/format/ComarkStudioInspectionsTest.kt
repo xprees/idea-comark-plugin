@@ -137,6 +137,19 @@ class ComarkStudioInspectionsTest : BasePlatformTestCase() {
         assertTrue(problem.description, problem.description.startsWith("Nuxt Studio may rewrite this"))
     }
 
+    fun testBlocksADamagedBlockRunsIntoAreReported() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
+        val problems = allProblems("---\ntitle: T\ndescription: D\n---\n\n::a\n::\n\n> - two\n")
+        val affected = problems.single { it.text() == "> - two" }
+        assertTrue(affected.description, affected.description.startsWith("Nuxt Studio will rewrite this"))
+        assertTrue(affected.description, "block at line 6" in affected.description)
+        assertTrue(problems.any { it.text() == "::a" })
+    }
+
+    fun testAnUnclosedHtmlTagIsNamedInTheWarning() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
+        val problem = allProblems("---\ntitle: T\ndescription: D\n---\n\n<Counter :count=\"1\" />\n\nText after\n").single()
+        assertTrue(problem.description, "never closed" in problem.description)
+    }
+
     fun testConversionsOfTheAdapter() {
         val text = "x &amp;amp; :+1: &unknown; &#x27; :a:smile:"
         val conversions = StudioStyleAdapter.conversions(text, 0, text.length)

@@ -16,7 +16,9 @@ import java.io.File
  * The test first checks that the engine still writes every recorded y (when it does not, the vectors are stale: write the
  * inputs with `STUDIO_STYLE_INPUTS=<file>` and record again, see the oracle README). Then every document lands in one
  * category per save path: unchanged; changed only inside the blocks the result reports (kept verbatim, unstable, or not
- * verified against the database path); or changed elsewhere, labelled by how ([StudioDbRewrite]: damaging or markup only).
+ * verified against the database path, or affected by a damaged block before them); or changed elsewhere, labelled by how
+ * ([StudioDbRewrite]: damaging or markup only). For the database path, the lines after a block kept for an unclosed HTML tag
+ * and the end of a document with a kept footnote count as reported: the warnings on those blocks say Studio changes them.
  * The counts are pinned; they are the residual differences against real Studio, not against the emulation.
  */
 class StudioStyleOracleTest {
@@ -60,9 +62,15 @@ class StudioStyleOracleTest {
             r.keptBlocks.forEach { reported += it.outputLines }
             r.unstableBlocks.forEach { reported += it.outputLines }
             r.unverifiedBlocks.forEach { reported += it.outputLines }
+            r.affectedBlocks.forEach { reported += it.outputLines }
+            // what the warnings on kept blocks say about the database path: an unclosed HTML tag takes in the rest of the
+            // document, and footnote definitions move to a section appended at its end
+            val lineCount = r.text.split("\n").size
+            val reportedForD = HashSet(reported)
+            r.keptBlocks.filter { StudioRewriteReason.UNCLOSED_HTML_TAG in it.reasons }.minOfOrNull { it.outputLines.first }?.let { reportedForD += it until lineCount }
             val hunks = ArrayList<String>()
             val t = path(r.text, v, "t", reported, "T", hunks)
-            val d = path(r.text, v, "d", reported, "D", hunks)
+            val d = path(r.text, v, "d", reportedForD, "D", hunks, appendsAtEnd = r.keptBlocks.any { StudioRewriteReason.FOOTNOTE in it.reasons })
             add("T: $t | D: $d", "${doc.name}\n" + hunks.joinToString("\n"))
         }
         if (inputsFile != null) {
@@ -84,7 +92,7 @@ class StudioStyleOracleTest {
     }
 
     /** How the recorded save path ([key]: `t` or `d`) changes [y]: one of the category labels. */
-    private fun path(y: String, v: JsonObject, key: String, reported: Set<Int>, label: String, hunks: MutableList<String>): String {
+    private fun path(y: String, v: JsonObject, key: String, reported: Set<Int>, label: String, hunks: MutableList<String>, appendsAtEnd: Boolean = false): String {
         if (v["${key}EqualsY"].asBoolean) return "unchanged"
         val out = v[key]
         if (out == null || !out.isJsonPrimitive) {
@@ -98,10 +106,14 @@ class StudioStyleOracleTest {
         var outside = false
         while (c != null) {
             val deleted = (c.line0 until c.line0 + c.deleted).toList()
+            // the footnote section the database path appends after the last block
+            if (appendsAtEnd && c.deleted == 0 && yLines.subList(c.line0, yLines.size).all { it.isBlank() }) {
+                c = c.link
+                continue
+            }
             val content = deleted.filter { yLines.getOrNull(it)?.isNotBlank() == true }
             // content lines must lie in reported blocks; blank lines and insertions must at least border one
-            val bordersReported = (c.line0 - 1) in reported || (c.line0 + c.deleted) in reported || deleted.any { it in reported }
-            if (content.any { it !in reported } || content.isEmpty() && !bordersReported) {
+            if (content.any { it !in reported } || content.isEmpty() && !StudioStyle.bordersReported(yLines, c.line0, c.deleted, reported)) {
                 if (!outside) {
                     hunks += "$label: " + yLines.subList(c.line0, c.line0 + c.deleted).joinToString("\\n") + "  ==>  " +
                         otherLines.subList(c.line1, c.line1 + c.inserted).joinToString("\\n")
@@ -132,25 +144,18 @@ class StudioStyleOracleTest {
 
         /** Every oracle and random document by what real Studio's two save paths do to its formatted text. */
         val REAL_STUDIO = mapOf(
-            "T: T CHANGES OTHER LINES (damaging, ATTRIBUTES) | D: changes only reported blocks" to 2,
-            "T: T CHANGES OTHER LINES (damaging, STRUCTURE) | D: changes only reported blocks" to 5,
-            "T: T CHANGES OTHER LINES (damaging, TEXT) | D: D CHANGES OTHER LINES (damaging, TEXT)" to 2,
-            "T: T CHANGES OTHER LINES (damaging, TEXT) | D: changes only reported blocks" to 39,
-            "T: T CHANGES OTHER LINES (markup only, MARKUP) | D: changes only reported blocks" to 3,
-            "T: changes only reported blocks | D: D CHANGES OTHER LINES (damaging, ATTRIBUTES)" to 2,
-            "T: changes only reported blocks | D: D CHANGES OTHER LINES (damaging, STRUCTURE)" to 4,
-            "T: changes only reported blocks | D: D CHANGES OTHER LINES (damaging, TEXT)" to 67,
+            "T: changes only reported blocks | D: D CHANGES OTHER LINES (damaging, TEXT)" to 31,
             "T: changes only reported blocks | D: D CHANGES OTHER LINES (unclassified)" to 1,
-            "T: changes only reported blocks | D: changes only reported blocks" to 1876,
+            "T: changes only reported blocks | D: changes only reported blocks" to 1969,
             "T: changes only reported blocks | D: throws (a kept or reported block)" to 33,
             "T: changes only reported blocks | D: unchanged" to 11,
-            "T: throws (a kept or reported block) | D: D CHANGES OTHER LINES (unclassified)" to 4,
-            "T: throws (a kept or reported block) | D: changes only reported blocks" to 594,
+            "T: throws (a kept or reported block) | D: D CHANGES OTHER LINES (unclassified)" to 3,
+            "T: throws (a kept or reported block) | D: changes only reported blocks" to 595,
             "T: throws (a kept or reported block) | D: throws (a kept or reported block)" to 54,
             "T: throws (a kept or reported block) | D: unchanged" to 5,
-            "T: unchanged | D: D CHANGES OTHER LINES (damaging, STRUCTURE)" to 3,
-            "T: unchanged | D: D CHANGES OTHER LINES (damaging, TEXT)" to 6,
-            "T: unchanged | D: changes only reported blocks" to 664,
+            "T: unchanged | D: D CHANGES OTHER LINES (damaging, STRUCTURE)" to 2,
+            "T: unchanged | D: D CHANGES OTHER LINES (damaging, TEXT)" to 3,
+            "T: unchanged | D: changes only reported blocks" to 668,
             "T: unchanged | D: throws (a kept or reported block)" to 6,
             "T: unchanged | D: unchanged" to 2119,
             "not parsed" to 1,
