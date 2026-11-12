@@ -58,7 +58,7 @@ class ComarkStudioVersionNotificationProvider : EditorNotificationProvider, Dumb
          */
         fun mismatch(project: Project, file: VirtualFile): String? {
             if (project.isDisposed || !file.isValid) return null
-            val usesStudio = ReadAction.compute<Boolean, RuntimeException> {
+            val usesStudio = ReadAction.computeBlocking<Boolean, RuntimeException> {
                 val psi = PsiManager.getInstance(project).findFile(file)
                 psi is ComarkFile && ComarkStyle.of(psi).usesStudio
             }
