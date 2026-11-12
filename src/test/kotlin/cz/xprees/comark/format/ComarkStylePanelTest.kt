@@ -8,6 +8,7 @@ import com.intellij.psi.codeStyle.CommonCodeStyleSettings
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import cz.xprees.comark.lang.ComarkLanguage
 import cz.xprees.comark.psi.ComarkFile
+import javax.swing.JSpinner
 
 /** The Style tab ([ComarkStylePanel]) and the settings preview. */
 class ComarkStylePanelTest : BasePlatformTestCase() {
@@ -36,6 +37,29 @@ class ComarkStylePanelTest : BasePlatformTestCase() {
             assertEquals(ComarkStylePreset.NUXT_STUDIO, panel.preset.item)
             panel.apply(settings)
             assertEquals(CommonCodeStyleSettings.WrapOnTyping.NO_WRAP.intValue, settings.getCommonSettings(ComarkLanguage).WRAP_ON_TYPING)
+        } finally {
+            Disposer.dispose(panel)
+        }
+    }
+
+    fun testTypedNumbersAreAppliedWithoutEnter() {
+        val settings = CodeStyle.createTestSettings()
+        ComarkCodeStyleSettings.getInstance(settings).STYLE_PRESET = ComarkStylePreset.CUSTOM
+        val panel = ComarkStylePanel(null, settings)
+        try {
+            panel.reset(settings)
+            // typed into the text fields, with no Enter or focus change before OK
+            (panel.propsInline.editor as JSpinner.DefaultEditor).textField.text = "0"
+            (panel.blankLines.editor as JSpinner.DefaultEditor).textField.text = "2"
+            assertTrue(panel.isModified(settings))
+            panel.apply(settings)
+            val custom = ComarkCodeStyleSettings.getInstance(settings)
+            assertEquals(0, custom.PROPS_INLINE_MAX)
+            assertEquals(2, custom.MAX_BLANK_LINES)
+            // a number out of range is not taken; the last valid one is kept
+            (panel.propsInline.editor as JSpinner.DefaultEditor).textField.text = "99"
+            panel.apply(settings)
+            assertEquals(0, custom.PROPS_INLINE_MAX)
         } finally {
             Disposer.dispose(panel)
         }
