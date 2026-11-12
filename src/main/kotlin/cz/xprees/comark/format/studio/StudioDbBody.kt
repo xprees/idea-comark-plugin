@@ -77,7 +77,12 @@ internal object StudioDbBody {
      */
     class Body(val nodes: List<StudioNode>, val compiledRoot: List<StudioNode>)
 
-    fun transform(input: List<StudioNode>, textStyles: Map<StudioElement, ComponentStyle>, listTightness: List<Boolean?>): Body {
+    fun transform(
+        input: List<StudioNode>,
+        textStyles: Map<StudioElement, ComponentStyle>,
+        listTightness: List<Boolean?>,
+        sortAttributes: Boolean = true,
+    ): Body {
         Checker(textStyles).children(input, null, false)
         val styles = IdentityHashMap(textStyles)
         val nodes = input.map { autolinks(it, styles) }
@@ -94,7 +99,7 @@ internal object StudioDbBody {
             n.children.forEach { collect(it) }
         }
         nodes.forEach { collect(it) }
-        val converter = Converter(raw, counts, styles, listTightness)
+        val converter = Converter(raw, counts, styles, listTightness, sortAttributes)
         val root = converter.children(nodes, normalize = false)
         if (converter.lists != listTightness.size) unsupported(Reason.LIST, "lists the text path's tokens do not match")
         return Body(normalizeMdcChildren(root), root)
@@ -566,6 +571,7 @@ internal object StudioDbBody {
         val counts: Map<String, Map<String, Int>>,
         val styles: Map<StudioElement, ComponentStyle>,
         val tightness: List<Boolean?>,
+        val sortAttributes: Boolean,
     ) {
         /** Lists converted so far, in document order (the order of [tightness]). */
         var lists = 0
@@ -614,7 +620,7 @@ internal object StudioDbBody {
             val props = raw.getValue(el)
             if (el.tag == "a") props["href"]?.let { props["href"] = normaliseLink(it as String) }
             val count = counts.getValue(el.tag)
-            val order = props.keys.sortedWith { a, b ->
+            val order = if (!sortAttributes) props.keys.toList() else props.keys.sortedWith { a, b ->
                 val d = (count[b] ?: 0) - (count[a] ?: 0)
                 if (d != 0) d else compareNames(a, b)
             }
@@ -788,7 +794,7 @@ internal object StudioDbBody {
 
     // ---- Nuxt Content's link handler (module.mjs normaliseLink / generatePath) ------------------------------------------
 
-    private fun normaliseLink(link: String): String {
+    internal fun normaliseLink(link: String): String {
         val hash = Regex("#${StudioJs.RE_DOT}+\\z").find(link)?.value ?: ""
         val withoutHash = Regex("#${StudioJs.RE_DOT}+\\z").replaceFirst(link, "")
         val relative = Regex("^\\.{1,2}(/|\\z)").containsMatchIn(link)

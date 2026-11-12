@@ -440,6 +440,28 @@ Reading the numbers:
 - The Kotlin text path (`StudioFormatter.format`) reproduces T on all 4839 y and on all 11564 recorded D(y) != y
   (`StudioDbVectorsTest`).
 
+## The Studio code style
+
+`StudioStyle.format` (in `src/main/kotlin/cz/xprees/comark/format/studio/StudioStyle.kt`) is the formatter built on this
+emulation. It aims for a dual fixed point per block: a form y with T(y) == y and D(y) == y.
+
+1. It starts from `formatPreserving`: the text path's rendering, with the blocks Studio damages kept verbatim.
+2. It runs the rendered blocks and the front matter through `StudioDbPath`. Kept blocks are left out of that document, and
+   so are blocks the emulation declines on their own.
+3. Where D writes a block differently, `StudioStyle.classify` compares the two trees and picks one of three outcomes:
+   - The content differs (text, structure or attributes): the block is kept verbatim and reported (`DB_PATH_REWRITE`).
+   - Only the markup differs, and both paths keep D's form: D's form is written.
+   - Only the markup differs, and the paths do not both keep D's form: the text-path form is written and the block is
+     reported as unstable.
+
+   "Only the markup" ignores prop order, `:prop` bindings, whitespace, list-item paragraphs merged with line breaks, bare
+   URLs turned into links, `.md` links, tab expansion and `#default` slots. A prop-order rewrite is not adopted when kept
+   or declined blocks are missing from the emulated document, because their elements count toward the frequency order.
+4. The front matter takes D's data rules from the same run when the whole document was emulated. Otherwise the title and
+   description are read from the text path's tree (`StudioFrontMatterStatus.STUDIO_RULES_APPROXIMATE`).
+5. The steps repeat until the output stops changing, for at most four passes. If no fixed point is reached, the input is
+   returned unchanged.
+
 ## Fidelity
 
 The D side runs the real Studio code on the row `lib/nuxt-content-parse.mjs` emulates, with the caveats of README.md

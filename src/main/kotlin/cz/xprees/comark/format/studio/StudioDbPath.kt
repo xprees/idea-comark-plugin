@@ -98,8 +98,14 @@ object StudioDbPath {
     fun emulate(text: String, collection: StudioCollection = StudioCollection.DEFAULTS): String? =
         (emulateOutcome(text, collection) as? Outcome.Written)?.text
 
-    fun emulateOutcome(text: String, collection: StudioCollection = StudioCollection.DEFAULTS): Outcome = try {
-        Outcome.Written(emulateChecked(text, collection))
+    fun emulateOutcome(text: String, collection: StudioCollection = StudioCollection.DEFAULTS): Outcome = emulateOutcome(text, collection, true)
+
+    /**
+     * [emulateOutcome]; with [sortAttributes] `false`, attributes keep the text path's order instead of rehype-sort-attributes'
+     * frequency order (not what Studio writes: the Custom style's "keep prop order").
+     */
+    internal fun emulateOutcome(text: String, collection: StudioCollection, sortAttributes: Boolean): Outcome = try {
+        Outcome.Written(emulateChecked(text, collection, sortAttributes))
     } catch (e: UnsupportedException) {
         Outcome.Unsupported(e.reason, e.message ?: "")
     } catch (e: StudioDbFrontMatter.NoDocument) {
@@ -108,7 +114,7 @@ object StudioDbPath {
         Outcome.Unsupported(Reason.TEXT_PATH_FAILS, "nesting too deep")
     }
 
-    private fun emulateChecked(text: String, collection: StudioCollection): String {
+    private fun emulateChecked(text: String, collection: StudioCollection, sortAttributes: Boolean): String {
         val doc = try {
             StudioTreeBuilder.build(text)
         } catch (e: StudioTextPathException) {
@@ -129,13 +135,29 @@ object StudioDbPath {
             throw UnsupportedException(Reason.INLINE_SYNTAX, "a run of three emphasis delimiters between punctuation")
         }
         if ("[^" in text) throw UnsupportedException(Reason.INLINE_SYNTAX, "footnote syntax (remark-gfm)")
-        val body = StudioDbBody.transform(doc.nodes, styles, StudioTreeBuilder.listTightness(text))
+        val body = StudioDbBody.transform(doc.nodes, styles, StudioTreeBuilder.listTightness(text), sortAttributes)
         val nodes = body.nodes
         // contentHeading reads the compiled body, before Studio's mdcToComark wraps inline runs at the root in paragraphs
         val heading = if (collection.type == StudioCollection.Type.PAGE) contentHeading(body.compiledRoot) else null
         @Suppress("UNCHECKED_CAST")
         val frontmatter = StudioDbFrontMatter.frontMatter(yaml as Map<String, Any?>, collection, heading)
         return StudioPipeline.render(StudioDocument(frontmatter = frontmatter, nodes = nodes))
+    }
+
+    /**
+     * The front matter data Studio's database path writes for front matter [yaml] in [collection], with the title and
+     * description taken from the text path's tree [nodes] of the body instead of Nuxt Content's (exact wherever the first
+     * heading and paragraph read the same in both parsers). For documents [emulate] declines.
+     *
+     * @throws StudioDbFrontMatter.NoDocument where Studio has no document
+     * @throws UnsupportedException where the front matter is outside the emulation's domain
+     */
+    internal fun frontMatterFor(yaml: Any?, nodes: List<StudioNode>, collection: StudioCollection): Map<String, Any?> {
+        if (yaml !is Map<*, *>) throw UnsupportedException(Reason.NON_MAPPING_FRONT_MATTER, "front matter is not a mapping")
+        checkYaml12(yaml)
+        val heading = if (collection.type == StudioCollection.Type.PAGE) contentHeading(nodes) else null
+        @Suppress("UNCHECKED_CAST")
+        return StudioDbFrontMatter.frontMatter(yaml as Map<String, Any?>, collection, heading)
     }
 
     /** `contentHeading(body)` (`@nuxtjs/mdc` `parser/index.js`): the first h1 and the paragraph after it, `hr`s skipped. */
