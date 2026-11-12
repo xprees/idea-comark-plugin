@@ -5,7 +5,14 @@ package cz.xprees.comark.format.studio
  * ported as written, including their quirks (a value scan may run past the closing brace, a `\` skips two characters).
  */
 internal object StudioComarkSyntax {
-    class BlockParams(val name: String, val content: String? = null, val props: List<Pair<String, String>>? = null, val remaining: String? = null)
+    /** [malformed]: see [PropsSearch.malformed]. */
+    class BlockParams(
+        val name: String,
+        val content: String? = null,
+        val props: List<Pair<String, String>>? = null,
+        val remaining: String? = null,
+        val malformed: Boolean = false,
+    )
 
     private val RE_BLOCK_NAME = Regex("^[a-zA-Z$][$\\w.-]*")
 
@@ -17,6 +24,7 @@ internal object StudioComarkSyntax {
         var content: String? = null
         var props: List<Pair<String, String>>? = null
         var unparsed: String? = null
+        var malformed = false
         if (remaining.startsWith("[")) {
             val r = parseBracketContent(remaining, 0)
             if (r != null) {
@@ -28,13 +36,14 @@ internal object StudioComarkSyntax {
             val p = searchProps(remaining, 0)
             if (p != null) {
                 props = p.props
+                malformed = p.malformed
                 val after = StudioJs.trim(remaining.substring(minOf(p.end, remaining.length)))
                 if (after.isNotEmpty()) unparsed = after
             }
         } else if (remaining.isNotEmpty()) {
             unparsed = remaining
         }
-        return BlockParams(kebabCase(name), content, props, unparsed)
+        return BlockParams(kebabCase(name), content, props, unparsed, malformed)
     }
 
     fun findClosingBracket(str: String, openIndex: Int): Int {
@@ -72,9 +81,11 @@ internal object StudioComarkSyntax {
     /**
      * [searchProps]' result: the props, the index after them ([end]; it may lie past the end of the content, where
      * JavaScript indexes read `undefined`; callers clamp), and whether a closing `}` ended the scan ([closed]; not comark:
-     * when it is false, comark read everything up to the end of the content as props).
+     * when it is false, comark read everything up to the end of the content as props), and whether the scan silently dropped
+     * part of the attribute text ([malformed]; not comark): a quoted value followed by more characters before the next space or
+     * `}` (`title="Say "hi" now"`, whose value ends at the inner quote), or a chunk that is not a valid prop name.
      */
-    class PropsSearch(val props: List<Pair<String, String>>, val end: Int, val closed: Boolean)
+    class PropsSearch(val props: List<Pair<String, String>>, val end: Int, val closed: Boolean, val malformed: Boolean = false)
 
     /** comark `searchProps(content, index)`, or null for `{{`. */
     fun searchProps(content: String, start: Int): PropsSearch? {
@@ -140,6 +151,7 @@ internal object StudioComarkSyntax {
         }
 
         var closed = false
+        var malformed = false
         while (index < content.length) {
             val c = content[index]
             if (c == '\\') {
@@ -172,19 +184,22 @@ internal object StudioComarkSyntax {
                     var value: String
                     if (ch == '=') {
                         index += 1
+                        val quoted = at(index)?.let { it in QUOTES } == true
                         value = searchValue()
+                        val next = at(index)
+                        if (quoted && next != null && next != '}' && !cz.xprees.comark.format.JsText.isWhitespace(next)) malformed = true
                     } else {
                         key = if (key.startsWith(":")) key else ":$key"
                         value = "true"
                     }
-                    if (KEY_RE.matches(key)) props += key to value
+                    if (KEY_RE.matches(key)) props += key to value else malformed = true
                 }
             }
         }
         val unquoted = props.map { (k, v) ->
             if (QUOTED_RE.matches(v) && v.length >= 2) k to v.substring(1, v.length - 1) else k to v
         }
-        return PropsSearch(unquoted, index, closed)
+        return PropsSearch(unquoted, index, closed, malformed)
     }
 
     /** comark `kebabCase` (`splitByCase`, then lower-case and join with `-`) */

@@ -23,9 +23,11 @@ import java.util.BitSet
  * The whole document is formatted once ([StudioStyleAdapter]) and the result is compared with the document line by line; each
  * differing stretch of lines becomes one edit, trimmed to the characters that actually differ, so carets, range markers and folds
  * outside the changes stay where they are:
- * - a partial reformat (a selection, "only VCS changed text", code inserted by completion) applies the changes of the top-level
- *   blocks that intersect the requested ranges, whole blocks at a time, and of the blank lines next to them;
- * - lines between formatter off/on markers are kept, and so is every block they touch, as if the engine had kept the block;
+ * - a partial reformat (a selection, "only VCS changed text", code inserted by completion) replaces the top-level blocks that
+ *   intersect the requested ranges with their formatted lines (the engine's block mapping, [StudioStyleResult.blockMap]), and
+ *   the lines between them and their neighbours with the formatted separation; other blocks, and front matter the style would
+ *   add, are left alone;
+ * - lines between formatter off/on markers are kept, and so is every block they touch: the engine keeps those blocks verbatim;
  * - a "whitespace only" reformat applies only edits that change whitespace.
  */
 internal object ComarkStudioFormatting {
@@ -45,6 +47,10 @@ internal object ComarkStudioFormatting {
     /**
      * The edits turning [text] into [result] on the parts [ranges] select (see the class documentation), in document order.
      * [whole] says the ranges cover the whole document. A pure function, unit tested on its own.
+     *
+     * [protectedLines] (formatter off/on regions) must already be verbatim in [result] (the engine was given them): a change
+     * that would still touch them means the line diff paired lines oddly, and applying the other changes alone could duplicate
+     * or lose text, so then nothing is applied.
      */
     fun computeEdits(
         text: CharSequence,
@@ -55,7 +61,7 @@ internal object ComarkStudioFormatting {
         whitespaceOnly: Boolean = false,
     ): List<Edit> {
         val oldText = text.toString()
-        val newText = result.text
+        val newText = (if (whole) result.text else partialTarget(oldText, result, ranges)) ?: return emptyList()
         if (oldText == newText) return emptyList()
         val oldLines = oldText.split('\n')
         val newLines = newText.split('\n')
@@ -67,13 +73,19 @@ internal object ComarkStudioFormatting {
 
         val oldStarts = lineStarts(oldText)
         val newStarts = lineStarts(newText)
-        val selected = if (whole) null else selectedLines(oldLines, oldStarts, result.blocks, ranges, oldText.length)
         val keep = protectedLines?.let { protectedBlocks(it, result.blocks) }
-        val edits = ArrayList<Edit>()
-        fun allowed(c: Diff.Change): Boolean {
-            val insideKept = keep != null && if (c.deleted > 0) touches(keep, c) else c.line0 > 0 && keep.get(c.line0 - 1) && keep.get(c.line0)
-            return (selected == null || touches(selected, c)) && !insideKept
+        if (keep != null) {
+            var c: Diff.Change? = change
+            while (c != null) {
+                val insideKept = if (c.deleted > 0) touches(keep, c) else c.line0 > 0 && keep.get(c.line0 - 1) && keep.get(c.line0)
+                if (insideKept) {
+                    LOG.debug("A Nuxt Studio style change touches lines between formatter off/on markers; nothing applied")
+                    return emptyList()
+                }
+                c = c.link
+            }
         }
+        val edits = ArrayList<Edit>()
         if (whitespaceOnly) {
             // lines are paired by their text without whitespace, so content Studio adds or removes elsewhere (front matter, say)
             // does not hide the whitespace changes next to it: each pair that differs, and each change that is all whitespace
@@ -89,12 +101,12 @@ internal object ComarkStudioFormatting {
                 val until = k?.line0 ?: oldLines.size
                 while (o < until && n < newLines.size) {
                     val line = Diff.Change(o, n, 1, 1, null)
-                    if (oldLines[o] != newLines[n] && allowed(line)) edit(oldText, newText, oldStarts, newStarts, line, true)?.let { edits += it }
+                    if (oldLines[o] != newLines[n]) edit(oldText, newText, oldStarts, newStarts, line, true)?.let { edits += it }
                     o++
                     n++
                 }
                 val current = k ?: break
-                if (allowed(current)) edit(oldText, newText, oldStarts, newStarts, current, true)?.let { edits += it }
+                edit(oldText, newText, oldStarts, newStarts, current, true)?.let { edits += it }
                 o = current.line0 + current.deleted
                 n = current.line1 + current.inserted
                 k = current.link
@@ -103,20 +115,53 @@ internal object ComarkStudioFormatting {
         }
         var c: Diff.Change? = change
         while (c != null) {
-            if (allowed(c)) {
-                if (c.deleted == c.inserted && c.deleted > 1) {
-                    // line for line, so text between the changed parts of the lines (and markers on it) stays
-                    for (k in 0 until c.deleted) {
-                        val line = Diff.Change(c.line0 + k, c.line1 + k, 1, 1, null)
-                        edit(oldText, newText, oldStarts, newStarts, line, whitespaceOnly)?.let { edits += it }
-                    }
-                } else {
-                    edit(oldText, newText, oldStarts, newStarts, c, whitespaceOnly)?.let { edits += it }
+            if (c.deleted == c.inserted && c.deleted > 1) {
+                // line for line, so text between the changed parts of the lines (and markers on it) stays
+                for (k in 0 until c.deleted) {
+                    val line = Diff.Change(c.line0 + k, c.line1 + k, 1, 1, null)
+                    edit(oldText, newText, oldStarts, newStarts, line, false)?.let { edits += it }
                 }
+            } else {
+                edit(oldText, newText, oldStarts, newStarts, c, false)?.let { edits += it }
             }
             c = c.link
         }
         return edits
+    }
+
+    /**
+     * For a partial reformat: [old] with the top-level blocks that [ranges] touch replaced by their formatted lines, and the lines
+     * between such a block and its neighbours replaced by the formatted separation; every other block stays as written. Front
+     * matter the style adds is left out (it belongs to a whole-file reformat). `null` when the block mapping is unusable.
+     */
+    private fun partialTarget(old: String, result: StudioStyleResult, ranges: List<TextRange>): String? {
+        val units = result.blockMap.filter { !it.input.isEmpty() && !it.output.isEmpty() }
+        if (units.isEmpty()) return null
+        for (k in 1 until units.size) {
+            if (units[k].input.first <= units[k - 1].input.last || units[k].output.first <= units[k - 1].output.last) return null
+        }
+        val oldLines = old.split('\n')
+        val newLines = result.text.split('\n')
+        if (units.last().input.last >= oldLines.size || units.last().output.last >= newLines.size) return null
+        val starts = lineStarts(old).copyOf(oldLines.size)
+        val affected = ComarkFormattingService.affectedLines(starts, old.length, ranges).toHashSet()
+        val selected = units.map { u -> u.input.any { it in affected } }
+        if (selected.none { it }) return old
+        val out = ArrayList<String>()
+        fun copy(lines: List<String>, from: Int, until: Int) {
+            for (i in from until until) out += lines[i]
+        }
+        copy(oldLines, 0, units[0].input.first)
+        for ((k, u) in units.withIndex()) {
+            if (k > 0) {
+                val p = units[k - 1]
+                if (selected[k] || selected[k - 1]) copy(newLines, p.output.last + 1, u.output.first) else copy(oldLines, p.input.last + 1, u.input.first)
+            }
+            if (selected[k]) copy(newLines, u.output.first, u.output.last + 1) else copy(oldLines, u.input.first, u.input.last + 1)
+        }
+        val last = units.last()
+        if (selected.last()) copy(newLines, last.output.last + 1, newLines.size) else copy(oldLines, last.input.last + 1, oldLines.size)
+        return out.joinToString("\n")
     }
 
     /** Whether [change] replaces a line of [lines], or (an insertion) sits next to one. */
@@ -125,30 +170,6 @@ internal object ComarkStudioFormatting {
         if (change.deleted == 0) return first > 0 && lines.get(first - 1) || lines.get(first)
         val next = lines.nextSetBit(first)
         return next >= 0 && next < first + change.deleted
-    }
-
-    /** Lines of the blocks touched by [ranges], with the blank lines around them and the lines of the ranges themselves. */
-    private fun selectedLines(lines: List<String>, lineStarts: IntArray, blocks: List<IntRange>, ranges: List<TextRange>, length: Int): BitSet {
-        val starts = lineStarts.copyOf(lines.size)
-        val affected = ComarkFormattingService.affectedLines(starts, length, ranges)
-        val set = BitSet()
-        for (line in affected) set.set(line)
-        for (block in blocks) {
-            if (affected.any { it in block }) set.set(block.first, block.last + 1)
-        }
-        // blank lines next to a selected block belong to it (separation between blocks)
-        val withBlanks = set.clone() as BitSet
-        var line = set.nextSetBit(0)
-        while (line >= 0) {
-            var up = line - 1
-            while (up >= 0 && isBlank(lines[up]) && !set.get(up)) withBlanks.set(up--)
-            var down = line + 1
-            while (down < lines.size && isBlank(lines[down]) && !set.get(down)) withBlanks.set(down++)
-            line = set.nextSetBit(line + 1)
-        }
-        // the final line break of the document follows its last line
-        if (withBlanks.get(lines.size - 2)) withBlanks.set(lines.size - 1)
-        return withBlanks
     }
 
     /** [protected] lines and every block that contains one. */

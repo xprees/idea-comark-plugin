@@ -9,6 +9,7 @@ import java.util.EnumSet
 enum class StudioRewriteReason(val description: String) {
     INVALID_YAML("YAML that does not load; Studio's code editor cannot save the document"),
     FRONTMATTER_BODY_KEY("a front matter `body` key, which replaces the document body in Studio"),
+    FRONTMATTER_NOT_MAPPING("front matter that is not a mapping (a string or a list), which Studio's database path spreads into numbered keys"),
     FRONTMATTER_COMMENT("front matter with YAML comments, which Studio's re-dump drops"),
     PROPS_COMMENT("component props YAML with comments, which Studio's re-dump drops"),
     COMPONENT_IN_LIST_ITEM("a block component inside a list item, which Studio's database path collapses and moves out of the list"),
@@ -26,15 +27,19 @@ enum class StudioRewriteReason(val description: String) {
     INLINE_COMPONENT_OBJECT_PROPS("an inline component with object or array props, which Studio writes as a block component inside the text"),
     MULTILINE_PROP("a component prop spanning several lines, which Studio writes inline where it no longer parses"),
     MULTILINE_HEADING("a setext heading spanning several lines, which Studio writes as a one-line heading followed by the other lines"),
-    NESTED_TASK_LIST("a task list item holding another task list, whose own text Studio drops"),
+    NESTED_TASK_LIST("a task list item holding a nested list, whose own text (and checked state) Studio drops"),
     FENCE_IN_LIST_ITEM("a code fence opening a list item, which Studio writes without the item's indentation, so it leaves the list"),
     ADJACENT_LISTS("neighbouring lists of the same kind with different markers, which Studio merges into one list on the next save"),
     COMPONENT_NAMED_A("a component named a, which Studio writes as a link to undefined"),
     INDENTED_COMPONENT("a component indented as code (4+ spaces or a tab), which Studio's text path turns into a code block"),
+    DETACHED_ATTRIBUTES("an attribute list after plain text (not right after an element), which Studio drops (text path) or escapes into the text (database path)"),
+    MALFORMED_ATTRIBUTE("an attribute list with text Studio cannot read (a quoted value with a quote inside it, or an invalid prop name), which Studio drops"),
     UNCLOSED_ATTRIBUTES("an attribute list { with no closing }, which Studio reads to the end of the text, turning words into attributes and dropping others"),
     NESTING_LIMIT("nesting past markdown-it's limit of 100 levels, whose content Studio drops, or a tree too deep to render safely"),
     DROPPED_BLOCK("a block Studio writes nothing for, so it is lost and the blocks around it may merge"),
     NOT_IDEMPOTENT("Studio's rewrite of this block changes again on the next save"),
+    LEADING_THEMATIC_BREAK("a thematic break starting a document without front matter, which Studio writes as ---, so that the next --- line closes it as front matter"),
+    FORMATTER_OFF("lines between formatter off/on markers, which the formatter leaves alone"),
     DB_PATH_REWRITE("content Studio's database path (a document opened from Nuxt Content) rewrites into a different document"),
 }
 
@@ -108,6 +113,7 @@ object StudioSafety {
                 fm.error != null -> reasons += StudioRewriteReason.FRONTMATTER_BODY_KEY
             }
             if (fm.yaml != null && StudioYamlLoader.hasComment(fm.yaml)) reasons += StudioRewriteReason.FRONTMATTER_COMMENT
+            if (fm.error == null && fm.data !is Map<*, *>) reasons += StudioRewriteReason.FRONTMATTER_NOT_MAPPING
             val yaml = if (fm.error != null) null else StudioRenderer.frontmatterYaml(fm.data)
             if (reasons.isEmpty() && yaml != null && !memo(cache, "\u0000fm\u0000" + yaml) { frontmatterConverges(yaml) }) {
                 reasons += StudioRewriteReason.NOT_IDEMPOTENT
@@ -177,13 +183,15 @@ object StudioSafety {
         var previous: MdToken? = null
         val taskItems = ArrayList<Boolean>()
         fun visit(token: MdToken) {
+            if (token.malformedProps && !token.unclosedProps) reasons += StudioRewriteReason.MALFORMED_ATTRIBUTE
             when (token.type) {
                 "list_item_open" -> {
                     listItemDepth++
                     val task = (token.attrs?.firstOrNull { it.name == "class" }?.value as? String)?.contains("task-list-item") == true
-                    if (task && taskItems.any { it }) reasons += StudioRewriteReason.NESTED_TASK_LIST
                     taskItems += task
                 }
+                // Studio's text path writes a task item's nested list in place of the item's own text
+                "bullet_list_open", "ordered_list_open" -> if (taskItems.any { it }) reasons += StudioRewriteReason.NESTED_TASK_LIST
                 "list_item_close" -> {
                     listItemDepth--
                     if (taskItems.isNotEmpty()) taskItems.removeAt(taskItems.size - 1)
@@ -193,7 +201,10 @@ object StudioSafety {
                     if (token.tag == "a") reasons += StudioRewriteReason.COMPONENT_NAMED_A
                 }
                 "mdc_inline_component" -> if (token.tag == "a") reasons += StudioRewriteReason.COMPONENT_NAMED_A
-                "mdc_inline_props" -> if (token.unclosedProps) reasons += StudioRewriteReason.UNCLOSED_ATTRIBUTES
+                "mdc_inline_props" -> {
+                    if (token.unclosedProps) reasons += StudioRewriteReason.UNCLOSED_ATTRIBUTES
+                    if (token.droppedProps) reasons += StudioRewriteReason.DETACHED_ATTRIBUTES
+                }
                 "html_block", "html_inline" -> {
                     if (token.content.contains("<!--")) reasons += StudioRewriteReason.HTML_COMMENT
                     if (StudioJs.trim(token.content.replace(HTML_COMMENT, "")).isNotEmpty()) reasons += StudioRewriteReason.RAW_HTML

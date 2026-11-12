@@ -113,6 +113,143 @@ class StudioStyleTest {
         assertTrue(r.diagnostics.lineEndingsNormalized)
     }
 
+    private val data = StudioCollection.data("content/data/a.md")
+    private val dataOptions = StudioStyleOptions(collection = data)
+
+    private fun keptReasons(r: StudioStyleResult) = r.keptBlocks.map { it.reasons }
+
+    @Test
+    fun taskItemsWithANestedListAreKept() {
+        // Studio's text path writes "- [ ] - Nested item": the item's text is lost and a ticked box unticked
+        for (x in listOf("- [ ] Buy milk\n  - Nested item\n", "- [x] Fast: :smile:\n  * Naive\n")) {
+            val r = format(x, dataOptions)
+            assertEquals(x, r.text)
+            assertEquals(listOf(setOf(StudioRewriteReason.NESTED_TASK_LIST)), keptReasons(r))
+        }
+    }
+
+    @Test
+    fun malformedAttributesAreKept() {
+        // the text path cuts the value at the inner quote; the database path escapes the whole component into text
+        val x = "::callout{title=\"Say \"hi\" now\" icon=\"i-x\"}\nBody\n::\n"
+        for (options in listOf(dataOptions, studio)) {
+            val r = format(x, options)
+            assertTrue(r.text, r.text.endsWith(x))
+            assertEquals(listOf(setOf(StudioRewriteReason.MALFORMED_ATTRIBUTE)), keptReasons(r))
+            assertEquals(0, r.diagnostics.dbAdoptedBlocks)
+        }
+    }
+
+    @Test
+    fun attributesAfterPlainTextAreKept() {
+        val r = format("## Install {#custom} now\n\nText\n", dataOptions)
+        assertEquals("## Install {#custom} now\n\nText\n", r.text)
+        assertEquals(listOf(setOf(StudioRewriteReason.DETACHED_ATTRIBUTES)), keptReasons(r))
+    }
+
+    @Test
+    fun aLeadingThematicBreakIsNotWrittenAsFrontMatter() {
+        // Studio writes *** and ___ as ---: the first two would then enclose the code block as front matter
+        val x = "***\n\n```bash [nuxt.config.ts]\n{ \"a\": 1 }\n```\n\n___\n\nText\n"
+        val expected = "***\n\n```bash [nuxt.config.ts]\n{ \"a\": 1 }\n```\n\n---\n\nText\n"
+        val modes = listOf(
+            dataOptions,
+            StudioStyleOptions(collection = page, frontMatter = StudioFrontMatterMode.KEEP),
+            StudioStyleOptions(collection = page, frontMatter = StudioFrontMatterMode.REDUMP_ONLY),
+        )
+        for (options in modes) {
+            val r = format(x, options)
+            assertEquals(options.frontMatter.name, expected, r.text)
+            assertEquals(listOf(setOf(StudioRewriteReason.LEADING_THEMATIC_BREAK)), keptReasons(r))
+            assertEquals(0..0, r.keptBlocks.single().outputLines)
+            assertEquals(StudioFrontMatterStatus.NONE, r.diagnostics.frontMatter)
+            assertEquals(expected, format(r.text, options).text)
+        }
+        // with front matter written first, the break is Studio's ---
+        assertTrue(format(x).text.startsWith("---\ntitle: Getting Started\n---\n\n---\n"))
+        // a document that already starts with --- keeps the later break that would close it
+        val r = format("---\n\nText\n\n***\n", dataOptions)
+        assertEquals("---\n\nText\n\n***\n", r.text)
+        assertTrue(r.keptBlocks.isNotEmpty())
+    }
+
+    @Test
+    fun aSoftBreakTheDatabasePathRemovesIsKept() {
+        // D writes "Some **bold**![img](/i.svg) after": the space between the words and the image is lost
+        val r = format("Some **bold**\n![img](/i.svg) after\n", dataOptions)
+        assertEquals("Some **bold**\n![img](/i.svg) after\n", r.text)
+        assertEquals(listOf(setOf(StudioRewriteReason.DB_PATH_REWRITE)), keptReasons(r))
+        assertEquals(StudioDbRewrite.TEXT, r.keptBlocks.single().dbRewrite)
+        assertEquals(0, r.diagnostics.dbAdoptedBlocks)
+        // control: a soft break between two text runs is left alone by both paths
+        assertEquals(emptyList<Any>(), format("Some **bold**\nnext **word**\n", dataOptions).keptBlocks)
+    }
+
+    @Test
+    fun bindingsAreKeptAndUnverifiedBlocksReported() {
+        // the database path writes {{ $doc.title }} as :binding{value="$doc.title"}
+        val r = format("Hello {{ \$doc.title }} world\n\nSee :notanemoji: here\n", dataOptions)
+        assertEquals("Hello {{ \$doc.title }} world\n\nSee :notanemoji: here\n", r.text)
+        assertEquals(listOf(setOf(StudioRewriteReason.DB_PATH_REWRITE)), keptReasons(r))
+        assertEquals(StudioDbRewrite.TEXT, r.keptBlocks.single().dbRewrite)
+        // the emulation does not follow the shortcode-like text: reported, not silently passed
+        assertEquals(listOf(StudioUnverifiedBlock(2..2, 2..2)), r.unverifiedBlocks)
+        assertEquals(1, r.diagnostics.dbUnverifiedBlocks)
+    }
+
+    @Test
+    fun frontMatterRulesApplyWhenTheTextPathFailsOnAKeptBlock() {
+        // the duplicate props key makes the text path throw on the whole document; the rules still apply around it
+        val r = format("# Title\n\n::note\n---\na: 1\na: 2\n---\nText\n::\n")
+        assertEquals("---\ntitle: Title\n---\n\n# Title\n\n::note\n---\na: 1\na: 2\n---\nText\n::\n", r.text)
+        assertEquals(StudioFrontMatterStatus.STUDIO_RULES_APPROXIMATE, r.diagnostics.frontMatter)
+        assertEquals(listOf(setOf(StudioRewriteReason.INVALID_YAML)), keptReasons(r))
+        // nulls and empty values are dropped there too
+        val withNulls = format("---\nnavigation: null\nlayout: []\ntitle: T\ndescription: D\n---\n\n::note\n---\na: 1\na: 2\n---\nText\n::\n")
+        assertTrue(withNulls.text, withNulls.text.startsWith("---\ntitle: T\ndescription: D\n---\n"))
+    }
+
+    @Test
+    fun frontMatterFromAKeptBlockIsReportedUnverified() {
+        // Nuxt Content reads the malformed component as a paragraph and takes it as the description; the approximation cannot
+        val r = format("# Title\n\n::callout{to=\"a \"q\"\"}\n```ts {1-3}\nx\n```\n::\n")
+        assertEquals(StudioFrontMatterStatus.STUDIO_RULES_APPROXIMATE, r.diagnostics.frontMatter)
+        val fm = r.unverifiedBlocks.single { it.frontMatter }
+        assertEquals(0..2, fm.outputLines)
+        // a page that already has both keys gets nothing injected, so nothing to report
+        val complete = format("---\ntitle: T\ndescription: D\n---\n\n# Title\n\n::callout{to=\"a \"q\"\"}\nx\n::\n")
+        assertTrue(complete.unverifiedBlocks.none { it.frontMatter })
+    }
+
+    @Test
+    fun frontMatterThatIsNotAMappingIsKept() {
+        // the database path spreads a string or list into numbered keys ('0': a, '1': b)
+        for (x in listOf("---\n- a\n- b\n---\n\nText\n", "---\njust a string\n---\n\nText\n")) {
+            val r = format(x, dataOptions)
+            assertEquals(x, r.text)
+            assertEquals(listOf(setOf(StudioRewriteReason.FRONTMATTER_NOT_MAPPING)), keptReasons(r))
+            assertEquals(StudioFrontMatterStatus.KEPT, r.diagnostics.frontMatter)
+        }
+    }
+
+    @Test
+    fun oneBlankLineBetweenTwoKeptBlocks() {
+        val r = format("| a | b |\n|:--|--:|\n| 1 | 2 |\n\n\n| c | d |\n|:--|--:|\n| 3 | 4 |\n", dataOptions)
+        assertEquals("| a | b |\n|:--|--:|\n| 1 | 2 |\n\n| c | d |\n|:--|--:|\n| 3 | 4 |\n", r.text)
+        assertEquals(listOf(0..2, 4..6), r.keptBlocks.map { it.outputLines })
+        assertEquals(listOf(0..2, 5..7), r.keptBlocks.map { it.inputLines })
+    }
+
+    @Test
+    fun keepLinesKeepTheirBlocksVerbatim() {
+        val x = "Intro __a__\n\n\n<!-- @formatter:off -->\n# Keep #\n<!-- @formatter:on -->\n"
+        val r = StudioStyle.format(x, dataOptions, setOf(3, 4, 5))!!
+        assertEquals("Intro **a**\n\n<!-- @formatter:off -->\n# Keep #\n<!-- @formatter:on -->\n", r.text)
+        assertTrue(r.keptBlocks.any { StudioRewriteReason.FORMATTER_OFF in it.reasons && it.inputLines == 4..4 })
+        assertEquals(listOf(0..0, 3..3, 4..4, 5..5), r.blockMap.map { it.inputLines })
+        assertEquals(listOf(0..0, 2..2, 3..3, 4..4), r.blockMap.map { it.outputLines })
+    }
+
     @Test
     fun byteOrderMarkAndCrlfAreDropped() {
         val r = format("﻿# Title\r\n\r\nText\r\n")

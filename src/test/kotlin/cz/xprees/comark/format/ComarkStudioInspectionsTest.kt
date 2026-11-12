@@ -22,7 +22,10 @@ class ComarkStudioInspectionsTest : BasePlatformTestCase() {
         }
     }
 
-    private fun problems(text: String): List<HighlightInfo> {
+    /** The problems in [text], without the notes on blocks the formatter could not check (see [testUnverifiedBlocksAreReportedAsNotChecked]). */
+    private fun problems(text: String): List<HighlightInfo> = allProblems(text).filter { !it.description.startsWith("Nuxt Studio may") }
+
+    private fun allProblems(text: String): List<HighlightInfo> {
         myFixture.configureByText("page.mdc", text)
         return myFixture.doHighlighting(HighlightSeverity.WEAK_WARNING).filter { it.description != null }
     }
@@ -115,6 +118,23 @@ class ComarkStudioInspectionsTest : BasePlatformTestCase() {
         applyFix("a &co<caret>py; b\n", "Replace with ©", "a © b\n")
         applyFix("a &l<caret>t;tag> b\n", "Replace with \\<", "a \\<tag> b\n")
         applyFix("a &#1<caret>69; b\n", "Replace with ©", "a © b\n")
+    }
+
+    fun testReplaceEmojiBeforeClosingSyntax() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
+        // Studio escapes a `]` or `*` right after the token only when it is text; here it closes the emphasis, link or label
+        applyFix("Some *hi :sm<caret>ile:* there\n", "Replace with \uD83D\uDE04", "Some *hi \uD83D\uDE04* there\n")
+        applyFix("[link :sm<caret>ile:](/x) there\n", "Replace with \uD83D\uDE04", "[link \uD83D\uDE04](/x) there\n")
+        applyFix("Hello :badge[wow :sm<caret>ile:] end\n", "Replace with \uD83D\uDE04", "Hello :badge[wow \uD83D\uDE04] end\n")
+        applyFix("Some _hi :sm<caret>ile:_ there\n", "Replace with \uD83D\uDE04", "Some _hi \uD83D\uDE04_ there\n")
+        val problem = problems("Some *hi :smile:* there\n").single { it.description.startsWith("Nuxt Studio writes") }
+        assertEquals("Nuxt Studio writes ':smile:' as \uD83D\uDE04", problem.description)
+    }
+
+    fun testUnverifiedBlocksAreReportedAsNotChecked() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
+        val problems = allProblems("---\ntitle: T\ndescription: D\n---\n\nSee :notanemoji: here\n")
+        val problem = problems.single()
+        assertEquals("See :notanemoji: here", problem.text())
+        assertTrue(problem.description, problem.description.startsWith("Nuxt Studio may rewrite this"))
     }
 
     fun testConversionsOfTheAdapter() {

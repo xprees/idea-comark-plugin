@@ -115,8 +115,10 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
         val file = context.containingFile
         PsiDocumentManager.getInstance(file.project).commitDocument(document)
         val text = document.charsSequence
+        val protected = ComarkFormatterControl.protectedLines(file, text)
         val result = try {
-            StudioStyleAdapter.format(text.toString(), ComarkStudioFormatting.context(file, style))
+            // the engine keeps the blocks between formatter off/on markers verbatim, so its output already holds them
+            StudioStyleAdapter.format(text.toString(), ComarkStudioFormatting.context(file, style), protected?.stream()?.toArray()?.toSet().orEmpty())
         } catch (e: RuntimeException) {
             if (e is ControlFlowException) throw e
             LOG.warn("Nuxt Studio style failed on ${file.name}", e)
@@ -132,7 +134,6 @@ class ComarkFormattingService : AbstractDocumentFormattingService() {
         }
         ProgressManager.checkCanceled()
         val whole = ranges.any { it.startOffset <= 0 && it.endOffset >= document.textLength }
-        val protected = ComarkFormatterControl.protectedLines(file, text)
         val edits = ComarkStudioFormatting.computeEdits(text, result, ranges, whole, protected, whitespaceOnly)
         val markers = ranges.map { document.createRangeMarker(it).apply { isGreedyToRight = true } }
         try {

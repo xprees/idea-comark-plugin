@@ -75,6 +75,21 @@ over the inputs of all three files. It checks that formatting is idempotent, tha
 database path leave the output unchanged outside the blocks the result reports, and that every recorded Studio output
 that both paths leave unchanged also comes out of the formatter unchanged.
 
+`record-style-vectors.mjs` (Gradle: `recordStudioStyleVectors`) records `style-vectors.json`: the **real** Studio save paths on
+the formatter's output. Its inputs are y = `StudioStyle.format(x)` for every oracle and `text-vectors.json` input, which
+`StudioStyleOracleTest` writes when `STUDIO_STYLE_INPUTS=<file>` is set; for each y it records T(y) and D(y) (D as in
+`record-db-vectors.mjs`) under the collection the document was formatted for (`pageDefault` or `data`, content id
+`content/docs/page.md`). One vector per line: `name`, `config`, `id`, `y`, `tEqualsY`, `dEqualsY`, and `t` / `d` (a string or
+`{"error": ...}`) where they differ from y. `StudioStyleOracleTest` requires the engine to still write every recorded y (the
+file must be re-recorded after any change to the engine's output) and pins, per document, what each real save path does to y:
+nothing, changes only inside the blocks the result reports (kept, unstable or not checked), or changes elsewhere (labelled
+markup only or damaging, with the kind). To re-record:
+
+```
+STUDIO_STYLE_INPUTS=$PWD/build/studio-style-inputs.json ./gradlew test --tests '*StudioStyleOracleTest*'   # fails while stale
+./gradlew recordStudioStyleVectors
+```
+
 ## What runs
 
 All versions are pinned exactly in `package.json` and `package-lock.json`: nuxt-studio 1.8.0, comark 0.7.0, js-yaml 5.5.0,

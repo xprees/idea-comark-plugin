@@ -50,7 +50,7 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
      * front matter, so the examples show the body alone.
      */
     private fun configureInDataCollection(name: String, text: String) {
-        myFixture.addFileToProject("content.config.ts", DATA_CONFIG)
+        if (myFixture.findFileInTempDir("content.config.ts") == null) myFixture.addFileToProject("content.config.ts", DATA_CONFIG)
         myFixture.configureFromExistingVirtualFile(myFixture.addFileToProject("content/$name", text).virtualFile)
     }
 
@@ -149,7 +149,8 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
         // a component with props YAML that does not load is kept; everything else is still formatted
         myFixture.configureByText("page.mdc", "* a\n\n::c\n---\na: [\n---\nx\n::\n")
         reformat()
-        assertTrue(myFixture.editor.document.text, myFixture.editor.document.text.startsWith("- a\n"))
+        // (the title Studio derives from the file name is added around the kept block, as its database path does)
+        assertTrue(myFixture.editor.document.text, myFixture.editor.document.text.startsWith("---\ntitle: Page\n---\n\n- a\n"))
     }
 
     fun testLineSeparatorsAndBomAfterWholeFileReformat() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
@@ -177,6 +178,54 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
         reformatRange(0, 1)
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
         assertEquals("\r\n", file.detectedLineSeparator)
+    }
+
+    fun testFormatterOffRegionAfterBlankLinesIsNotDuplicated() = withStyle(ComarkStylePreset.NUXT_STUDIO, {
+        it.FORMATTER_TAGS_ENABLED = true
+    }) {
+        val cases = listOf(
+            "Intro __a__\n\n\n<!-- @formatter:off -->\n# Keep #\n<!-- @formatter:on -->\n" to
+                "Intro **a**\n\n<!-- @formatter:off -->\n# Keep #\n<!-- @formatter:on -->\n",
+            "Intro\n\n\n<!-- @formatter:off -->\n* keep\n* this\n<!-- @formatter:on -->\n" to
+                "Intro\n\n<!-- @formatter:off -->\n* keep\n* this\n<!-- @formatter:on -->\n",
+        )
+        for ((i, case) in cases.withIndex()) {
+            configureInDataCollection("off$i.mdc", case.first)
+            reformat()
+            myFixture.checkResult(case.second)
+            reformat()
+            myFixture.checkResult(case.second)
+        }
+    }
+
+    fun testSelectionLeavesNeighbouringBlocksAlone() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
+        // blocks with no blank line between them: Studio's separation must not drag the neighbour into the change
+        configureInDataCollection("sel1.mdc", "# Title #\n* a\n* b\n")
+        reformatRange(0, 9)
+        myFixture.checkResult("# Title\n\n* a\n* b\n")
+        val text = "1) one\n2) two\n\nSetext\n======\nSome __strong__ and _em_ text\n\n---\n"
+        configureInDataCollection("sel2.mdc", text)
+        reformatRange(text.indexOf("Setext"), text.indexOf("======") + 6)
+        myFixture.checkResult("1) one\n2) two\n\n# Setext\n\nSome __strong__ and _em_ text\n\n---\n")
+    }
+
+    fun testPartialReformatOfAOneLineDocument() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
+        val result = StudioStyleAdapter.format("* a", StudioStyleContext("one.mdc"))!!
+        val edits = ComarkStudioFormatting.computeEdits("* a", result, listOf(TextRange(2, 3)), false, null)
+        assertEquals("- a\n", StringBuilder("* a").apply { for (e in edits.asReversed()) replace(e.start, e.end, e.text) }.toString())
+        myFixture.configureByText("one.mdc", "* a")
+        reformatRange(2, 3)
+        myFixture.checkResult("- a\n")
+    }
+
+    fun testSelectionDoesNotAddFrontMatter() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
+        val text = "# Title\n\nFirst paragraph.\n\nSecond *para*\n"
+        myFixture.configureByText("page.mdc", text)
+        reformatRange(0, 7)
+        myFixture.checkResult(text)
+        // a whole-file reformat writes it
+        reformat()
+        myFixture.checkResult("---\ntitle: Title\ndescription: First paragraph.\n---\n\n$text")
     }
 
     private companion object {

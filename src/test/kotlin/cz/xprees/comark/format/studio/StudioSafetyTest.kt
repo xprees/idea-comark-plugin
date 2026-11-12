@@ -3,6 +3,7 @@ package cz.xprees.comark.format.studio
 import cz.xprees.comark.format.studio.StudioRewriteReason.ADJACENT_LISTS
 import cz.xprees.comark.format.studio.StudioRewriteReason.COMPONENT_IN_LIST_ITEM
 import cz.xprees.comark.format.studio.StudioRewriteReason.COMPONENT_NAMED_A
+import cz.xprees.comark.format.studio.StudioRewriteReason.DETACHED_ATTRIBUTES
 import cz.xprees.comark.format.studio.StudioRewriteReason.DROPPED_BLOCK
 import cz.xprees.comark.format.studio.StudioRewriteReason.ESCAPED_BRACE
 import cz.xprees.comark.format.studio.StudioRewriteReason.FENCE_FILENAME_BRACKET
@@ -18,6 +19,7 @@ import cz.xprees.comark.format.studio.StudioRewriteReason.INLINE_CODE_WITH_BACKT
 import cz.xprees.comark.format.studio.StudioRewriteReason.INLINE_COMPONENT_OBJECT_PROPS
 import cz.xprees.comark.format.studio.StudioRewriteReason.INVALID_YAML
 import cz.xprees.comark.format.studio.StudioRewriteReason.LINK_REFERENCE_DEFINITION
+import cz.xprees.comark.format.studio.StudioRewriteReason.MALFORMED_ATTRIBUTE
 import cz.xprees.comark.format.studio.StudioRewriteReason.MULTILINE_HEADING
 import cz.xprees.comark.format.studio.StudioRewriteReason.MULTILINE_PROP
 import cz.xprees.comark.format.studio.StudioRewriteReason.NESTED_TASK_LIST
@@ -65,6 +67,16 @@ class StudioSafetyTest {
         assertKept("::page-section\n---\nstyles: |\n  color: red;\n\n  .x { }\n---\n::\n", MULTILINE_PROP)
         assertKept("First line\nsecond line\n===\n", MULTILINE_HEADING)
         assertKept("- [ ] Parent\n  - [ ] Child\n", NESTED_TASK_LIST)
+        // a task item holding a plain list: Studio writes the nested list in place of the item's text (and unticks it)
+        assertKept("- [ ] Buy milk\n  - Nested item\n", NESTED_TASK_LIST)
+        assertKept("- [x] Fast: :smile:\n  * Naive\n", NESTED_TASK_LIST)
+        assertKept("1) [x] Cafe\n   + nested\n", NESTED_TASK_LIST)
+        // a quoted value with a quote inside: Studio's text path drops the rest of the value, its database path escapes it all
+        assertKept("::callout{title=\"Say \"hi\" now\" icon=\"i-x\"}\nBody\n::\n", MALFORMED_ATTRIBUTE)
+        assertKept("Go :link{to=\"a \"q\"\"} now\n", MALFORMED_ATTRIBUTE)
+        // an attribute list after plain text: Studio drops it (text path) or escapes it (database path)
+        assertKept("## Install {#custom} now\n", DETACHED_ATTRIBUTES)
+        assertKept("Install {.a} now\n", DETACHED_ATTRIBUTES)
         assertKept("- ```js\n  code\n  ```\n", FENCE_IN_LIST_ITEM)
         assertKept("::a\nx\n::\n", COMPONENT_NAMED_A)
         assertKept("::outer\n    ::inner\n    text\n    ::\n::\n", INDENTED_COMPONENT)

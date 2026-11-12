@@ -103,6 +103,21 @@ class ComarkStudioNotificationsTest : BasePlatformTestCase() {
         assertFalse(ComarkStudioAdoption.shouldOffer(project))
     }
 
+    fun testOfferedOnlyOnce() = withStyle(ComarkStylePreset.VSCODE) {
+        packageJson("^1.8.0")
+        assertTrue(ComarkStudioAdoption.shouldOffer(project))
+        // shown once: "Not now" or closing it does not bring it back on the next project open
+        ComarkStudioAdoption.markShown(project)
+        assertFalse(ComarkStudioAdoption.shouldOffer(project))
+    }
+
+    fun testNotOfferedWhenEditorConfigSetsThePreset() = withStyle(ComarkStylePreset.VSCODE) {
+        packageJson("^1.8.0")
+        myFixture.addFileToProject(".editorconfig", "root = true\n\n[*.md]\nij_comark_style_preset = nuxt_studio\n")
+        assertTrue(ComarkStudioAdoption.editorConfigSetsPreset(project))
+        assertFalse(ComarkStudioAdoption.shouldOffer(project))
+    }
+
     fun testNotOfferedForDependenciesInNodeModules() = withStyle(ComarkStylePreset.VSCODE) {
         myFixture.addFileToProject("node_modules/some-theme/package.json", """{ "dependencies": { "nuxt-studio": "^1.8.0" } }""")
         assertFalse(ComarkStudioAdoption.shouldOffer(project))

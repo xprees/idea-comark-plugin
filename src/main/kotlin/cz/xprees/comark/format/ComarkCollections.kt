@@ -90,6 +90,9 @@ class ComarkCollections(private val project: Project) {
     companion object {
         private val CONTENT_CONFIG = Regex("""content\.config\.(?:ts|js|mjs|mts|cjs|cts)""")
         private val DEFINE = Regex("""(?:([A-Za-z_$][\w$]*)|'([^']+)'|"([^"]+)")\s*:\s*defineCollection\s*\(""")
+        private val VARIABLE_DEFINE = Regex("""\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*defineCollection\s*\(""")
+        private val COLLECTIONS = Regex("""\bcollections\s*:\s*\{""")
+        private val IDENTIFIER = Regex("""^[A-Za-z_$][\w$]*$""")
         private const val DEFAULT_CWD = "content"
 
         fun getInstance(project: Project): ComarkCollections = project.service()
@@ -145,22 +148,52 @@ class ComarkCollections(private val project: Project) {
             val result = ArrayList<Collection>()
             for (match in DEFINE.findAll(code)) {
                 val name = match.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: continue
-                val open = code.indexOf('{', match.range.last)
-                if (open < 0) continue
-                val close = JsScanner.matching(code, open) ?: continue
-                val entries = JsScanner.entries(code, open, close)
-                val type = entries["type"]?.let { JsScanner.string(code, it) }
-                val sources = entries["source"]?.let { sources(code, it) }.orEmpty()
-                val schema = entries["schema"]?.let { schemaFields(code, it) }
-                result += Collection(
-                    name,
-                    if (type == "data") StudioCollection.Type.DATA else StudioCollection.Type.PAGE,
-                    sources,
-                    schema.orEmpty(),
-                    schemaKnown = entries["schema"] == null || schema != null,
-                )
+                collection(code, name, match.range.last)?.let { result += it }
+            }
+            // `const blog = defineCollection({...})`, listed as `collections: { blog }` or `collections: { posts: blog }`
+            val variables = LinkedHashMap<String, Collection>()
+            for (match in VARIABLE_DEFINE.findAll(code)) {
+                collection(code, match.groupValues[1], match.range.last)?.let { variables[it.name] = it }
+            }
+            if (variables.isEmpty()) return result
+            val listed = COLLECTIONS.findAll(code).mapNotNull { m ->
+                val open = m.range.last
+                JsScanner.matching(code, open)?.let { close -> JsScanner.items(code, open, close) }
+            }.flatten().mapNotNull { item ->
+                val entry = code.substring(item.first, item.last + 1).trim()
+                val colon = entry.indexOf(':')
+                if (colon < 0) {
+                    entry.takeIf { IDENTIFIER.matches(it) }?.let { it to it }
+                } else {
+                    val key = entry.substring(0, colon).trim().trim('\'', '"')
+                    val value = entry.substring(colon + 1).trim()
+                    if (IDENTIFIER.matches(value)) key to value else null
+                }
+            }.toList()
+            if (listed.isEmpty()) {
+                result += variables.values
+            } else {
+                for ((name, variable) in listed) variables[variable]?.let { result += Collection(name, it.type, it.sources, it.schema, it.schemaKnown) }
             }
             return result
+        }
+
+        /** The collection of the `defineCollection(` call whose `(` ends at [callEnd], named [name]. */
+        private fun collection(code: String, name: String, callEnd: Int): Collection? {
+            val open = code.indexOf('{', callEnd)
+            if (open < 0) return null
+            val close = JsScanner.matching(code, open) ?: return null
+            val entries = JsScanner.entries(code, open, close)
+            val type = entries["type"]?.let { JsScanner.string(code, it) }
+            val sources = entries["source"]?.let { sources(code, it) }.orEmpty()
+            val schema = entries["schema"]?.let { schemaFields(code, it) }
+            return Collection(
+                name,
+                if (type == "data") StudioCollection.Type.DATA else StudioCollection.Type.PAGE,
+                sources,
+                schema.orEmpty(),
+                schemaKnown = entries["schema"] == null || schema != null,
+            )
         }
 
         private fun sources(code: String, value: IntRange): List<Source> {
@@ -190,10 +223,31 @@ class ComarkCollections(private val project: Project) {
             }
         }
 
-        /** Top-level fields of `z.object({ ... })` (or a plain object) in [value], or null when it is not an inline object. */
+        private val ZOD_OBJECT = Regex("""^z\s*\.\s*(?:object|strictObject|looseObject)\s*\(\s*\{""")
+        /** Chained methods that change an object schema's fields. */
+        private val FIELD_CHANGING = setOf("extend", "merge", "and", "or", "pick", "omit", "partial", "required", "deepPartial", "transform", "pipe", "keyof")
+
+        /**
+         * Top-level fields of `z.object({ ... })` (or a plain object) in [value], or null when the schema is anything else: a
+         * variable, a call, or an object whose fields a chained call changes (`base.extend({...})`, `z.object({...}).merge(x)`).
+         */
         private fun schemaFields(code: String, value: IntRange): List<StudioSchemaField>? {
-            val open = code.indexOf('{', value.first).takeIf { it in value } ?: return null
+            val start = JsScanner.skipBlanks(code, value.first)
+            if (start > value.last) return null
+            val head = code.substring(start, value.last + 1)
+            val open = when {
+                code[start] == '{' -> start
+                ZOD_OBJECT.containsMatchIn(head) -> code.indexOf('{', start)
+                else -> return null
+            }
             val close = JsScanner.matching(code, open) ?: return null
+            if (code[start] != '{') {
+                val callClose = JsScanner.matching(code, code.indexOf('(', start)) ?: return null
+                val rest = code.substring(callClose + 1, value.last + 1)
+                if (chainCalls(rest).any { it.first in FIELD_CHANGING }) return null
+            } else if (code.substring(close + 1, value.last + 1).isNotBlank()) {
+                return null
+            }
             return JsScanner.entries(code, open, close).map { (name, range) -> field(name, code.substring(range.first, range.last + 1)) }
         }
 

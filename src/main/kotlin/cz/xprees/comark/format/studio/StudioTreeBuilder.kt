@@ -22,7 +22,7 @@ object StudioTreeBuilder {
     /** The tree for [text]; throws [StudioTextPathException] where Studio's text path throws. */
     fun build(text: String): StudioDocument {
         try {
-            return buildChecked(text)
+            return withDeepStack { buildChecked(text) }
         } catch (e: StudioYamlException) {
             throw StudioTextPathException("YAML: ${e.message}")
         } catch (e: StudioParseException) {
@@ -30,6 +30,27 @@ object StudioTreeBuilder {
         } catch (e: StackOverflowError) {
             throw StudioUnsupportedException("nesting too deep for this port")
         }
+    }
+
+    /** The stack of the thread [withDeepStack] retries on. */
+    private const val DEEP_STACK = 256L * 1024 * 1024
+
+    /**
+     * [block], retried on a thread with a [DEEP_STACK] stack when it overflows the caller's: building a tree recurses once per
+     * level of emphasis or inline HTML nesting, which markdown-it does not bound, so the result would otherwise depend on the
+     * caller's stack (and on how the JIT compiled the recursion). A [StackOverflowError] there too is rethrown.
+     */
+    private fun <T> withDeepStack(block: () -> T): T {
+        try {
+            return block()
+        } catch (_: StackOverflowError) {
+            // retried below, outside the catch block, where the stack has unwound
+        }
+        var result: kotlin.Result<T>? = null
+        val thread = Thread(null, { result = runCatching(block) }, "comark-deep-tree", DEEP_STACK)
+        thread.start()
+        thread.join()
+        return result!!.getOrThrow()
     }
 
     private fun buildChecked(text: String): StudioDocument {
@@ -110,7 +131,7 @@ object StudioTreeBuilder {
      */
     internal fun buildSegmented(text: String): StudioSegmentedDocument {
         try {
-            return buildSegmentedChecked(text)
+            return withDeepStack { buildSegmentedChecked(text) }
         } catch (e: StudioYamlException) {
             throw StudioTextPathException("YAML: ${e.message}")
         } catch (e: StudioParseException) {
@@ -424,6 +445,7 @@ object StudioTreeBuilder {
             while (i < tokens.size) {
                 val token = tokens[i]
                 if (token.type == "mdc_inline_props" && token.hidden) {
+                    token.droppedProps = true
                     i++
                     continue
                 }
@@ -573,6 +595,7 @@ object StudioTreeBuilder {
                     }
                 }
                 if (token.type == "mdc_inline_props" && token.hidden) {
+                    token.droppedProps = true
                     i++
                     continue
                 }

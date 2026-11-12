@@ -70,8 +70,9 @@ view, lists, tables, header anchors, code fence injection, …) still applies.
 **What the Nuxt Studio style guarantees.** Studio saves a document in two ways: its code editor writes the text it was given
 (the *text path*), and its visual editor, or any save of a document Studio loaded from Nuxt Content, writes what Nuxt Content
 parsed (the *database path*). The Nuxt Studio style writes each block in the form both of them leave unchanged; where the two
-disagree on the markup, the code editor's form wins. The engine reproduces both paths byte for byte (checked against the real
-nuxt-studio 1.8.0 code on 480 recorded documents, over 5,000 random ones and 4,800 database-path recordings): `-` bullets, `1.`
+disagree on the markup, the code editor's form wins. The engine reproduces the text path byte for byte and emulates the
+database path where it can follow Nuxt Content's parser (both checked against the real nuxt-studio 1.8.0 code on 480 recorded
+documents, over 5,000 random ones and 4,800 database-path recordings): `-` bullets, `1.`
 items, `*em*`, `**strong**`, backtick fences, one blank line between blocks, components nested by two spaces, up to three props
 inline and more as a YAML block, props in the order Studio's database path gives them (most frequent names on that tag first),
 tables aligned like Studio. **Front matter** gets Studio's data rules for the file's Nuxt Content collection (read from
@@ -79,11 +80,15 @@ tables aligned like Studio. **Front matter** gets Studio's data rules for the fi
 (the first `#` heading, else the file name) and `description` (the first paragraph) are added, keys are ordered as Nuxt Content
 orders its columns (`title`, then the schema fields sorted by name, with schema defaults such as `draft: false` filled in, then
 other keys), and `navigation: true`, nulls and empty lists are dropped; data collections get nothing added. Saving a file
-formatted this way again from Studio changes nothing, so edits in the IDE and in Studio don't fight over formatting (the few
-exceptions are listed under [Known limitations](#known-limitations)). Reformatting twice gives the same text. After a whole-file
+formatted this way again from Studio's code editor changes nothing outside the blocks kept as written. Studio's database path is
+checked only where the engine can emulate it: blocks it cannot follow are written in the code editor's form and reported as
+not checked, so Studio may still rewrite them when it saves a document opened from Nuxt Content. The real nuxt-studio 1.8.0 save
+paths are run on the formatted output of the test corpora (`style-vectors.json`); the counts of what they still change, and
+where, are pinned in the tests and summarized under [Known limitations](#known-limitations). Reformatting twice gives the same
+text. After a whole-file
 reformat the file is converted to `\n` line breaks without a BOM, as Studio writes it (each its own undoable step), and the
-preset turns off wrap on typing. A selection reformats the whole top-level blocks it touches; formatter off/on markers keep the
-blocks they touch.
+preset turns off wrap on typing. A selection reformats the whole top-level blocks it touches and the blank lines next to them,
+and leaves the other blocks (and front matter the style would add) alone; formatter off/on markers keep the blocks they touch.
 
 **What is kept as written, with a warning.** Some content Studio would damage on save. Reformat Code leaves these blocks exactly
 as they are, and the *Nuxt Studio will rewrite this* inspection (weak warning) marks the first line of each with what Studio
@@ -94,11 +99,19 @@ would do:
 - table column alignment (dropped); fix: *Remove column alignment*
 - heading `{#id}` attributes (dropped or escaped into the heading text); fix: *Remove the heading id*
 - code fence line highlights `{1,3}` and fence file names containing `]`
-- YAML comments in front matter or props (dropped), YAML that does not load, a front matter `body` key
+- YAML comments in front matter or props (dropped), YAML that does not load, a front matter `body` key, front matter that is
+  not a mapping (spread into numbered keys)
 - components inside list items or indented as code, multi-line props, inline components with object props, unclosed `{`
-  attribute lists, escaped `\{` `\}`, inline code containing a backtick, multi-line setext headings, nested task lists,
+  attribute lists, attribute lists after plain text (`## Install {#id} now`) or with a quote inside a quoted value, escaped
+  `\{` `\}`, inline code containing a backtick, multi-line setext headings, task list items holding a nested list,
   neighbouring lists with different markers, and blocks whose Studio output changes again on the next save
-- content Studio's database path turns into a different document (text, structure or props change)
+- a thematic break (`***`, `___`) starting a document without front matter, which Studio writes as `---` so that the next
+  `---` line closes it as front matter
+- content Studio's database path turns into a different document (text, structure or props change; `{{ }}` bindings, which
+  it writes as `:binding` components; a line break removed between words and an image or inline component)
+
+Blocks the engine could not check against Studio's database path get a weaker note from the same inspection ("Nuxt Studio may
+rewrite this"); so does injected front matter whose title or description may come from a kept block.
 
 Every warning has *Suppress for this block*, which puts `<!-- @formatter:off -->` / `<!-- @formatter:on -->` around the block;
 blocks between these markers are not reported. Reformat Code honours the markers when they are enabled in *Code Style ›
@@ -109,9 +122,9 @@ characters when Studio saves. The *Emoji shortcode or character reference Nuxt S
 fix that writes what Studio writes (`🚀`, `©`, or an escape such as `\<` for `&lt;tag>`); Reformat Code converts them too.
 
 Both inspections are on by default and active only when the file's style is Nuxt Studio or Custom. Projects that depend on
-nuxt-studio but still use the VS Code style get a one-time notification instead, offering *Use Nuxt Studio style* (which sets
-the project code style, moving the project to a project scheme if needed), *Not now* (ask again next time the project opens) or
-*Don't ask again*.
+nuxt-studio but still use the VS Code style get a one-time notification instead (not when their `.editorconfig` sets
+`ij_comark_style_preset`), offering *Use Nuxt Studio style* (which sets the project code style, moving the project to a project
+scheme if needed), *Not now* or *Don't ask again*.
 
 **Options of the Custom style**: indent size (component nesting), bullet marker, ordered list delimiter, emphasis and strong
 markers (`_` only where CommonMark allows it), code fence character, blank lines kept between top-level blocks, props written
@@ -186,19 +199,25 @@ The platform's formatter controls apply: *Code Style › Formatter › Do not fo
 
 - Some Markdown plugin features check for the plain Markdown language and stay off in Comark files: *Create Link*, *Insert Image*,
   table column/row actions and image drag and drop. HTML `<a id>` anchors are not link targets.
-- Reformat Code re-aligns top-level tables only; tables inside components are left as they are.
+- In the VS Code style, Reformat Code re-aligns top-level tables only; tables inside components are left as they are (the Nuxt
+  Studio and Custom styles align them too, as Studio does).
 - Reformat Code deliberately differs from the VS Code extension's formatter where that one changes content or structure, so a
   document formatted in both editors can differ in these places: components inside list items stay in the list item (indented to
   its content column; VS Code moves them out), indented code blocks keep their indentation (VS Code turns them into paragraphs),
   tabs in the indentation of code fence content are kept (VS Code turns each into one space), and two or more trailing spaces
   before a continuing line (a hard line break) are kept (VS Code strips them).
 - The Nuxt Studio style checks a block against Studio's database path only where the engine can follow Nuxt Content's parser;
-  blocks with constructs it does not follow (some inline syntax, empty code blocks, `{{ }}` bindings, ...) are written in the
-  code editor's form. Where a document holds blocks kept as written, prop order and the injected title and description are
-  worked out without them, so Studio may still reorder props there or, for an unusual first heading or paragraph (with comments
-  or raw HTML), write a different description. The collection schema is read from `content.config.ts` as text: a schema held in
-  a variable, or defaults that are not plain literals, are not seen. A file outside every collection is treated as a page with
-  Studio's defaults.
+  blocks with constructs it does not follow (emoji-like `:words:`, bare URLs, `[text]` spans, empty code blocks, ...) are written
+  in the code editor's form and reported as not checked. Running the real nuxt-studio 1.8.0 save paths on the formatted output
+  of the test corpora (5,501 documents, most of them random) leaves 2,119 documents unchanged by both paths; in 3,243 more, what
+  Studio changes stays inside the blocks the formatter reports (kept as written, unstable, or not checked); 138 change
+  elsewhere too (51 on the text path, 89 on the database path, mostly where Studio's damage to a kept block spreads to its
+  neighbours). The exact counts, by kind, are pinned in `StudioStyleOracleTest`. Where a document holds blocks kept as
+  written, prop order and the injected title and description are worked out without them, so Studio may still reorder props
+  there or write a different description (reported when a kept block may supply it). The collection schema is read from
+  `content.config.ts` as text: collections defined in a variable are followed, but a schema held in a variable or built with
+  `.extend()` / `.merge()`, or defaults that are not plain literals, are not seen. A file outside every collection is treated as
+  a page with Studio's defaults.
 - The formatter always indents with spaces, so the Comark code style offers no tab options: Markdown counts a leading tab as four
   columns, which would turn tab-indented nested components into code blocks.
 - The preview renders components only with the built-in JCEF preview; Markdown settings list "JCEF Browser" twice (both entries are

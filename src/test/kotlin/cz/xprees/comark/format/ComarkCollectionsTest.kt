@@ -87,6 +87,29 @@ class ComarkCollectionsTest : BasePlatformTestCase() {
         val unknown = ComarkCollections.parse("const s = z.object({});\nexport default { c: defineCollection({ type: 'page', source: '**', schema: s }) }").single()
         assertFalse(unknown.schemaKnown)
         assertTrue(ComarkCollections.parse("export default { c: defineCollection({ type: 'page', source: '**' }) }").single().schemaKnown)
+        // a schema whose fields a chained call changes is not known either
+        val extended = ComarkCollections.parse(
+            "export default defineContentConfig({ collections: { docs: defineCollection({ type: 'page', source: '**', schema: base.extend({ x: z.string() }) }) } })",
+        ).single()
+        assertFalse(extended.schemaKnown)
+        assertFalse(ComarkCollections.parse("export default { c: defineCollection({ type: 'page', source: '**', schema: z.object({ a: z.string() }).merge(other) }) }").single().schemaKnown)
+        val passthrough = ComarkCollections.parse("export default { c: defineCollection({ type: 'page', source: '**', schema: z.object({ a: z.string() }).passthrough() }) }").single()
+        assertTrue(passthrough.schemaKnown)
+        assertEquals(listOf("a"), passthrough.fields)
+    }
+
+    fun testCollectionsDefinedInVariables() {
+        val shorthand = ComarkCollections.parse(
+            "const blog = defineCollection({ type: 'data', source: 'blog/**' })\nexport default defineContentConfig({ collections: { blog } })",
+        )
+        assertEquals(listOf("blog"), shorthand.map { it.name })
+        assertEquals(StudioCollection.Type.DATA, shorthand.single().type)
+        assertEquals("blog/**", shorthand.single().sources.single().include)
+        val renamed = ComarkCollections.parse(
+            "const docs = defineCollection({ type: 'page', source: 'docs/**' })\nconst unused = defineCollection({ type: 'data', source: 'x/**' })\n" +
+                "export default defineContentConfig({ collections: { guide: docs, other: defineCollection({ type: 'data', source: 'o/**' }) } })",
+        )
+        assertEquals(listOf("other" to StudioCollection.Type.DATA, "guide" to StudioCollection.Type.PAGE), renamed.map { it.name to it.type })
     }
 
     fun testGlobs() {
