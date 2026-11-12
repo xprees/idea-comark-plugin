@@ -5,9 +5,7 @@ import com.intellij.openapi.editor.colors.EditorColorsScheme
 import com.intellij.openapi.editor.highlighter.EditorHighlighter
 import com.intellij.openapi.editor.highlighter.EditorHighlighterFactory
 import com.intellij.openapi.fileTypes.FileType
-import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
-import com.intellij.psi.PsiFile
 import com.intellij.psi.codeStyle.CodeStyleSettings
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings
 import com.intellij.ui.CollectionComboBoxModel
@@ -199,9 +197,6 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
         EditorHighlighterFactory.getInstance().createEditorHighlighter(ComarkFileType, scheme, null)
 
     /** A Comark file, so the preview is formatted by the Comark formatter. */
-    override fun createFileFromText(project: Project, text: String): PsiFile =
-        ComarkCodeStyleSettingsProvider.createPreviewFile(project, text)
-
     companion object {
         private val NO_WRAP = CommonCodeStyleSettings.WrapOnTyping.NO_WRAP.intValue
 
