@@ -14,5 +14,20 @@
         <enterHandlerDelegate implementation="cz.xprees.comark.format.ComarkEnterHandlerDelegate" order="first"/>
         <!-- props blocks: ahead of the YAML plugin's Enter handling of the injected YAML -->
         <editorActionHandler action="EditorEnter" implementationClass="cz.xprees.comark.format.ComarkPropsEnterHandler" order="first"/>
+
+        <!-- Nuxt Studio style: what Studio would rewrite or convert (active in the Nuxt Studio and Custom styles) -->
+        <localInspection language="Comark" shortName="ComarkStudioRewrite" enabledByDefault="true" level="WEAK WARNING"
+                         bundle="messages.ComarkBundle" key="studio.inspection.rewrite.name"
+                         groupBundle="messages.ComarkBundle" groupKey="highlighting.inspection.group"
+                         implementationClass="cz.xprees.comark.format.ComarkStudioRewriteInspection"/>
+        <localInspection language="Comark" shortName="ComarkStudioConversion" enabledByDefault="true" level="WEAK WARNING"
+                         bundle="messages.ComarkBundle" key="studio.inspection.conversion.name"
+                         groupBundle="messages.ComarkBundle" groupKey="highlighting.inspection.group"
+                         implementationClass="cz.xprees.comark.format.ComarkStudioConversionInspection"/>
+        <!-- the project uses another nuxt-studio / comark release than the Studio style reproduces -->
+        <editorNotificationProvider implementation="cz.xprees.comark.format.ComarkStudioVersionNotificationProvider"/>
+        <!-- offer the Nuxt Studio style in projects that depend on nuxt-studio -->
+        <postStartupActivity implementation="cz.xprees.comark.format.ComarkStudioAdoptionActivity"/>
+        <notificationGroup id="Comark Nuxt Studio" displayType="STICKY_BALLOON" bundle="messages.ComarkBundle" key="studio.notification.group"/>
     </extensions>
 </idea-plugin>

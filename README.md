@@ -48,14 +48,86 @@ view, lists, tables, header anchors, code fence injection, …) still applies.
 | Area | What you get |
 |---|---|
 | Highlighting | Component markers, names, closers, attributes (`#id`, `.class`, `key="value"`, `:binding`), slots, props fences; inline components, spans, attribute groups and `{{ bindings }}` in text. Colours in *Settings › Editor › Color Scheme › Comark* |
-| Inspections | *Unclosed block component* (with a fix inserting the closer), *Ignored text after component opener*, *Unknown Comark component* (off by default; HTML element names such as `::div` and `:br` are not reported). Markdown's unresolved-link and unresolved-anchor inspections understand Comark spans and `{#id}` anchors |
+| Inspections | *Unclosed block component* (with a fix inserting the closer), *Ignored text after component opener*, *Unknown Comark component* (off by default; HTML element names such as `::div` and `:br` are not reported), and in the Nuxt Studio style *Nuxt Studio will rewrite this* and *Emoji shortcode or character reference Nuxt Studio converts* (see [Formatting](#formatting)). Markdown's unresolved-link and unresolved-anchor inspections understand Comark spans and `{#id}` anchors |
 | Formatting | *Code › Reformat Code* uses a line-by-line port of the VS Code extension's formatter (`@nuxtlabs/monarch-mdc` 0.10.0; the Comark VS Code extension 0.6.2 ships 0.9.0, whose formatter output is identical), checked byte for byte against the original on 58,766 cases. Where the original would change what a document says, the IDE keeps it instead (see *Known limitations*); everywhere else the result is the same as in VS Code. Indent size: *Settings › Editor › Code Style › Comark* (2 by default; EditorConfig wins); indentation is always spaces. Enter and *Code › Auto-Indent Lines* indent lines the same way |
-| Nuxt Studio style | *Code Style › Comark › Style*: *Style preset* **VS Code** (default; the row above), **Nuxt Studio** or **Custom**. Nuxt Studio reformats the document as Nuxt Studio 1.8.0 writes it when it is saved from its code editor (comark 0.7.0's renderer: `-` bullets, `1.` items, `*em*`, `**strong**`, backtick fences, one blank line between blocks, components nested by two spaces, props inline up to three and as a YAML block above, front matter re-dumped by js-yaml, tables aligned like Studio). Blocks Studio would damage (raw HTML, HTML comments, components in list items, reference links, table alignment, fence highlights, heading ids, YAML comments, ...) are kept exactly as written. A selection reformats the whole top-level blocks it touches; formatter off/on markers keep the blocks they touch. After a whole-file reformat the file is converted to `\n` line breaks without a BOM, as Studio writes it (each its own undoable step). The preset turns off typing wrap. **Custom** is Nuxt Studio's style with options: indent size (component nesting), bullet marker, ordered list delimiter, emphasis and strong markers (`_` only where CommonMark allows it), code fence character, blank lines kept between top-level blocks, props written inline at most (0 to 3), props sorted by name, front matter kept as written. Picking a preset sets the options; changing an option switches to Custom. The settings are part of the code style scheme (shareable in `.idea/codeStyles`) and can be set in `.editorconfig`: `ij_comark_style_preset = nuxt_studio` (`vscode`, `nuxt_studio`, `custom`), `ij_comark_bullet_marker = dash` (`asterisk`, `plus`), `ij_comark_ordered_delimiter = dot` (`parenthesis`), `ij_comark_emphasis_marker` / `ij_comark_strong_marker = asterisk` (`underscore`), `ij_comark_fence_marker = backtick` (`tilde`), `ij_comark_max_blank_lines = 1`, `ij_comark_props_inline_max = 3`, `ij_comark_sort_props = false`, `ij_comark_front_matter = studio` (`keep`); the options apply with `custom` only |
+| Nuxt Studio style | Reformat Code can also write what Nuxt Studio writes when it saves a file, or a custom variant of it, with inspections for what Studio would change; see [Formatting](#formatting) |
 | Components | Completion of component names (`::`, `:::`, inline `:`), props inside `{…}` and in props YAML, prop values from string unions, slot names after `#`; Go to Declaration to the `.vue` file, prop and `<slot>`; quick documentation; Find Usages of a `.vue` file (or from a usage) lists its block and inline usages in Comark files, and renaming the file renames them, keeping each usage's style (`info-box`, `InfoBox`, `infoBox`). Sources: Vue SFCs in `components/` (Nuxt naming, including grouping folders and `islands/`; files in `components/content/` subfolders get Nuxt Content's name without the folder prefix), `.nuxt/component-meta.mjs` / `.json`, an optional metadata URL. Props come from `defineProps<…>()` type literals, local or imported interfaces and type aliases (`import type { Props } from './types'`, relative paths and the `~/`, `@/`, `~~/`, `@@/` aliases, `extends`, `A & B`, re-exports, member types that name type aliases such as `variant?: Variant`), runtime `defineProps({…})`, `withDefaults` and the options API. No Vue plugin needed |
 | Route links | In Nuxt Content packages, page routes in links (`[Install](/guide/install#setup)`) resolve to their content file (`content/1.guide/2.install.md`, `index` files for directories, ordering prefixes and extensions dropped): Go to Declaration opens the page, `#anchor` resolves and completes against its headings, and routes complete after `](/`. Routes that match no content file are not reported (custom pages may exist) |
 | Editor | Folding of components, slots and props (Markdown folds kept); matching `::name` / `::` highlighting and navigation; YAML highlighting and checks in props blocks; live templates from the VS Code snippets; Enter after an unclosed opener inserts its closer; breadcrumbs and sticky lines; structure view with headers, components and slots; spellchecking of component content and attribute values |
 | Images | Site paths of images (`![](/images/hero.webp)`, reference definitions, image-like attributes and props such as `src`, `image`, `heroImage`, `cover`, `logo`, and front matter keys such as `image`, `seo.image`, `og:image`, `image.src`) resolve to the image in the Nuxt image directories (see [Images](#images)): Go to Declaration, completion with thumbnails and pixel sizes, quick documentation with a preview, size and directory, Find Usages of image files, Rename and Move of image files and directories, a *Missing Nuxt image* inspection with a fix to the closest existing path, and images shown in the preview |
 | Preview | Components, props and slots render as labelled blocks in the built-in (JCEF) Markdown preview; image paths load from the Nuxt image directories, and image props of components show as thumbnails |
+
+## Formatting
+
+*Settings › Editor › Code Style › Comark › Style* picks what *Code › Reformat Code* writes for Comark files:
+
+| Preset | What Reformat Code does |
+|---|---|
+| **VS Code (monarch-mdc)** (default) | Indentation and trailing whitespace only, like the Comark VS Code extension (see *Formatting* under [Features](#features)) |
+| **Nuxt Studio** | Writes the document the way Nuxt Studio 1.8.0 writes it when the file is saved from its code editor |
+| **Custom** | The Nuxt Studio style with your own choices for the options below |
+
+**What the Nuxt Studio style guarantees.** The output is what Studio itself would save (comark 0.7.0's renderer, checked byte for
+byte against the real nuxt-studio 1.8.0 code on 480 recorded documents and over 5,000 random ones): `-` bullets, `1.` items,
+`*em*`, `**strong**`, backtick fences, one blank line between blocks, components nested by two spaces, up to three props inline
+and more as a YAML block, front matter re-dumped by js-yaml, tables aligned like Studio. Saving a file formatted this way again
+from Studio's code editor changes nothing, so edits in the IDE and in Studio don't fight over formatting (the few exceptions
+are listed under [Known limitations](#known-limitations)). After a whole-file
+reformat the file is converted to `\n` line breaks without a BOM, as Studio writes it (each its own undoable step), and the
+preset turns off wrap on typing. A selection reformats the whole top-level blocks it touches; formatter off/on markers keep the
+blocks they touch.
+
+**What is kept as written, with a warning.** Some content Studio would damage on save. Reformat Code leaves these blocks exactly
+as they are, and the *Nuxt Studio will rewrite this* inspection (weak warning) marks the first line of each with what Studio
+would do:
+
+- raw HTML (turned into components) and HTML comments (dropped)
+- reference-style links (inlined) and link reference definitions (deleted); footnotes (expanded into components)
+- table column alignment (dropped); fix: *Remove column alignment*
+- heading `{#id}` attributes (dropped or escaped into the heading text); fix: *Remove the heading id*
+- code fence line highlights `{1,3}` and fence file names containing `]`
+- YAML comments in front matter or props (dropped), YAML that does not load, a front matter `body` key
+- components inside list items or indented as code, multi-line props, inline components with object props, unclosed `{`
+  attribute lists, escaped `\{` `\}`, inline code containing a backtick, multi-line setext headings, nested task lists,
+  neighbouring lists with different markers, and blocks whose Studio output changes again on the next save
+
+Every warning has *Suppress for this block*, which puts `<!-- @formatter:off -->` / `<!-- @formatter:on -->` around the block;
+blocks between these markers are not reported. Reformat Code honours the markers when they are enabled in *Code Style ›
+Formatter* (Studio itself still rewrites the block and drops the comments).
+
+**What Studio converts.** Emoji shortcodes (`:rocket:`) and HTML character references (`&copy;`, `&#169;`) become the
+characters when Studio saves. The *Emoji shortcode or character reference Nuxt Studio converts* inspection reports them, with a
+fix that writes what Studio writes (`🚀`, `©`, or an escape such as `\<` for `&lt;tag>`); Reformat Code converts them too.
+
+Both inspections are on by default and active only when the file's style is Nuxt Studio or Custom. Projects that depend on
+nuxt-studio but still use the VS Code style get a one-time notification instead, offering *Use Nuxt Studio style* (which sets
+the project code style, moving the project to a project scheme if needed), *Not now* (ask again next time the project opens) or
+*Don't ask again*.
+
+**Options of the Custom style**: indent size (component nesting), bullet marker, ordered list delimiter, emphasis and strong
+markers (`_` only where CommonMark allows it), code fence character, blank lines kept between top-level blocks, props written
+inline at most (0 to 3; more always become a YAML block), props sorted by name, front matter as Studio writes it or kept as
+written. Picking a preset sets the options; changing an option switches to Custom.
+
+**Sharing the settings.** They are part of the code style scheme (shareable in `.idea/codeStyles`) and can be set in
+`.editorconfig`; the options apply with `custom` only:
+
+| Key | Values |
+|---|---|
+| `ij_comark_style_preset` | `vscode` (default), `nuxt_studio`, `custom` |
+| `ij_comark_bullet_marker` | `dash`, `asterisk`, `plus` |
+| `ij_comark_ordered_delimiter` | `dot`, `parenthesis` |
+| `ij_comark_emphasis_marker`, `ij_comark_strong_marker` | `asterisk`, `underscore` |
+| `ij_comark_fence_marker` | `backtick`, `tilde` |
+| `ij_comark_max_blank_lines` | `1` and up |
+| `ij_comark_props_inline_max` | `0` to `3` |
+| `ij_comark_sort_props` | `false`, `true` |
+| `ij_comark_front_matter` | `studio`, `keep` |
+
+**Version pin.** The Nuxt Studio style reproduces nuxt-studio 1.8.0 with comark 0.7.0. When the package of a Comark file depends
+on another nuxt-studio release (read from `package.json` and the nearest `package-lock.json`, `npm-shrinkwrap.json`,
+`pnpm-lock.yaml`, `yarn.lock` or `bun.lock`), or resolves comark only in other versions, files in the Studio styles show a banner
+naming the versions found. *Dismiss* hides it for those versions; it comes back when the project moves to yet another version.
 
 ## Images
 
@@ -94,7 +166,7 @@ files) and the directories detected for the current project.
 the Markdown one), component completion, an optional component metadata URL and its cache time, and Nuxt image paths (see
 [Images](#images)).
 *Settings › Editor › Code Style › Comark*: the style Reformat Code writes (*Style* tab: VS Code, Nuxt Studio or Custom, see
-*Nuxt Studio style* above) and the indentation used by the formatter and Enter.
+[Formatting](#formatting)) and the indentation used by the formatter and Enter.
 The platform's formatter controls apply: *Code Style › Formatter › Do not format* entries, and formatter markers in comments
 (`<!-- @formatter:off -->` … `<!-- @formatter:on -->` or `[//]: # (@formatter:off)`) leave those files or lines as they are.
 
@@ -111,7 +183,9 @@ The platform's formatter controls apply: *Code Style › Formatter › Do not fo
 - The Nuxt Studio style follows Studio's code editor save (its text path). The front matter rules of Studio's visual editor save
   (a `title` and `description` added from the first heading and paragraph, keys ordered by the collection schema of
   `content.config.ts`, `navigation: true`, nulls and empty lists dropped) are not applied yet. *Inline props, at most* supports
-  0 to 3 (Studio's own limit is 3; more props always become a YAML block).
+  0 to 3 (Studio's own limit is 3; more props always become a YAML block). On a handful of malformed documents (leading blank
+  lines before a stray `---`, for example) Studio's own output changes again on a second save, and so does the Nuxt Studio
+  style's.
 - The formatter always indents with spaces, so the Comark code style offers no tab options: Markdown counts a leading tab as four
   columns, which would turn tab-indented nested components into code blocks.
 - The preview renders components only with the built-in JCEF preview; Markdown settings list "JCEF Browser" twice (both entries are
