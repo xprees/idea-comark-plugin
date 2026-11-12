@@ -145,6 +145,18 @@ data class StudioUnstableBlock(val outputLines: IntRange, val dbRewrite: StudioD
 data class StudioUnverifiedBlock(val outputLines: IntRange, val inputLines: IntRange, val frontMatter: Boolean = false)
 
 /**
+ * A block [StudioStyle] wrote in the form Studio's code editor (text path) keeps on its own, which that editor still rewrites
+ * in this document because of a block before it that Studio damages (one kept verbatim or not checked): Studio's output for
+ * that block runs into this one (a missing blank line, a construct it leaves open). Found by running the text path
+ * ([StudioFormatter.format]) over the whole result.
+ *
+ * @property outputLines the lines of the block in [StudioStyleResult.text] (0-based, end exclusive)
+ * @property inputLines the input lines it came from
+ * @property causeOutputLines the reported block before it whose rewrite spills into it, when there is one
+ */
+data class StudioAffectedBlock(val outputLines: IntRange, val inputLines: IntRange, val causeOutputLines: IntRange? = null)
+
+/**
  * A top-level block of [StudioStyleResult.text] and the input lines it came from (0-based, end exclusive; [inputLines] is
  * empty for front matter the style adds). In document order; blocks that came from overlapping input lines are merged.
  */
@@ -196,6 +208,7 @@ enum class StudioFrontMatterStatus {
  * @property bomRemoved the input started with a byte order mark, which the output does not have
  * @property lineEndingsNormalized the input had `\r\n` or `\r` line breaks; the output has `\n`
  * @property restyledBlocks blocks written with the Custom renderer options
+ * @property affectedBlocks blocks Studio's text path rewrites because of a damaged block before them ([StudioStyleResult.affectedBlocks])
  */
 data class StudioStyleDiagnostics(
     val blocks: Int,
@@ -210,6 +223,7 @@ data class StudioStyleDiagnostics(
     val bomRemoved: Boolean,
     val lineEndingsNormalized: Boolean,
     val restyledBlocks: Int,
+    val affectedBlocks: Int = 0,
 )
 
 /**
@@ -223,6 +237,7 @@ data class StudioStyleResult(
     val diagnostics: StudioStyleDiagnostics,
     val unverifiedBlocks: List<StudioUnverifiedBlock> = emptyList(),
     val blockMap: List<StudioBlockMapping> = emptyList(),
+    val affectedBlocks: List<StudioAffectedBlock> = emptyList(),
 )
 
 /**
@@ -768,6 +783,12 @@ object StudioStyle {
                 mapping += StudioBlockMapping(out, inLines)
             }
         }
+        kept = ArrayList(kept.map { k -> if (leavesHtmlOpen(textLines, k)) k.copy(reasons = k.reasons + StudioRewriteReason.UNCLOSED_HTML_TAG) else k })
+        val reported = HashSet<Int>()
+        kept.forEach { reported += it.outputLines }
+        unstable.forEach { reported += it.outputLines }
+        unverified.forEach { reported += it.outputLines }
+        var affected = affectedBlocks(last.text, mapping, reported)
         var text = last.text
         var restyled = 0
         var unverifiedOut = unverified
@@ -780,6 +801,7 @@ object StudioStyle {
             unstable = unstable.map { it.copy(outputLines = r.map(it.outputLines)) }
             unverifiedOut = unverified.map { it.copy(outputLines = r.map(it.outputLines)) }
             mappingOut = mapping.map { it.copy(outputLines = r.map(it.outputLines)) }
+            affected = affected.map { a -> a.copy(outputLines = r.map(a.outputLines), causeOutputLines = a.causeOutputLines?.let { r.map(it) }) }
         }
         val diagnostics = StudioStyleDiagnostics(
             blocks = last.blocks.count { it.block.kind == StudioBlockKind.BLOCK || it.block.kept || it.block.studioOutput?.isNotEmpty() == true },
@@ -794,8 +816,98 @@ object StudioStyle {
             bomRemoved = bom,
             lineEndingsNormalized = crlf,
             restyledBlocks = restyled,
+            affectedBlocks = affected.size,
         )
-        return StudioStyleResult(text, kept, unstable, diagnostics, unverifiedOut, mappingOut)
+        return StudioStyleResult(text, kept, unstable, diagnostics, unverifiedOut, mappingOut, affected)
+    }
+
+    // ---- what Studio still changes around reported blocks ---------------------------------------------------------------
+
+    /**
+     * The blocks of [text] (Studio-style, before Custom options) that Studio's text path rewrites outside the [reported] lines:
+     * each changed line that is not blank or reported, and each change of blank lines or insertion not next to a reported
+     * line, marks the block that holds it (or the next one). The port of the text path is exact, so these are the blocks the
+     * code editor will change on save because a damaged block before them runs into them.
+     */
+    private fun affectedBlocks(text: String, mapping: List<StudioBlockMapping>, reported: Set<Int>): List<StudioAffectedBlock> {
+        val written = StudioFormatter.format(text) ?: return emptyList()
+        if (written == text) return emptyList()
+        val lines = text.split("\n")
+        val touched = sortedSetOf<Int>()
+        for (h in StudioLineDiff.hunks(lines, written.split("\n"))) {
+            val deleted = h.start until h.start + h.deleted
+            val content = deleted.filter { lines[it].isNotBlank() }
+            if (content.isNotEmpty()) {
+                content.filterTo(touched) { it !in reported }
+                continue
+            }
+            if (!bordersReported(lines, h.start, h.deleted, reported)) touched += h.start
+        }
+        if (touched.isEmpty()) return emptyList()
+        val result = LinkedHashMap<IntRange, StudioAffectedBlock>()
+        for (line in touched) {
+            val block = mapping.firstOrNull { line in it.outputLines } ?: mapping.firstOrNull { it.outputLines.first > line } ?: mapping.lastOrNull() ?: continue
+            if (block.outputLines.any { it in reported } || block.outputLines in result) continue
+            val cause = mapping.lastOrNull { it.outputLines.last < block.outputLines.first && it.outputLines.any { l -> l in reported } }?.outputLines
+            result[block.outputLines] = StudioAffectedBlock(block.outputLines, block.inputLines, cause)
+        }
+        return result.values.toList()
+    }
+
+    /**
+     * Whether a change of only blank lines (or an insertion) at lines `[start, start + deleted)` of [lines] sits next to a
+     * [reported] block: the nearest line with content before or after it is reported (Studio's rewrite of that block adds or
+     * drops the blank lines, or closes a construct the block leaves open).
+     */
+    internal fun bordersReported(lines: List<String>, start: Int, deleted: Int, reported: Set<Int>): Boolean {
+        if ((start until start + deleted).any { it in reported }) return true
+        val before = (start - 1 downTo 0).firstOrNull { lines[it].isNotBlank() }
+        val after = (start + deleted until lines.size).firstOrNull { lines[it].isNotBlank() }
+        return before != null && before in reported || after != null && after in reported
+    }
+
+    /** HTML elements without content: a start tag of one opens nothing. */
+    private val VOID_ELEMENTS = setOf(
+        "area", "base", "br", "col", "embed", "hr", "img", "input", "keygen", "link", "meta", "param", "source", "track", "wbr",
+    )
+    private val HTML_TAG = Regex("<(/?)([A-Za-z][A-Za-z0-9-]*)(?:\\s[^<>]*)?/?>")
+    private val FENCE_LINE = Regex("^\\s{0,3}(`{3,}|~{3,})")
+    private val CODE_SPAN = Regex("(`+)[\\s\\S]*?\\1")
+
+    /**
+     * Whether the kept [block], with raw HTML, opens an element that no later line of [lines] closes: HTML (parse5, which
+     * rehype-raw uses in Nuxt Content) ignores `/>` on an element that is not void, so `<Counter />` opens one too, and the
+     * database path then puts the rest of the document inside it.
+     */
+    private fun leavesHtmlOpen(lines: List<String>, block: StudioKeptBlock): Boolean {
+        if (StudioRewriteReason.RAW_HTML !in block.reasons || block.outputLines.isEmpty()) return false
+        val open = ArrayList<String>()
+        // an end tag closes its element and every element still open inside it
+        fun close(name: String) = open.lastIndexOf(name).takeIf { it >= 0 }?.let { open.subList(it, open.size).clear() }
+        scanTags(lines, block.outputLines.first, block.outputLines.last + 1) { closing, name ->
+            if (closing) close(name) else if (name !in VOID_ELEMENTS) open += name
+        }
+        if (open.isEmpty()) return false
+        scanTags(lines, block.outputLines.last + 1, lines.size) { closing, name -> if (closing) close(name) }
+        return open.isNotEmpty()
+    }
+
+    /** Calls [tag] for each HTML tag on lines `[from, to)` of [lines], outside code fences and code spans. */
+    private fun scanTags(lines: List<String>, from: Int, to: Int, tag: (closing: Boolean, name: String) -> Unit) {
+        var fence: String? = null
+        for (i in from until minOf(to, lines.size)) {
+            val line = lines[i]
+            val marker = FENCE_LINE.find(line)?.groupValues?.get(1)
+            if (fence != null) {
+                if (marker != null && marker[0] == fence[0] && marker.length >= fence.length && line.trim() == marker) fence = null
+                continue
+            }
+            if (marker != null) {
+                fence = marker
+                continue
+            }
+            for (m in HTML_TAG.findAll(line.replace(CODE_SPAN, ""))) tag(m.groupValues[1] == "/", m.groupValues[2].lowercase())
+        }
     }
 
     /** For each output line of [pass], the input lines of the block that wrote it (`null` for separators and new lines). */

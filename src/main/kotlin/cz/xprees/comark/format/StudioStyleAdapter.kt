@@ -42,6 +42,9 @@ object StudioStyleAdapter {
         }
         // front matter the style adds is not in the document: nothing there to mark
         val unverified = styled.unverifiedBlocks.filter { !it.inputLines.isEmpty() }.map { UnverifiedBlock(it.inputLines, it.frontMatter) }
+        val affected = styled.affectedBlocks.filter { !it.inputLines.isEmpty() }.map { block ->
+            AffectedBlock(block.inputLines, block.causeOutputLines?.let { cause -> styled.blockMap.firstOrNull { it.outputLines == cause }?.inputLines?.takeIf { !it.isEmpty() } })
+        }
         val blocks = sourceBlocks(text)
         var output = styled.text
         var mapping = styled.blockMap.map { BlockMapping(it.inputLines, it.outputLines) }
@@ -53,7 +56,14 @@ object StudioStyleAdapter {
                 BlockMapping(m.input, (m.output.first + before)..(m.output.last + before))
             }
         }
-        return StudioStyleResult(text = output, blocks = blocks.orEmpty().map { it.lines }, keptBlocks = kept, unverifiedBlocks = unverified, blockMap = mapping)
+        return StudioStyleResult(
+            text = output,
+            blocks = blocks.orEmpty().map { it.lines },
+            keptBlocks = kept,
+            unverifiedBlocks = unverified,
+            blockMap = mapping,
+            affectedBlocks = affected,
+        )
     }
 
     /** How many times [format] ran, for tests that check a style never reaches the engine. */
@@ -361,6 +371,7 @@ data class StudioStyleOptions(
  * @property keptBlocks the blocks left exactly as written, because Studio would damage them
  * @property unverifiedBlocks the blocks written without a check against Studio's database path
  * @property blockMap every top-level block of [text] with the source lines it came from
+ * @property affectedBlocks the blocks Studio's code editor rewrites because a block before them that it damages runs into them
  */
 data class StudioStyleResult(
     val text: String,
@@ -368,7 +379,14 @@ data class StudioStyleResult(
     val keptBlocks: List<KeptBlock>,
     val unverifiedBlocks: List<UnverifiedBlock> = emptyList(),
     val blockMap: List<BlockMapping> = emptyList(),
+    val affectedBlocks: List<AffectedBlock> = emptyList(),
 )
+
+/**
+ * A block written in the style that Studio's code editor still rewrites, because Studio's output for a block before it (one
+ * it damages, at the source lines [cause] when known) runs into it: its source [lines].
+ */
+data class AffectedBlock(val lines: IntRange, val cause: IntRange? = null)
 
 /**
  * A block written in the style without a check against Studio's database path (the engine's emulation of it does not follow

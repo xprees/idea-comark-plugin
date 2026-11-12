@@ -112,7 +112,7 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
     }
 
     private fun <T> combo(values: List<T>, text: (T) -> String): ComboBox<T> =
-        ComboBox(CollectionComboBoxModel(values)).apply { renderer = SimpleListCellRenderer.create("") { value -> value?.let(text) ?: "" } }
+        ComboBox(CollectionComboBoxModel(values)).apply { renderer = SimpleListCellRenderer.create { label, value, _ -> label.text = value?.let(text) ?: "" } }
 
     /**
      * A number spinner that takes a typed number as soon as it is valid: by default a spinner keeps it in its text field until
