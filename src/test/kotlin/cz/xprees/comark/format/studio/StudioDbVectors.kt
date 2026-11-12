@@ -62,6 +62,24 @@ internal object StudioDbVectors {
         val summary: JsonObject get() = header.getAsJsonObject("summary")
     }
 
+    /** The configurations of `record-db-vectors.mjs`, as [StudioCollection]s. */
+    fun collection(config: String, id: String): StudioCollection = when (config) {
+        "pageDefault" -> StudioCollection.page(id)
+        "pageSchema" -> StudioCollection.page(
+            id,
+            listOf(
+                StudioCollection.Field("date", StudioCollection.ColumnType.DATE),
+                StudioCollection.Field("author", StudioCollection.ColumnType.STRING),
+                StudioCollection.Field("tags", StudioCollection.ColumnType.JSON),
+                StudioCollection.Field("image", StudioCollection.ColumnType.JSON),
+                StudioCollection.Field("order", StudioCollection.ColumnType.NUMBER),
+                StudioCollection.Field.withDefault("draft", StudioCollection.ColumnType.BOOLEAN, false),
+            ),
+        )
+        "data" -> StudioCollection.data(id)
+        else -> error(config)
+    }
+
     val corpus: Corpus by lazy { load(File("src/test/testData/studio/db-vectors.json")) }
     val vectors: List<Vector> get() = corpus.vectors
 

@@ -13,23 +13,7 @@ import java.io.File
  * not.
  */
 class StudioDbPathDifferentialTest {
-    /** The configurations of `record-db-vectors.mjs`, as [StudioCollection]s. */
-    private fun collection(config: String, id: String): StudioCollection = when (config) {
-        "pageDefault" -> StudioCollection.page(id)
-        "pageSchema" -> StudioCollection.page(
-            id,
-            listOf(
-                StudioCollection.Field("date", StudioCollection.ColumnType.DATE),
-                StudioCollection.Field("author", StudioCollection.ColumnType.STRING),
-                StudioCollection.Field("tags", StudioCollection.ColumnType.JSON),
-                StudioCollection.Field("image", StudioCollection.ColumnType.JSON),
-                StudioCollection.Field("order", StudioCollection.ColumnType.NUMBER),
-                StudioCollection.Field.withDefault("draft", StudioCollection.ColumnType.BOOLEAN, false),
-            ),
-        )
-        "data" -> StudioCollection.data(id)
-        else -> error(config)
-    }
+    private fun collection(config: String, id: String): StudioCollection = StudioDbVectors.collection(config, id)
 
     private fun category(recorded: Result, outcome: Outcome): String = when (recorded) {
         is Result.Failure -> when (outcome) {

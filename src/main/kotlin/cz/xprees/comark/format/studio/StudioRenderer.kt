@@ -27,6 +27,32 @@ object StudioRenderer {
         YAML,
     }
 
+    /**
+     * Markdown style knobs that are not comark's: [StudioStyle] renders with them for a Custom style. [STUDIO] is comark's
+     * own output; any other value writes a form Studio rewrites on its next save.
+     *
+     * @property indentSize spaces per nesting level of a component inside a component (comark: 2)
+     * @property bulletMarker `-`, `*` or `+`
+     * @property orderedDelimiter `.` or `)`
+     * @property emphasisChar `*` or `_`
+     * @property strongChar `*` or `_` (written twice)
+     * @property fenceChar the preferred code fence character, `` ` `` or `~` (the other one where the code needs it)
+     * @property maxInlineAttributes the most attributes a block component keeps on its opening line; more go to a YAML block
+     */
+    internal data class Style(
+        val indentSize: Int = 2,
+        val bulletMarker: Char = '-',
+        val orderedDelimiter: Char = '.',
+        val emphasisChar: Char = '*',
+        val strongChar: Char = '*',
+        val fenceChar: Char = '`',
+        val maxInlineAttributes: Int = MAX_INLINE_ATTRIBUTES,
+    ) {
+        companion object {
+            val STUDIO = Style()
+        }
+    }
+
     /** Called for every component [mdc] writes, with the element as it is in the rendered tree (the same instance). */
     fun interface ComponentObserver {
         fun written(node: StudioElement, style: ComponentStyle)
@@ -43,8 +69,10 @@ object StudioRenderer {
         StudioJs.trim(renderNodes(document.nodes, observer)) + "\n"
 
     /** The concatenated output of top-level [nodes], before `render` trims the whole body. */
-    fun renderNodes(nodes: List<StudioNode>, observer: ComponentObserver? = null): String {
-        val state = State(Context(observer), 0)
+    fun renderNodes(nodes: List<StudioNode>, observer: ComponentObserver? = null): String = renderNodes(nodes, observer, Style.STUDIO)
+
+    internal fun renderNodes(nodes: List<StudioNode>, observer: ComponentObserver?, style: Style): String {
+        val state = State(Context(observer, style), 0)
         val sb = StringBuilder()
         for (child in nodes) sb.append(one(child, state, null))
         return sb.toString()
@@ -72,7 +100,7 @@ object StudioRenderer {
     // ---- state ----------------------------------------------------------------------------------------------------------
 
     /** The mutable `state.context` keys handlers set through `applyContext`. `order` 0 stands for `false`/`undefined`. */
-    private class Context(val observer: ComponentObserver? = null) {
+    private class Context(val observer: ComponentObserver? = null, val style: Style = Style.STUDIO) {
         var inline: Boolean? = null
         var list: Boolean? = null
         var order: Double = 0.0
@@ -131,7 +159,7 @@ object StudioRenderer {
         if (isOne(dollar(node.attrs, "html"))) return html(node, state, parent)
         return when (node.tag) {
             "code" -> code(node)
-            "pre" -> pre(node)
+            "pre" -> pre(node, state.ctx.style.fenceChar)
             "hr" -> if (parent?.tag == "p") ":hr" else "---$BLOCK_SEPARATOR"
             "br" -> "  \n"
             "h1", "h2", "h3", "h4", "h5", "h6" -> heading(node, state)
@@ -141,8 +169,8 @@ object StudioRenderer {
             "ol" -> ol(node, state)
             "li" -> li(node, state)
             "html" -> html(node, state, parent)
-            "strong" -> wrapInline(node, state, "**")
-            "em" -> wrapInline(node, state, "*")
+            "strong" -> wrapInline(node, state, state.ctx.style.strongChar.toString().repeat(2))
+            "em" -> wrapInline(node, state, state.ctx.style.emphasisChar.toString())
             "del" -> wrapInline(node, state, "~~")
             "blockquote" -> blockquote(node, state)
             "img" -> img(node)
@@ -151,7 +179,7 @@ object StudioRenderer {
             "table" -> table(node, state)
             "thead", "tbody", "tr", "th", "td", "comment" -> ""
             "math" -> math(node, parent)
-            "mermaid" -> mermaid(node)
+            "mermaid" -> mermaid(node, state.ctx.style.fenceChar)
             else -> mdc(node, state, parent)
         }
     }
@@ -261,8 +289,8 @@ object StudioRenderer {
     // ---- utils -----------------------------------------------------------------------------------------------------------
 
     /** `indent(text, { ignoreFirstLine, level, width })` from `utils/index.js`. */
-    private fun indent(text: String, level: Int = 1, width: Int? = null, ignoreFirstLine: Boolean = false): String {
-        val pad = if (width != null && width != 0) " ".repeat(width) else "  ".repeat(level)
+    private fun indent(text: String, level: Int = 1, width: Int? = null, ignoreFirstLine: Boolean = false, levelWidth: Int = 2): String {
+        val pad = if (width != null && width != 0) " ".repeat(width) else " ".repeat(levelWidth * level)
         return text.split("\n").mapIndexed { index, line ->
             if (ignoreFirstLine && index == 0) line else if (line.isNotEmpty()) pad + line else line
         }.joinToString("\n")
@@ -276,7 +304,10 @@ object StudioRenderer {
     }
 
     /** `pickFence(content)` (`fence.js`). */
-    fun pickFence(content: String): String {
+    fun pickFence(content: String): String = pickFence(content, '`')
+
+    /** [pickFence], preferring [preferred] (`` ` `` or `~`) where both would do. */
+    internal fun pickFence(content: String, preferred: Char): String {
         var maxBackticks = 0
         var maxTildes = 0
         for (line in content.split("\n")) {
@@ -294,7 +325,7 @@ object StudioRenderer {
                 maxTildes = run
             }
         }
-        val char = if (maxBackticks <= maxTildes) '`' else '~'
+        val char = if (preferred == '~') (if (maxTildes <= maxBackticks) '~' else '`') else if (maxBackticks <= maxTildes) '`' else '~'
         return char.toString().repeat(maxOf(3, (if (char == '`') maxBackticks else maxTildes) + 1))
     }
 
@@ -439,7 +470,7 @@ object StudioRenderer {
         return "$fence$content$fence$attrsString"
     }
 
-    private fun pre(node: StudioElement): String {
+    private fun pre(node: StudioElement, fenceChar: Char): String {
         val attributes = node.attrs
         val first = node.children.firstOrNull()
         val codeClasses = when (first) {
@@ -456,7 +487,7 @@ object StudioRenderer {
         val meta = attributes["meta"].takeIf { StudioJs.truthy(it) }?.let { " " + StudioJs.str(it) } ?: ""
         val codeAttr = attributes["code"]
         val code = StudioJs.trimEnd(if (StudioJs.truthy(codeAttr)) StudioJs.str(codeAttr) else textContent(node))
-        val fence = pickFence(code)
+        val fence = pickFence(code, fenceChar)
         val fenceBlock = fence + language + filename + highlights + meta + "\n" + code + "\n" + fence
         val attrs = comarkAttributes(userBlockAttrs("pre", attributes))
         if (attrs.isNotEmpty()) return "::pre$attrs\n$fenceBlock\n::$BLOCK_SEPARATOR"
@@ -646,7 +677,8 @@ object StudioRenderer {
     private fun li(node: StudioElement, state: State): String {
         val children = node.children.toMutableList()
         val order = state.ctx.order
-        var prefix = if (order != 0.0) StudioJs.numberToString(order) + ". " else "- "
+        val style = state.ctx.style
+        var prefix = if (order != 0.0) StudioJs.numberToString(order) + style.orderedDelimiter + " " else style.bulletMarker + " "
         val classNameAttr = node.attrs["className"]
         val className = if (classNameAttr is List<*>) {
             classNameAttr.joinToString(" ") { if (it == null || it == JsUndefined) "" else StudioJs.str(it) }
@@ -776,7 +808,7 @@ object StudioRenderer {
             node,
             when {
                 inline || tag == "span" -> ComponentStyle.INLINE
-                hasObjectAttributes || attributeEntries.size > MAX_INLINE_ATTRIBUTES -> ComponentStyle.YAML
+                hasObjectAttributes || attributeEntries.size > state.ctx.style.maxInlineAttributes -> ComponentStyle.YAML
                 else -> ComponentStyle.BLOCK
             },
         )
@@ -787,7 +819,7 @@ object StudioRenderer {
         val fence = ":".repeat(state.depth + 2)
         var result = ":$tag" + (if (content.isNotEmpty()) "[$content]" else "") + attrs + if (parent == null) BLOCK_SEPARATOR else ""
         if (!inline) {
-            val useYaml = hasObjectAttributes || attributeEntries.size > MAX_INLINE_ATTRIBUTES
+            val useYaml = hasObjectAttributes || attributeEntries.size > state.ctx.style.maxInlineAttributes
             val body = if (content.isNotEmpty()) "\n$content" else ""
             result = if (useYaml) {
                 "$fence$tag\n${comarkYamlAttributes(attributes)}$body\n$fence$BLOCK_SEPARATOR"
@@ -795,7 +827,7 @@ object StudioRenderer {
                 "$fence$tag$attrs$body\n$fence$BLOCK_SEPARATOR"
             }
         }
-        return if (inline) result else indent(result, level = if (parent != null) 1 else 0)
+        return if (inline) result else indent(result, level = if (parent != null) 1 else 0, levelWidth = state.ctx.style.indentSize)
     }
 
     private fun template(node: StudioElement, state: State, parent: StudioElement?): String {
@@ -820,12 +852,12 @@ object StudioRenderer {
         return "$$\n$content\n$$$BLOCK_SEPARATOR"
     }
 
-    private fun mermaid(node: StudioElement): String {
+    private fun mermaid(node: StudioElement, fenceChar: Char): String {
         val content = node.attrs["content"]
         val attrs = comarkAttributes(without(node.attrs, "content"))
         val raw = if (content == null || content == JsUndefined) "" else StudioJs.str(content)
         val body = if (raw.endsWith("\n")) raw.substring(0, raw.length - 1) else raw
-        val fence = pickFence(body)
+        val fence = pickFence(body, fenceChar)
         return "${fence}mermaid${if (attrs.isNotEmpty()) " $attrs" else ""}\n$body\n$fence$BLOCK_SEPARATOR"
     }
 

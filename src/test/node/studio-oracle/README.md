@@ -70,6 +70,11 @@ and prints the statistics; `StudioDbVectors` loads it. Recording takes about two
 recorder's D found a difference, and `probes`, hand-written documents with the constructs the emulation follows.
 `StudioDbPathDifferentialTest` compares the emulation with every vector of `db-vectors.json`.
 
+`StudioStyleDifferentialTest` runs the Studio code style (`StudioStyle.format`, the dual fixed point of both save paths)
+over the inputs of all three files. It checks that formatting is idempotent, that Studio's text path and the emulated
+database path leave the output unchanged outside the blocks the result reports, and that every recorded Studio output
+that both paths leave unchanged also comes out of the formatter unchanged.
+
 ## What runs
 
 All versions are pinned exactly in `package.json` and `package-lock.json`: nuxt-studio 1.8.0, comark 0.7.0, js-yaml 5.5.0,
