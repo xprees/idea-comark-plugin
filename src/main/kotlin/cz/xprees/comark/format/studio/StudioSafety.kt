@@ -15,9 +15,13 @@ enum class StudioRewriteReason(val description: String) {
     COMPONENT_IN_LIST_ITEM("a block component inside a list item, which Studio's database path collapses and moves out of the list"),
     HTML_COMMENT("an HTML comment, which Studio's database path drops"),
     RAW_HTML("raw HTML, which Studio's database path converts to components"),
+    UNCLOSED_HTML_TAG(
+        "an HTML tag that is never closed (HTML ignores the /> of an element like <Counter />), so Studio's database path puts " +
+            "everything after it inside that element",
+    ),
     LINK_REFERENCE_DEFINITION("a link reference definition, which Studio deletes (its text path writes an empty ::component)"),
     REFERENCE_LINK("a reference-style link, which Studio inlines (and deletes its definition)"),
-    FOOTNOTE("a footnote, which Studio's database path expands into components"),
+    FOOTNOTE("a footnote, which Studio's database path expands into components and moves to a section at the end of the document"),
     TABLE_ALIGNMENT("table column alignment, which Studio's database path drops"),
     FENCE_HIGHLIGHTS("code fence line highlights {…}, which Studio's database path mangles further on every save"),
     HEADING_ID("a heading {#id}, which Studio drops (text path) or escapes into the heading text (database path)"),

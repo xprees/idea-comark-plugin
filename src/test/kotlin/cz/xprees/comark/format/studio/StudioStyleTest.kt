@@ -251,6 +251,39 @@ class StudioStyleTest {
     }
 
     @Test
+    fun blocksTheTextPathRewritesBecauseOfAKeptBlockAreReported() {
+        // Studio writes the kept HTML without the closing fence line's blank line, so the heading after it joins the backticks
+        val x = "```html\n<component>\n```\n\n<component>\n</component>\n```\n\n## Markdown\n"
+        val r = StudioStyle.format(x, dataOptions)!!
+        assertEquals(x, r.text)
+        assertEquals(listOf(4..6), r.keptBlocks.map { it.outputLines })
+        assertEquals(listOf(StudioAffectedBlock(8..8, 8..8, 4..6)), r.affectedBlocks)
+        assertEquals(1, r.diagnostics.affectedBlocks)
+
+        // a component named a becomes an empty link that the next block runs into
+        val a = StudioStyle.format("::a\n::\n\n> - two\n", dataOptions)!!
+        assertEquals(listOf(StudioAffectedBlock(3..3, 3..3, 0..1)), a.affectedBlocks)
+
+        // nothing is reported where the text path leaves the other blocks alone
+        assertEquals(emptyList<StudioAffectedBlock>(), StudioStyle.format("<div>x</div>\n\n## Markdown\n", dataOptions)!!.affectedBlocks)
+    }
+
+    @Test
+    fun anHtmlTagThatIsNeverClosedIsReported() {
+        fun reasons(x: String) = StudioStyle.format(x, dataOptions)!!.keptBlocks.flatMap { it.reasons }.toSet()
+        // HTML ignores the /> of a non-void element, so <Counter /> stays open to the end of the document
+        assertTrue(StudioRewriteReason.UNCLOSED_HTML_TAG in reasons("<Counter :count=\"1\" />\n\nText after\n"))
+        assertTrue(StudioRewriteReason.UNCLOSED_HTML_TAG in reasons("<section>\n\nText after\n"))
+        // closed in the block, later in the document, by an ancestor's end tag, or void
+        assertFalse(StudioRewriteReason.UNCLOSED_HTML_TAG in reasons("<div>x</div>\n\nText after\n"))
+        assertFalse(StudioRewriteReason.UNCLOSED_HTML_TAG in reasons("<details>\n<summary>S</summary>\n\nBody\n\n</details>\n"))
+        assertFalse(StudioRewriteReason.UNCLOSED_HTML_TAG in reasons("<component>\n  <child/>\n</component>\n\nText after\n"))
+        assertFalse(StudioRewriteReason.UNCLOSED_HTML_TAG in reasons("Text with <br/>, <img src=\"/a.png\"> and `<b>` code.\n\nAfter\n"))
+        // a tag inside a code fence is not HTML
+        assertFalse(StudioRewriteReason.UNCLOSED_HTML_TAG in reasons("<div>x</div>\n\n```html\n<section>\n```\n"))
+    }
+
+    @Test
     fun byteOrderMarkAndCrlfAreDropped() {
         val r = format("﻿# Title\r\n\r\nText\r\n")
         assertEquals("---\ntitle: Title\ndescription: Text\n---\n\n# Title\n\nText\n", r.text)

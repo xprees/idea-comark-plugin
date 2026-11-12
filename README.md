@@ -80,7 +80,9 @@ tables aligned like Studio. **Front matter** gets Studio's data rules for the fi
 (the first `#` heading, else the file name) and `description` (the first paragraph) are added, keys are ordered as Nuxt Content
 orders its columns (`title`, then the schema fields sorted by name, with schema defaults such as `draft: false` filled in, then
 other keys), and `navigation: true`, nulls and empty lists are dropped; data collections get nothing added. Saving a file
-formatted this way again from Studio's code editor changes nothing outside the blocks kept as written. Studio's database path is
+formatted this way again from Studio's code editor changes nothing outside the reported blocks: those kept as written, and
+the blocks after them that Studio's damage to them runs into (the engine runs the code editor's save path, ported exactly, on
+its own output to find them). Studio's database path is
 checked only where the engine can emulate it: blocks it cannot follow are written in the code editor's form and reported as
 not checked, so Studio may still rewrite them when it saves a document opened from Nuxt Content. The real nuxt-studio 1.8.0 save
 paths are run on the formatted output of the test corpora (`style-vectors.json`); the counts of what they still change, and
@@ -211,10 +213,12 @@ The platform's formatter controls apply: *Code Style › Formatter › Do not fo
 - The Nuxt Studio style checks a block against Studio's database path only where the engine can follow Nuxt Content's parser;
   blocks with constructs it does not follow (emoji-like `:words:`, bare URLs, `[text]` spans, empty code blocks, ...) are written
   in the code editor's form and reported as not checked. Running the real nuxt-studio 1.8.0 save paths on the formatted output
-  of the test corpora (5,501 documents, most of them random) leaves 2,119 documents unchanged by both paths; in 3,243 more, what
-  Studio changes stays inside the blocks the formatter reports (kept as written, unstable, or not checked); 138 change
-  elsewhere too (51 on the text path, 89 on the database path, mostly where Studio's damage to a kept block spreads to its
-  neighbours). The exact counts, by kind, are pinned in `StudioStyleOracleTest`. Where a document holds blocks kept as
+  of the test corpora (5,501 documents, most of them random) leaves 2,119 documents unchanged by both paths; in 3,341 more, what
+  Studio changes stays inside the blocks the formatter reports (kept as written, rewritten because of a kept block before them,
+  unstable, or not checked; for the database path also everything after an HTML tag that is never closed, and the footnote
+  section it appends, both named in the warning); 40 change elsewhere on the database path, mostly where Nuxt Content's parser
+  carries a kept component (an indented one, or one with broken props) over the blocks after it. The exact counts, by kind,
+  are pinned in `StudioStyleOracleTest`. Where a document holds blocks kept as
   written, prop order and the injected title and description are worked out without them, so Studio may still reorder props
   there or write a different description (reported when a kept block may supply it). The collection schema is read from
   `content.config.ts` as text: collections defined in a variable are followed, but a schema held in a variable or built with
