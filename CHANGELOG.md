@@ -6,6 +6,13 @@
 
 ### Added
 
+- *Code Style › Comark › Style*: Reformat Code can write the **Nuxt Studio** style (what Nuxt Studio writes when it saves the file,
+  with content Studio would damage kept as written) or a **Custom** variant of it (bullet and ordered list markers, emphasis and
+  strong markers, fence character, blank lines between blocks, props inline or as YAML, sorted props, front matter kept, indent
+  size), next to the VS Code formatter (the default). Stored in the code style scheme and readable from `.editorconfig`
+  (`ij_comark_style_preset = nuxt_studio`, ...). Selection reformat rewrites the blocks it touches, formatter off/on markers are
+  honoured, and a whole-file reformat in the Studio style converts the file to `\n` line breaks without a BOM
+
 - `Prose*` components can be written without the prefix (`::accordion-item` for `ProseAccordionItem`), as Comark and Nuxt UI
   resolve them: completion offers the short name (typing `prose-` keeps the prefix), and both names are known to the inspection,
   navigation, Find Usages and Rename

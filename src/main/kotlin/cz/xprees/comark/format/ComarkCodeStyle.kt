@@ -7,16 +7,20 @@ import com.intellij.application.options.CodeStyleAbstractPanel
 import com.intellij.application.options.IndentOptionsEditor
 import com.intellij.application.options.TabbedLanguageCodeStylePanel
 import com.intellij.lang.Language
+import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.codeStyle.CodeStyleConfigurable
 import com.intellij.psi.codeStyle.CodeStyleSettings
 import com.intellij.psi.codeStyle.CodeStyleSettingsCustomizable
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings
+import com.intellij.psi.codeStyle.CustomCodeStyleSettings
 import com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider
 import cz.xprees.comark.lang.ComarkLanguage
 
 /**
- * Settings | Editor | Code Style | Comark: the indentation the Comark formatter and Enter use.
+ * Settings | Editor | Code Style | Comark: the style Reformat Code writes (the *Style* tab, [ComarkStylePanel] and
+ * [ComarkCodeStyleSettings]) and the indentation the Comark formatter and Enter use.
  *
  * Comark files keep the Markdown file type, so without this they used the Markdown code style's indent (4 by default), while the
  * VS Code extension's formatter (monarch-mdc) and Nuxt projects use 2. The default here is 2.
@@ -46,11 +50,18 @@ class ComarkCodeStyleSettingsProvider : LanguageCodeStyleSettingsProvider() {
 
     override fun getCodeSample(settingsType: SettingsType): String = SAMPLE
 
+    /** The Style tab's settings ([ComarkCodeStyleSettings]), stored in the scheme and exposed to EditorConfig. */
+    override fun createCustomSettings(settings: CodeStyleSettings): CustomCodeStyleSettings = ComarkCodeStyleSettings(settings)
+
+    /** Previews are Comark files, so the Comark formatter formats them. */
+    override fun createFileFromText(project: Project, text: String): PsiFile = createPreviewFile(project, text)
+
     override fun createConfigurable(baseSettings: CodeStyleSettings, modelSettings: CodeStyleSettings): CodeStyleConfigurable =
         object : CodeStyleAbstractConfigurable(baseSettings, modelSettings, configurableDisplayName) {
             override fun createPanel(settings: CodeStyleSettings): CodeStyleAbstractPanel =
                 object : TabbedLanguageCodeStylePanel(ComarkLanguage, currentSettings, settings) {
                     override fun initTabs(settings: CodeStyleSettings) {
+                        addTab(ComarkStylePanel(currentSettings, settings))
                         addIndentOptionsTab(settings)
                     }
                 }
@@ -58,6 +69,10 @@ class ComarkCodeStyleSettingsProvider : LanguageCodeStyleSettingsProvider() {
 
     companion object {
         const val DEFAULT_INDENT = 2
+
+        /** A non-physical Comark file holding [text], for the settings previews. */
+        fun createPreviewFile(project: Project, text: String): PsiFile =
+            PsiFileFactory.getInstance(project).createFileFromText("preview.md", ComarkLanguage, text, true, false)
 
         private val SAMPLE = """
             ::card{title="Comark"}
@@ -83,10 +98,20 @@ internal object ComarkIndent {
     /**
      * EditorConfig or detected indentation of this file when present (they override language settings), otherwise the Comark code
      * style's indent size. The file-type based lookup alone would give the Markdown code style's, as Comark files are Markdown files.
+     * The Nuxt Studio style always nests by 2 ([ComarkStyle.STUDIO_INDENT]); the custom style uses the configured size.
      */
-    fun indentSize(file: PsiFile): Int = forDialect(configuredIndentSize(file))
+    fun indentSize(file: PsiFile): Int {
+        val style = ComarkStyle.of(file)
+        return when (style.preset) {
+            ComarkStylePreset.VSCODE -> forDialect(configuredIndentSize(file))
+            // Nuxt Studio nests components by two spaces per level, whatever the indent options say
+            ComarkStylePreset.NUXT_STUDIO -> ComarkStyle.STUDIO_INDENT
+            ComarkStylePreset.CUSTOM -> style.options.indentSize
+        }
+    }
 
-    private fun configuredIndentSize(file: PsiFile): Int {
+    /** The indent size configured for [file], before [forDialect] and the style's rules. */
+    internal fun configuredIndentSize(file: PsiFile): Int {
         val fileOptions = CodeStyle.getIndentOptions(file)
         if (fileOptions.isOverrideLanguageOptions) return fileOptions.INDENT_SIZE.coerceAtLeast(0)
         val comark = CodeStyle.getSettings(file).getCommonSettings(ComarkLanguage).indentOptions
