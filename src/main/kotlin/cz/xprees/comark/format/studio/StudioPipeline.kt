@@ -12,8 +12,8 @@ package cz.xprees.comark.format.studio
  * given the comark tree `body` (after Studio's `unbindComarkTree`) and its front matter.
  */
 object StudioPipeline {
-    fun render(document: StudioDocument): String =
-        StudioPostProcess.padBlankLinesInComponents(StudioRenderer.renderMarkdown(document)) + "\n"
+    fun render(document: StudioDocument, observer: StudioRenderer.ComponentObserver? = null): String =
+        StudioPostProcess.padBlankLinesInComponents(StudioRenderer.renderMarkdown(document, observer)) + "\n"
 
     fun render(nodes: List<StudioNode>, frontmatter: Map<String, Any?>): String =
         render(StudioDocument(frontmatter = frontmatter, nodes = nodes))

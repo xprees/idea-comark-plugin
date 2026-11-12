@@ -15,18 +15,36 @@ object StudioRenderer {
     private const val BLOCK_SEPARATOR = "\n\n"
     private const val MAX_INLINE_ATTRIBUTES = 3
 
+    /** How [mdc] wrote a component (or a `span`): not part of comark, reported to a [ComponentObserver]. */
+    enum class ComponentStyle {
+        /** Inline syntax, `:name[content]{attrs}` or `[content]{attrs}` for a span. */
+        INLINE,
+
+        /** A block component with its attributes on the opening line, `::name{attrs}`. */
+        BLOCK,
+
+        /** A block component with a YAML props block (`comarkYamlAttributes`). */
+        YAML,
+    }
+
+    /** Called for every component [mdc] writes, with the element as it is in the rendered tree (the same instance). */
+    fun interface ComponentObserver {
+        fun written(node: StudioElement, style: ComponentStyle)
+    }
+
     /** `renderMarkdown(document, { blockAttributesStyle: 'frontmatter' })`. */
-    fun renderMarkdown(document: StudioDocument): String {
-        val content = render(document)
+    fun renderMarkdown(document: StudioDocument, observer: ComponentObserver? = null): String {
+        val content = render(document, observer)
         return renderFrontmatter(document.frontmatterValue, content)
     }
 
     /** `render(document, ...)`: the body, trimmed and ending with one `\n`. */
-    fun render(document: StudioDocument): String = StudioJs.trim(renderNodes(document.nodes)) + "\n"
+    fun render(document: StudioDocument, observer: ComponentObserver? = null): String =
+        StudioJs.trim(renderNodes(document.nodes, observer)) + "\n"
 
     /** The concatenated output of top-level [nodes], before `render` trims the whole body. */
-    fun renderNodes(nodes: List<StudioNode>): String {
-        val state = State(Context(), 0)
+    fun renderNodes(nodes: List<StudioNode>, observer: ComponentObserver? = null): String {
+        val state = State(Context(observer), 0)
         val sb = StringBuilder()
         for (child in nodes) sb.append(one(child, state, null))
         return sb.toString()
@@ -54,7 +72,7 @@ object StudioRenderer {
     // ---- state ----------------------------------------------------------------------------------------------------------
 
     /** The mutable `state.context` keys handlers set through `applyContext`. `order` 0 stands for `false`/`undefined`. */
-    private class Context {
+    private class Context(val observer: ComponentObserver? = null) {
         var inline: Boolean? = null
         var list: Boolean? = null
         var order: Double = 0.0
@@ -754,6 +772,14 @@ object StudioRenderer {
         val content = StudioJs.trimEnd(sb.toString())
         if (inline) state.ctx.inline = revert
         var attrs = if (attributeEntries.isNotEmpty()) comarkAttributes(attributes) else ""
+        state.ctx.observer?.written(
+            node,
+            when {
+                inline || tag == "span" -> ComponentStyle.INLINE
+                hasObjectAttributes || attributeEntries.size > MAX_INLINE_ATTRIBUTES -> ComponentStyle.YAML
+                else -> ComponentStyle.BLOCK
+            },
+        )
         if (tag == "span") {
             if (attrs.isEmpty() && parent?.tag == "a") attrs = "{}"
             return "[$content]$attrs" + if (inline) "" else BLOCK_SEPARATOR
