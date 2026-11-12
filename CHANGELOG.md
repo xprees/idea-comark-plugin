@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- *Code Style › Comark › Style*: a number typed into *Inline props, at most* or *Blank lines between blocks* is now saved when you
+  click OK or Apply right away; before, it was taken only after Enter or leaving the field, so Reformat Code kept the old value
+
 ### Added
 
 - *Code Style › Comark › Style*: Reformat Code can write the **Nuxt Studio** style, next to the VS Code formatter (the default).
