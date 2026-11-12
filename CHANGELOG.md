@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.3.10] - 2026-11-12
+
 ### Added
 
 - *Code Style › Comark › Style*: Reformat Code can write the **Nuxt Studio** style, next to the VS Code formatter (the default).
@@ -105,7 +107,8 @@ Markdown plugin.
   comark heading ids and `{#id}` / `id` attributes resolve too
 - Components, props and slots render as labelled blocks in the built-in Markdown preview
 
-[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.8...HEAD
+[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.10...HEAD
+[2026.3.10]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.8...2026.3.10
 [2026.3.8]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.5...2026.3.8
 [2026.3.5]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.2...2026.3.5
 [2026.3.2]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.0...2026.3.2
