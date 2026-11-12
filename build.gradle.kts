@@ -230,6 +230,14 @@ tasks.register<Exec>("recordStudioDbVectors") {
     commandLine("node", "record-db-vectors.mjs")
 }
 
+tasks.register<Exec>("recordStudioStyleVectors") {
+    group = "verification"
+    description = "Records src/test/testData/studio/style-vectors.json: the real Nuxt Studio save paths on the Studio style's output, under Node."
+    dependsOn(installStudioOracle)
+    workingDir = studioOracleDir.asFile
+    commandLine("node", "record-style-vectors.mjs", "--in", layout.buildDirectory.file("studio-style-inputs.json").get().asFile.path)
+}
+
 tasks {
     named("signPlugin") { dependsOn(checkPublishable) }
     named("publishPlugin") { dependsOn(checkPublishable) }

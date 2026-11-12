@@ -29,9 +29,9 @@ object StudioStyleAdapter {
      * [text] in the style [context] describes, or `null` when the engine cannot read the document at all (the caller leaves it
      * unchanged). Line numbers in the result are 0-based lines of [text] (separated by `\n`, `\r\n` or `\r`).
      */
-    fun format(text: String, context: StudioStyleContext): StudioStyleResult? {
+    fun format(text: String, context: StudioStyleContext, keepLines: Set<Int> = emptySet()): StudioStyleResult? {
         formatCalls.incrementAndGet()
-        val styled = StudioStyle.format(text, engineOptions(context)) ?: return null
+        val styled = StudioStyle.format(text, engineOptions(context), keepLines) ?: return null
         val kept = styled.keptBlocks.map { block ->
             val lines = block.inputLines
             KeptBlock(
@@ -40,10 +40,20 @@ object StudioStyleAdapter {
                 message = block.messages.joinToString("; ") { it.removePrefix(MESSAGE_PREFIX) },
             )
         }
+        // front matter the style adds is not in the document: nothing there to mark
+        val unverified = styled.unverifiedBlocks.filter { !it.inputLines.isEmpty() }.map { UnverifiedBlock(it.inputLines, it.frontMatter) }
         val blocks = sourceBlocks(text)
         var output = styled.text
-        if (context.options.maxBlankLines > 1 && blocks != null) output = withSourceBlankLines(text, output, context.options.maxBlankLines)
-        return StudioStyleResult(text = output, blocks = blocks.orEmpty().map { it.lines }, keptBlocks = kept)
+        var mapping = styled.blockMap.map { BlockMapping(it.inputLines, it.outputLines) }
+        if (context.options.maxBlankLines > 1 && blocks != null) {
+            val inserted = ArrayList<Int>()
+            output = withSourceBlankLines(text, output, context.options.maxBlankLines, inserted)
+            mapping = mapping.map { m ->
+                val before = inserted.count { it <= m.output.first }
+                BlockMapping(m.input, (m.output.first + before)..(m.output.last + before))
+            }
+        }
+        return StudioStyleResult(text = output, blocks = blocks.orEmpty().map { it.lines }, keptBlocks = kept, unverifiedBlocks = unverified, blockMap = mapping)
     }
 
     /** How many times [format] ran, for tests that check a style never reaches the engine. */
@@ -128,7 +138,7 @@ object StudioStyleAdapter {
      * block. Extra blank lines between top-level blocks do not change the document; when the two texts do not have the same
      * blocks (the engine dropped or merged one), [output] is returned as it is.
      */
-    private fun withSourceBlankLines(source: String, output: String, max: Int): String {
+    private fun withSourceBlankLines(source: String, output: String, max: Int, inserted: MutableList<Int>): String {
         val sourceBlocks = sourceBlocks(source)?.filter { it.body } ?: return output
         val outputBlocks = sourceBlocks(output)?.filter { it.body } ?: return output
         if (sourceBlocks.size != outputBlocks.size) return output
@@ -138,7 +148,10 @@ object StudioStyleAdapter {
             val start = block.lines.first
             if (start == 0 || block.blankLinesBefore == 0) continue
             val wanted = sourceBlocks[i].blankLinesBefore.coerceIn(1, max)
-            repeat(wanted - block.blankLinesBefore) { lines.add(start, "") }
+            repeat(wanted - block.blankLinesBefore) {
+                lines.add(start, "")
+                inserted += start
+            }
         }
         return lines.joinToString("\n")
     }
@@ -234,6 +247,9 @@ object StudioStyleAdapter {
         val out = StudioFormatter.format("$prefix$token$suffix") ?: return null
         if (!out.startsWith(prefix) || !out.endsWith(suffix) || out.length < prefix.length + suffix.length) return null
         val written = out.substring(prefix.length, out.length - suffix.length)
+        // Studio escaped the character after the token (`\]`, `\*`): that backslash belongs to the following text, which in the
+        // document may be syntax (a link's or an emphasis' end) that Studio does not escape there; ask without it
+        if (following.isNotEmpty() && written.endsWith("\\")) return null
         val result = Optional.ofNullable(written.takeIf { it != token && it.isNotEmpty() && '\n' !in it && '\r' !in it })
         if (replacements.size > MAX_PROBES) replacements.clear()
         replacements[key] = result
@@ -343,8 +359,29 @@ data class StudioStyleOptions(
  * @property blocks source lines of the front matter and of every top-level block, in order (blank lines between blocks belong
  *   to none); range formatting rewrites whole blocks
  * @property keptBlocks the blocks left exactly as written, because Studio would damage them
+ * @property unverifiedBlocks the blocks written without a check against Studio's database path
+ * @property blockMap every top-level block of [text] with the source lines it came from
  */
-data class StudioStyleResult(val text: String, val blocks: List<IntRange>, val keptBlocks: List<KeptBlock>)
+data class StudioStyleResult(
+    val text: String,
+    val blocks: List<IntRange>,
+    val keptBlocks: List<KeptBlock>,
+    val unverifiedBlocks: List<UnverifiedBlock> = emptyList(),
+    val blockMap: List<BlockMapping> = emptyList(),
+)
+
+/**
+ * A block written in the style without a check against Studio's database path (the engine's emulation of it does not follow
+ * one of its constructs): its source [lines], and whether it is the [frontMatter]. Studio may still rewrite it when it saves a
+ * document opened from Nuxt Content.
+ */
+data class UnverifiedBlock(val lines: IntRange, val frontMatter: Boolean = false)
+
+/**
+ * A top-level block of the formatted text: its [output] lines and the source lines it came from ([input]; empty, at the line
+ * where it goes, for front matter the style adds). In document order.
+ */
+data class BlockMapping(val input: IntRange, val output: IntRange)
 
 /**
  * A block [StudioStyleAdapter] left as written: its source [lines], the [reasons] (stable identifiers, e.g. `RAW_HTML`) and a

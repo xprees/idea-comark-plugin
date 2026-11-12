@@ -1047,6 +1047,7 @@ internal object StudioMdInline {
         token.attrs = search.props.map { MdAttr(it.first, it.second) }.toMutableList()
         token.hidden = true
         token.unclosedProps = !search.closed
+        token.malformedProps = search.malformed
         return true
     }
 }

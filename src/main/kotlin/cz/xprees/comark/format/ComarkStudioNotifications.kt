@@ -79,17 +79,38 @@ class ComarkStudioVersionNotificationProvider : EditorNotificationProvider, Dumb
 /**
  * Offers the Nuxt Studio style once a project that depends on nuxt-studio is opened while its code style still uses the VS Code
  * preset: *Use Nuxt Studio style* switches the project code style to it (moving the project to a project scheme, stored in
- * `.idea/codeStyles`, if it used an IDE scheme), *Not now* asks again next time the project opens, *Don't ask again* never asks.
+ * `.idea/codeStyles`, if it used an IDE scheme). The notification is shown once per project: *Not now*, *Don't ask again* and
+ * closing it all leave it at that. A project whose `.editorconfig` sets the style preset (`ij_comark_style_preset`) has made its
+ * choice there and is not asked.
  */
 object ComarkStudioAdoption {
     private const val NEVER = "comark.studio.adoption.never"
+    private const val SHOWN = "comark.studio.adoption.shown"
     private const val GROUP = "Comark Nuxt Studio"
     private const val NODE_MODULES = "/node_modules/"
 
     /** True when the notification should be shown for [project]. Needs a read action and indexes. */
-    fun shouldOffer(project: Project): Boolean =
-        !project.isDisposed && !PropertiesComponent.getInstance(project).getBoolean(NEVER) &&
-            projectPreset(project) == ComarkStylePreset.VSCODE && dependsOnNuxtStudio(project)
+    fun shouldOffer(project: Project): Boolean {
+        if (project.isDisposed) return false
+        val properties = PropertiesComponent.getInstance(project)
+        return !properties.getBoolean(NEVER) && !properties.getBoolean(SHOWN) &&
+            projectPreset(project) == ComarkStylePreset.VSCODE && !editorConfigSetsPreset(project) && dependsOnNuxtStudio(project)
+    }
+
+    private val PRESET_KEY = Regex("^[ \t]*ij_comark_style_preset[ \t]*=", RegexOption.MULTILINE)
+
+    /** Whether an `.editorconfig` of the project (outside `node_modules`) sets the Comark style preset. */
+    fun editorConfigSetsPreset(project: Project): Boolean =
+        FilenameIndex.getVirtualFilesByName(".editorconfig", GlobalSearchScope.projectScope(project)).any { file ->
+            !file.path.contains(NODE_MODULES) && try {
+                PRESET_KEY.containsMatchIn(VfsUtilCore.loadText(file))
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+    /** Records that the notification was shown for [project], so it is not shown again. */
+    fun markShown(project: Project) = PropertiesComponent.getInstance(project).setValue(SHOWN, true)
 
     /** The preset of the project's code style (EditorConfig not included). */
     fun projectPreset(project: Project): ComarkStylePreset = ComarkCodeStyleSettings.getInstance(CodeStyle.getSettings(project)).STYLE_PRESET
@@ -140,7 +161,12 @@ object ComarkStudioAdoption {
         ReadAction.nonBlocking<Boolean> { shouldOffer(project) }
             .inSmartMode(project)
             .expireWith(project)
-            .finishOnUiThread(ModalityState.nonModal()) { offer -> if (offer) createNotification(project).notify(project) }
+            .finishOnUiThread(ModalityState.nonModal()) { offer ->
+                if (offer) {
+                    markShown(project)
+                    createNotification(project).notify(project)
+                }
+            }
             .submit(AppExecutorUtil.getAppExecutorService())
     }
 }

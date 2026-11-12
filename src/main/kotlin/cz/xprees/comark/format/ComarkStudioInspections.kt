@@ -64,7 +64,9 @@ internal object ComarkStudioAnalysis {
 
 /**
  * *Nuxt Studio will rewrite this*: the blocks Reformat Code keeps as written in the Nuxt Studio style because Studio would damage
- * them on save (raw HTML, HTML comments, reference links, table alignment, heading ids, ...; [StudioStyleResult.keptBlocks]).
+ * them on save (raw HTML, HTML comments, reference links, table alignment, heading ids, ...; [StudioStyleResult.keptBlocks]), and,
+ * as a weaker note, the blocks written in the style that could not be checked against Studio's database path
+ * ([StudioStyleResult.unverifiedBlocks]).
  *
  * Active when the file's effective style is Nuxt Studio or Custom: that is when the project targets Studio, and other projects
  * get no Studio warnings (a project that depends on nuxt-studio but still uses the VS Code style is offered the Studio style
@@ -75,7 +77,7 @@ class ComarkStudioRewriteInspection : LocalInspectionTool() {
     override fun checkFile(file: PsiFile, manager: InspectionManager, isOnTheFly: Boolean): Array<ProblemDescriptor>? {
         val style = ComarkStudioAnalysis.styleFor(file) ?: return null
         val result = ComarkStudioAnalysis.result(file, style) ?: return null
-        if (result.keptBlocks.isEmpty()) return null
+        if (result.keptBlocks.isEmpty() && result.unverifiedBlocks.isEmpty()) return null
         val text = file.viewProvider.contents
         val lines = Lines(text)
         val marked = ComarkFormatterControl.markedLines(file, text)
@@ -97,6 +99,21 @@ class ComarkStudioRewriteInspection : LocalInspectionTool() {
                 ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                 isOnTheFly,
                 *fixes.toTypedArray(),
+            )
+        }
+        for (block in result.unverifiedBlocks) {
+            if (marked != null && block.lines.any { marked.get(it) }) continue
+            if (result.keptBlocks.any { kept -> kept.lines.any { it in block.lines } }) continue
+            val first = block.lines.firstOrNull { it < lines.count && lines.text(it).isNotBlank() } ?: continue
+            val last = minOf(block.lines.last, lines.count - 1)
+            val fixes = if (block.frontMatter) emptyArray() else arrayOf<LocalQuickFix>(SuppressForBlockFix(first, last, lines.text(first)))
+            problems += manager.createProblemDescriptor(
+                file,
+                lines.trimmedRange(first),
+                ComarkBundle.message(if (block.frontMatter) "studio.inspection.unverified.frontmatter" else "studio.inspection.unverified.message"),
+                ProblemHighlightType.WEAK_WARNING,
+                isOnTheFly,
+                *fixes,
             )
         }
         return problems.toTypedArray()

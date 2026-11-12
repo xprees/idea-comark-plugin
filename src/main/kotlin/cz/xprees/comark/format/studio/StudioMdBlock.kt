@@ -23,6 +23,12 @@ internal class MdToken(var type: String, var tag: String, var nesting: Int) {
     /** For an `mdc_inline_props` token: no `}` closed the props, so they ran to the end of the inline content (not comark). */
     var unclosedProps = false
 
+    /** For an `mdc_inline_props` token: no element took the props (they follow plain text), so the tree has none (not comark). */
+    var droppedProps = false
+
+    /** For a token with Comark props: the props text lost characters when it was read ([StudioComarkSyntax.PropsSearch.malformed]). */
+    var malformedProps = false
+
     fun attrIndex(name: String): Int = attrs?.indexOfFirst { it.name == name } ?: -1
 
     fun attrPush(attr: MdAttr) {
@@ -1089,8 +1095,9 @@ internal object StudioMdBlock {
         "---" to "---", "```yaml [props]" to "```", "~~~yaml [props]" to "~~~", "```yml [props]" to "```", "~~~yml [props]" to "~~~",
     )
 
-    private fun applyProps(token: MdToken, props: List<Pair<String, String>>?) {
-        props?.forEach { (key, value) -> if (key == "class") token.attrJoin(key, value) else token.attrSet(key, value) }
+    private fun applyProps(token: MdToken, params: StudioComarkSyntax.BlockParams) {
+        if (params.malformed) token.malformedProps = true
+        params.props?.forEach { (key, value) -> if (key == "class") token.attrJoin(key, value) else token.attrSet(key, value) }
     }
 
     private fun comarkBlockShorthand(state: MdStateBlock, startLine: Int, silent: Boolean): Boolean {
@@ -1101,7 +1108,7 @@ internal object StudioMdBlock {
         if (!silent) {
             if (params.content != null) {
                 val open = state.push("mdc_block_shorthand", params.name, 1)
-                applyProps(open, params.props)
+                applyProps(open, params)
                 open.map = intArrayOf(startLine, startLine + 1)
                 val inline = state.push("inline", "", 0)
                 inline.content = params.content
@@ -1110,7 +1117,7 @@ internal object StudioMdBlock {
             } else {
                 val token = state.push("mdc_block_shorthand", params.name, 0)
                 token.map = intArrayOf(startLine, startLine + 1)
-                applyProps(token, params.props)
+                applyProps(token, params)
             }
         }
         state.line = startLine + 1
@@ -1206,7 +1213,7 @@ internal object StudioMdBlock {
         tokenOpen.block = true
         tokenOpen.info = params.name
         tokenOpen.map = intArrayOf(startLine, nextLine)
-        applyProps(tokenOpen, params.props)
+        applyProps(tokenOpen, params)
         if (params.content != null) {
             state.push("paragraph_open", "p", 1).map = intArrayOf(startLine, startLine + 1)
             val inline = state.push("inline", "", 0)
@@ -1391,7 +1398,7 @@ internal object StudioMdBlock {
         val oldLineMax = state.lineMax
         val slot = state.push("mdc_block_slot", "template", 1)
         slot.attrSet("#${params.name}", "")
-        applyProps(slot, params.props)
+        applyProps(slot, params)
         state.line = startLine + 1
         state.lineMax = lineEnd
         tokenize(state, startLine + 1, lineEnd)

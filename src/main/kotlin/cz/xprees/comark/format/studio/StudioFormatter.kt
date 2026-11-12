@@ -56,13 +56,18 @@ object StudioFormatter {
     internal class PreservingState(val blocks: List<StudioSafety.AnalyzedBlock>, val assembled: Assembled)
 
     /** [formatPreserving] with the analyzed blocks it settled on, for [StudioStyle]; `null` when [text] cannot be parsed. */
-    internal fun preservingState(text: String, cache: StudioSafety.Cache? = null): PreservingState? {
+    internal fun preservingState(text: String, cache: StudioSafety.Cache? = null, forcedLines: Set<Int> = emptySet()): PreservingState? {
         val analysis = StudioSafety.analyze(text, cache) ?: return null
-        var blocks = analysis.blocks
+        var blocks = force(analysis.blocks, forcedLines)
         for (round in 0 until MAX_REPAIRS) {
+            blocks = keepLeadingBreak(blocks)
             val assembled = assemble(blocks)
             // analyze is deterministic: when nothing changed, the next pass is this one
-            val again = if (round == 0 && assembled.text == text) text else StudioSafety.analyze(assembled.text, cache)?.let { assemble(it.blocks).text }
+            val again = if (round == 0 && assembled.text == text) {
+                text
+            } else {
+                StudioSafety.analyze(assembled.text, cache)?.let { assemble(keepLeadingBreak(force(it.blocks, forcedLines(blocks, assembled)))).text }
+            }
             if (again == assembled.text) return PreservingState(blocks, assembled)
             val culprit = culprit(blocks, assembled, firstDifferentLine(assembled.text, again ?: "")) ?: break
             blocks = blocks.mapIndexed { i, b -> if (i != culprit) b else notIdempotent(b) }
@@ -70,6 +75,60 @@ object StudioFormatter {
         // no fixed point found by single repairs: keep every block Studio would change
         blocks = blocks.map { b -> if (!b.block.kept && b.block.studioOutput != b.block.source) notIdempotent(b) else b }
         return PreservingState(blocks, assemble(blocks))
+    }
+
+    /** [blocks] with every block that holds one of [lines] kept with [StudioRewriteReason.FORMATTER_OFF]. */
+    internal fun force(blocks: List<StudioSafety.AnalyzedBlock>, lines: Set<Int>): List<StudioSafety.AnalyzedBlock> {
+        if (lines.isEmpty()) return blocks
+        return blocks.map { b ->
+            val range = b.block.startLine until maxOf(b.block.endLine, b.block.startLine + 1)
+            if (range.none { it in lines }) b
+            else StudioSafety.AnalyzedBlock(b.block.copy(reasons = b.block.reasons + StudioRewriteReason.FORMATTER_OFF), b.rendered)
+        }
+    }
+
+    /** The lines of [assembled] that blocks kept with [StudioRewriteReason.FORMATTER_OFF] wrote. */
+    internal fun forcedLines(blocks: List<StudioSafety.AnalyzedBlock>, assembled: Assembled): Set<Int> {
+        val lines = HashSet<Int>()
+        for ((l, owner) in assembled.lineOwners.withIndex()) {
+            if (owner >= 0 && StudioRewriteReason.FORMATTER_OFF in blocks[owner].block.reasons) lines += l
+        }
+        return lines
+    }
+
+    /**
+     * When [assembled] has no front matter of its own but starts with a `---` line that a later `---` line closes (a thematic
+     * break Studio writes as `---`): the block to keep verbatim, the rendered one that writes the first line, else the one
+     * that writes the closing line. Nuxt Content and Studio would read the lines between as front matter.
+     */
+    /**
+     * [blocks] with a leading thematic break kept ([StudioRewriteReason.LEADING_THEMATIC_BREAK]) where their assembly would
+     * otherwise start with a `---` line that a later `---` line closes, which the next save reads as front matter.
+     */
+    internal fun keepLeadingBreak(blocks: List<StudioSafety.AnalyzedBlock>): List<StudioSafety.AnalyzedBlock> {
+        var result = blocks
+        repeat(3) {
+            val culprit = frontMatterCulprit(result, assemble(result)) ?: return result
+            result = result.mapIndexed { i, b ->
+                if (i != culprit) b else StudioSafety.AnalyzedBlock(b.block.copy(reasons = b.block.reasons + StudioRewriteReason.LEADING_THEMATIC_BREAK), b.rendered)
+            }
+        }
+        return result
+    }
+
+    internal fun frontMatterCulprit(blocks: List<StudioSafety.AnalyzedBlock>, assembled: Assembled): Int? {
+        val fm = blocks.firstOrNull { it.block.kind == StudioBlockKind.FRONTMATTER }
+        if (fm != null && (fm.block.kept || fm.block.studioOutput?.isNotEmpty() == true)) return null
+        val text = assembled.text
+        if (!text.startsWith("---")) return null
+        val close = text.indexOf("\n---")
+        if (close < 0) return null
+        val closeLine = text.substring(0, close + 1).count { it == '\n' }
+        for (line in intArrayOf(0, closeLine)) {
+            val owner = assembled.lineOwners.getOrNull(line) ?: continue
+            if (owner >= 0 && blocks[owner].block.kind == StudioBlockKind.BLOCK && !blocks[owner].block.kept) return owner
+        }
+        return null
     }
 
     private fun notIdempotent(b: StudioSafety.AnalyzedBlock) =
@@ -96,6 +155,23 @@ object StudioFormatter {
     }
 
     private const val MAX_REPAIRS = 16
+
+    private val separations = java.util.concurrent.ConcurrentHashMap<Pair<String, String>, Boolean>()
+
+    /** Whether [a] and [b], two top-level blocks, stay those two blocks with one blank line between them. */
+    private fun staySeparate(a: String, b: String): Boolean {
+        if (separations.size > 4096) separations.clear()
+        return separations.getOrPut(a to b) {
+            try {
+                val segments = StudioTreeBuilder.buildSegmented(a + "\n\n" + b + "\n").let { if (it.frontmatter != null) null else it.segments }
+                segments != null && segments.size == 2 && segments[0].source == a && segments[1].source == b
+            } catch (_: StudioTextPathException) {
+                false
+            } catch (_: StudioUnsupportedException) {
+                false
+            }
+        }
+    }
 
     /**
      * Every block rendered as Studio renders it, none kept, assembled the way [formatPreserving] assembles blocks. Equal to
@@ -137,10 +213,14 @@ object StudioFormatter {
             previous = b.block
             if (b.block.kept) {
                 if (before?.kept == true) {
-                    // between two kept blocks, the source's own blank lines: with one blank line, markdown-it could read
-                    // them as one block (an empty list item, then a list)
+                    // between two kept blocks, one blank line as Studio writes, where the source has any; the source's own
+                    // blank lines where one would join the two (an empty list item, then a list), and between the blocks of a
+                    // formatter off/on region
                     body.setLength(body.length - 2)
-                    repeat(maxOf(b.block.startLine - before.endLine, 0) + 1) { body.append('\n') }
+                    val gap = maxOf(b.block.startLine - before.endLine, 0)
+                    val bothOff = StudioRewriteReason.FORMATTER_OFF in before.reasons && StudioRewriteReason.FORMATTER_OFF in b.block.reasons
+                    val blankLines = if (gap > 1 && !bothOff && staySeparate(before.source, b.block.source)) 1 else gap
+                    repeat(blankLines + 1) { body.append('\n') }
                 } else if (body.isNotEmpty()) {
                     while (!body.endsWith("\n\n")) body.append('\n')
                 }

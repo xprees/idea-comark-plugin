@@ -45,7 +45,7 @@ class StudioPreservingDifferentialTest {
     /** With no classified block, formatPreserving is Studio's text path exactly. */
     @Test
     fun unclassifiedDocumentsComeOutAsStudioWritesThem() {
-        val expected = mapOf("corpus" to Triple(480, 311, 169), "random documents" to Triple(5021, 2749, 2271))
+        val expected = mapOf("corpus" to Triple(480, 308, 172), "random documents" to Triple(5021, 2443, 2577))
         for ((label, docs) in listOf("corpus" to corpus, "random documents" to vectors)) {
             val results = docs.map { it to StudioFormatter.formatPreserving(it.input) }
             val unclassified = results.filter { (_, r) -> r != null && r.kept.isEmpty() }
@@ -78,7 +78,8 @@ class StudioPreservingDifferentialTest {
                 val piece = if (b.kept) b.source else b.studioOutput ?: ""
                 if (b.kept) {
                     var end = b.endLine
-                    if (b.kind == StudioBlockKind.BLOCK) while (end > b.startLine + 1 && lines[end - 1].isBlank()) end--
+                    // markdown-it's blank line: spaces and tabs only (a line of U+00A0 is content)
+                    if (b.kind == StudioBlockKind.BLOCK) while (end > b.startLine + 1 && lines[end - 1].all { it == ' ' || it == '\t' }) end--
                     // the front matter ends with the `---` that starts its last line
                     val expected = if (b.kind == StudioBlockKind.FRONTMATTER) {
                         (lines.subList(b.startLine, end - 1) + "---").joinToString("\n")
@@ -104,7 +105,7 @@ class StudioPreservingDifferentialTest {
         }
         report("kept blocks not verbatim, or blocks not in order (of $checked documents with kept blocks)", failures)
         assertEquals(emptyList<String>(), failures)
-        assertEquals(2440, checked)
+        assertEquals(2749, checked)
     }
 
     /**
@@ -145,15 +146,18 @@ class StudioPreservingDifferentialTest {
                 "corpus" to mapOf(
                     "ADJACENT_LISTS" to 3, "COMPONENT_IN_LIST_ITEM" to 6, "COMPONENT_NAMED_A" to 14, "DROPPED_BLOCK" to 1,
                     "FENCE_IN_LIST_ITEM" to 1, "INDENTED_COMPONENT" to 8, "INLINE_CODE_WITH_BACKTICK" to 1,
-                    "INLINE_COMPONENT_OBJECT_PROPS" to 1, "MULTILINE_HEADING" to 10, "MULTILINE_PROP" to 9, "NESTED_TASK_LIST" to 14,
-                    "NOT_IDEMPOTENT" to 4, "RAW_HTML" to 10, "TABLE_ALIGNMENT" to 1,
+                    "INLINE_COMPONENT_OBJECT_PROPS" to 1, "LEADING_THEMATIC_BREAK" to 2, "MULTILINE_HEADING" to 8,
+                    "MULTILINE_PROP" to 9, "NESTED_TASK_LIST" to 14, "NOT_IDEMPOTENT" to 4, "RAW_HTML" to 10,
+                    "TABLE_ALIGNMENT" to 1,
                 ),
                 "random documents" to mapOf(
-                    "ADJACENT_LISTS" to 15, "COMPONENT_IN_LIST_ITEM" to 15, "COMPONENT_NAMED_A" to 60, "DROPPED_BLOCK" to 16,
-                    "ESCAPED_BRACE" to 15, "FENCE_IN_LIST_ITEM" to 4, "FOOTNOTE" to 2, "FRONTMATTER_COMMENT" to 6, "HTML_COMMENT" to 24,
-                    "INDENTED_COMPONENT" to 9, "INLINE_CODE_WITH_BACKTICK" to 7, "INLINE_COMPONENT_OBJECT_PROPS" to 6,
-                    "LINK_REFERENCE_DEFINITION" to 1, "MULTILINE_HEADING" to 174, "MULTILINE_PROP" to 4, "NESTED_TASK_LIST" to 11,
-                    "NOT_IDEMPOTENT" to 221, "PROPS_COMMENT" to 3, "RAW_HTML" to 123, "TABLE_ALIGNMENT" to 1, "UNCLOSED_ATTRIBUTES" to 15,
+                    "ADJACENT_LISTS" to 13, "COMPONENT_IN_LIST_ITEM" to 15, "COMPONENT_NAMED_A" to 59,
+                    "DETACHED_ATTRIBUTES" to 52, "DROPPED_BLOCK" to 11, "ESCAPED_BRACE" to 13, "FENCE_IN_LIST_ITEM" to 4,
+                    "FOOTNOTE" to 2, "FRONTMATTER_COMMENT" to 6, "FRONTMATTER_NOT_MAPPING" to 2, "HTML_COMMENT" to 23,
+                    "INDENTED_COMPONENT" to 9, "INLINE_CODE_WITH_BACKTICK" to 7, "INLINE_COMPONENT_OBJECT_PROPS" to 5,
+                    "LEADING_THEMATIC_BREAK" to 25, "LINK_REFERENCE_DEFINITION" to 1, "MALFORMED_ATTRIBUTE" to 14,
+                    "MULTILINE_HEADING" to 160, "MULTILINE_PROP" to 4, "NESTED_TASK_LIST" to 16, "NOT_IDEMPOTENT" to 157,
+                    "PROPS_COMMENT" to 3, "RAW_HTML" to 123, "TABLE_ALIGNMENT" to 1, "UNCLOSED_ATTRIBUTES" to 7,
                 ),
             ),
             tallies,
@@ -176,22 +180,26 @@ class StudioPreservingDifferentialTest {
         assertEquals(
             mapOf(
                 "corpus" to mapOf(
-                    "ADJACENT_LISTS" to 14, "COMPONENT_IN_LIST_ITEM" to 12, "COMPONENT_NAMED_A" to 20, "DROPPED_BLOCK" to 13,
-                    "ESCAPED_BRACE" to 2, "FENCE_HIGHLIGHTS" to 9, "FENCE_IN_LIST_ITEM" to 1, "FOOTNOTE" to 4,
-                    "FRONTMATTER_COMMENT" to 3, "HEADING_ID" to 3, "HTML_COMMENT" to 10, "INDENTED_COMPONENT" to 13,
-                    "INLINE_CODE_WITH_BACKTICK" to 1, "INLINE_COMPONENT_OBJECT_PROPS" to 1, "INVALID_YAML" to 36,
-                    "LINK_REFERENCE_DEFINITION" to 5, "MULTILINE_HEADING" to 16, "MULTILINE_PROP" to 10,
-                    "NESTED_TASK_LIST" to 19, "NESTING_LIMIT" to 2, "NOT_IDEMPOTENT" to 16, "PROPS_COMMENT" to 12,
-                    "RAW_HTML" to 86, "REFERENCE_LINK" to 2, "TABLE_ALIGNMENT" to 3, "UNCLOSED_ATTRIBUTES" to 5,
+                    "ADJACENT_LISTS" to 14, "COMPONENT_IN_LIST_ITEM" to 12, "COMPONENT_NAMED_A" to 20,
+                    "DETACHED_ATTRIBUTES" to 2, "DROPPED_BLOCK" to 13, "ESCAPED_BRACE" to 2, "FENCE_HIGHLIGHTS" to 9,
+                    "FENCE_IN_LIST_ITEM" to 1, "FOOTNOTE" to 4, "FRONTMATTER_COMMENT" to 3, "HEADING_ID" to 3,
+                    "HTML_COMMENT" to 10, "INDENTED_COMPONENT" to 13, "INLINE_CODE_WITH_BACKTICK" to 1,
+                    "INLINE_COMPONENT_OBJECT_PROPS" to 1, "INVALID_YAML" to 36, "LEADING_THEMATIC_BREAK" to 9,
+                    "LINK_REFERENCE_DEFINITION" to 5, "MALFORMED_ATTRIBUTE" to 1, "MULTILINE_HEADING" to 16,
+                    "MULTILINE_PROP" to 10, "NESTED_TASK_LIST" to 21, "NESTING_LIMIT" to 2, "NOT_IDEMPOTENT" to 14,
+                    "PROPS_COMMENT" to 12, "RAW_HTML" to 86, "REFERENCE_LINK" to 2, "TABLE_ALIGNMENT" to 3,
+                    "UNCLOSED_ATTRIBUTES" to 5,
                 ),
                 "random documents" to mapOf(
-                    "ADJACENT_LISTS" to 45, "COMPONENT_IN_LIST_ITEM" to 48, "COMPONENT_NAMED_A" to 96, "DROPPED_BLOCK" to 95,
-                    "ESCAPED_BRACE" to 67, "FENCE_HIGHLIGHTS" to 26, "FENCE_IN_LIST_ITEM" to 7, "FOOTNOTE" to 20,
-                    "FRONTMATTER_COMMENT" to 21, "HEADING_ID" to 11, "HTML_COMMENT" to 168, "INDENTED_COMPONENT" to 64,
-                    "INLINE_CODE_WITH_BACKTICK" to 25, "INLINE_COMPONENT_OBJECT_PROPS" to 7, "INVALID_YAML" to 621,
-                    "LINK_REFERENCE_DEFINITION" to 36, "MULTILINE_HEADING" to 258, "MULTILINE_PROP" to 4,
-                    "NESTED_TASK_LIST" to 17, "NESTING_LIMIT" to 4, "NOT_IDEMPOTENT" to 378, "PROPS_COMMENT" to 11,
-                    "RAW_HTML" to 746, "REFERENCE_LINK" to 9, "TABLE_ALIGNMENT" to 9, "UNCLOSED_ATTRIBUTES" to 230,
+                    "ADJACENT_LISTS" to 45, "COMPONENT_IN_LIST_ITEM" to 48, "COMPONENT_NAMED_A" to 96,
+                    "DETACHED_ATTRIBUTES" to 625, "DROPPED_BLOCK" to 95, "ESCAPED_BRACE" to 67, "FENCE_HIGHLIGHTS" to 26,
+                    "FENCE_IN_LIST_ITEM" to 7, "FOOTNOTE" to 20, "FRONTMATTER_COMMENT" to 21, "FRONTMATTER_NOT_MAPPING" to 15,
+                    "HEADING_ID" to 11, "HTML_COMMENT" to 168, "INDENTED_COMPONENT" to 64, "INLINE_CODE_WITH_BACKTICK" to 25,
+                    "INLINE_COMPONENT_OBJECT_PROPS" to 7, "INVALID_YAML" to 621, "LEADING_THEMATIC_BREAK" to 52,
+                    "LINK_REFERENCE_DEFINITION" to 36, "MALFORMED_ATTRIBUTE" to 458, "MULTILINE_HEADING" to 258,
+                    "MULTILINE_PROP" to 4, "NESTED_TASK_LIST" to 25, "NESTING_LIMIT" to 4, "NOT_IDEMPOTENT" to 267,
+                    "PROPS_COMMENT" to 11, "RAW_HTML" to 746, "REFERENCE_LINK" to 9, "TABLE_ALIGNMENT" to 9,
+                    "UNCLOSED_ATTRIBUTES" to 230,
                 ),
             ),
             tallies,
