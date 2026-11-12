@@ -42,12 +42,13 @@ class ComarkStylePanelTest : BasePlatformTestCase() {
     }
 
     fun testPreviewIsAComarkFileFormattedInTheSelectedStyle() {
-        val file = ComarkCodeStyleSettingsProvider.createPreviewFile(project, "* a\n* b\n")
+        val file = ComarkCodeStyleSettingsProvider.createPreviewFile(project, "# A\n* a\n* b\n")
         assertInstanceOf(file, ComarkFile::class.java)
         CodeStyle.doWithTemporarySettings(project, CodeStyle.getSettings(project)) { settings ->
             ComarkCodeStyleSettings.getInstance(settings).STYLE_PRESET = ComarkStylePreset.NUXT_STUDIO
             WriteCommandAction.runWriteCommandAction(project) { CodeStyleManager.getInstance(project).reformat(file) }
-            assertEquals("- a\n- b\n", file.text)
+            // a page with Studio's defaults: the title comes from the heading
+            assertEquals("---\ntitle: A\n---\n\n# A\n\n- a\n- b\n", file.text)
         }
     }
 

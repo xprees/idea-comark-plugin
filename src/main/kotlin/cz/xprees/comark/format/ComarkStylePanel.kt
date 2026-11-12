@@ -43,10 +43,16 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
     private val strong = combo(EmphasisMarker.entries) { "${it.char}${it.char}text${it.char}${it.char}" }
     private val fence = combo(FenceMarker.entries) { it.char.toString().repeat(3) }
     private val blankLines = JSpinner(SpinnerNumberModel(1, 1, ComarkCodeStyleSettings.MAX_BLANK_LINES_LIMIT, 1))
-    private val propsInline = JSpinner(SpinnerNumberModel(3, 0, ComarkCodeStyleSettings.STUDIO_PROPS_INLINE_MAX, 1))
+    private val propsInline = JSpinner(SpinnerNumberModel(3, 0, ComarkCodeStyleSettings.PROPS_INLINE_MAX_LIMIT, 1))
     private val sortProps = JBCheckBox(ComarkBundle.message("codestyle.style.sort.props"))
     private val frontMatter = combo(FrontMatterMode.entries) {
-        ComarkBundle.message(if (it == FrontMatterMode.STUDIO) "codestyle.style.front.matter.studio" else "codestyle.style.front.matter.keep")
+        ComarkBundle.message(
+            when (it) {
+                FrontMatterMode.STUDIO -> "codestyle.style.front.matter.studio"
+                FrontMatterMode.REDUMP -> "codestyle.style.front.matter.redump"
+                FrontMatterMode.KEEP -> "codestyle.style.front.matter.keep"
+            },
+        )
     }
     internal val options: List<JComponent> = listOf(bullet, ordered, emphasis, strong, fence, blankLines, propsInline, sortProps, frontMatter)
 
@@ -129,7 +135,7 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
             strong.item = values.STRONG_MARKER
             fence.item = values.FENCE_MARKER
             blankLines.value = values.MAX_BLANK_LINES.coerceIn(1, ComarkCodeStyleSettings.MAX_BLANK_LINES_LIMIT)
-            propsInline.value = values.PROPS_INLINE_MAX.coerceIn(0, ComarkCodeStyleSettings.STUDIO_PROPS_INLINE_MAX)
+            propsInline.value = values.PROPS_INLINE_MAX.coerceIn(0, ComarkCodeStyleSettings.PROPS_INLINE_MAX_LIMIT)
             sortProps.isSelected = values.SORT_PROPS
             frontMatter.item = values.FRONT_MATTER
         } finally {

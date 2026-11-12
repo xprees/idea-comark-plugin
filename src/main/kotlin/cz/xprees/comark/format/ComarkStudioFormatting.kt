@@ -70,10 +70,40 @@ internal object ComarkStudioFormatting {
         val selected = if (whole) null else selectedLines(oldLines, oldStarts, result.blocks, ranges, oldText.length)
         val keep = protectedLines?.let { protectedBlocks(it, result.blocks) }
         val edits = ArrayList<Edit>()
+        fun allowed(c: Diff.Change): Boolean {
+            val insideKept = keep != null && if (c.deleted > 0) touches(keep, c) else c.line0 > 0 && keep.get(c.line0 - 1) && keep.get(c.line0)
+            return (selected == null || touches(selected, c)) && !insideKept
+        }
+        if (whitespaceOnly) {
+            // lines are paired by their text without whitespace, so content Studio adds or removes elsewhere (front matter, say)
+            // does not hide the whitespace changes next to it: each pair that differs, and each change that is all whitespace
+            val keys = try {
+                Diff.buildChanges(oldLines.map(::withoutWhitespace).toTypedArray(), newLines.map(::withoutWhitespace).toTypedArray())
+            } catch (_: FilesTooBigForDiffException) {
+                return emptyList()
+            }
+            var o = 0
+            var n = 0
+            var k: Diff.Change? = keys
+            while (true) {
+                val until = k?.line0 ?: oldLines.size
+                while (o < until && n < newLines.size) {
+                    val line = Diff.Change(o, n, 1, 1, null)
+                    if (oldLines[o] != newLines[n] && allowed(line)) edit(oldText, newText, oldStarts, newStarts, line, true)?.let { edits += it }
+                    o++
+                    n++
+                }
+                val current = k ?: break
+                if (allowed(current)) edit(oldText, newText, oldStarts, newStarts, current, true)?.let { edits += it }
+                o = current.line0 + current.deleted
+                n = current.line1 + current.inserted
+                k = current.link
+            }
+            return edits
+        }
         var c: Diff.Change? = change
         while (c != null) {
-            val insideKept = keep != null && if (c.deleted > 0) touches(keep, c) else c.line0 > 0 && keep.get(c.line0 - 1) && keep.get(c.line0)
-            if ((selected == null || touches(selected, c)) && !insideKept) {
+            if (allowed(c)) {
                 if (c.deleted == c.inserted && c.deleted > 1) {
                     // line for line, so text between the changed parts of the lines (and markers on it) stays
                     for (k in 0 until c.deleted) {

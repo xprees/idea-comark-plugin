@@ -44,6 +44,51 @@ class ComarkCollectionsTest : BasePlatformTestCase() {
         assertEquals(emptyList<String>(), collections[3].fields)
     }
 
+    fun testFieldTypesAndDefaults() {
+        val fields = ComarkCollections.parse(
+            """
+            export default defineContentConfig({ collections: { blog: defineCollection({
+              type: 'page', source: '**',
+              schema: z.object({
+                author: z.string().optional(),
+                order: z.number().default(0),
+                draft: z.boolean().default(false),
+                kind: z.enum(['a', 'b']).default('a'),
+                published: z.string().datetime(),
+                date: z.coerce.date(),
+                tags: z.array(z.string()).default([]),
+                image: property(z.object({ src: z.string().default('x') })).editor({ input: 'media' }),
+                seo: z.object({}).default({ title: 'T', robots: [1, "two"] }),
+                computed: z.string().default(() => 'x'),
+                template: z.string().default(`a${'$'}{b}`),
+              }),
+            }) } })
+            """.trimIndent(),
+        ).single().schema
+        assertEquals(
+            listOf(
+                StudioSchemaField("author", StudioFieldType.STRING),
+                StudioSchemaField("order", StudioFieldType.NUMBER, true, 0.0),
+                StudioSchemaField("draft", StudioFieldType.BOOLEAN, true, false),
+                StudioSchemaField("kind", StudioFieldType.STRING, true, "a"),
+                StudioSchemaField("published", StudioFieldType.DATETIME),
+                StudioSchemaField("date", StudioFieldType.DATE),
+                StudioSchemaField("tags", StudioFieldType.JSON, true, emptyList<Any?>()),
+                // the nested default belongs to `src`, not to `image`
+                StudioSchemaField("image", StudioFieldType.JSON),
+                StudioSchemaField("seo", StudioFieldType.JSON, true, mapOf("title" to "T", "robots" to listOf(1.0, "two"))),
+                // not plain literals: no default
+                StudioSchemaField("computed", StudioFieldType.STRING),
+                StudioSchemaField("template", StudioFieldType.STRING),
+            ),
+            fields,
+        )
+        // a schema held in a variable cannot be read
+        val unknown = ComarkCollections.parse("const s = z.object({});\nexport default { c: defineCollection({ type: 'page', source: '**', schema: s }) }").single()
+        assertFalse(unknown.schemaKnown)
+        assertTrue(ComarkCollections.parse("export default { c: defineCollection({ type: 'page', source: '**' }) }").single().schemaKnown)
+    }
+
     fun testGlobs() {
         assertTrue(ComarkCollections.globRegex("**/*.md").matches("index.md"))
         assertTrue(ComarkCollections.globRegex("**/*.md").matches("a/b/c.md"))
@@ -59,7 +104,18 @@ class ComarkCollectionsTest : BasePlatformTestCase() {
         val draft = myFixture.addFileToProject("site/content/blog/drafts/wip.md", "# WIP\n")
         val doc = myFixture.addFileToProject("site/docs/guide.md", "# Guide\n")
         val collections = ComarkCollections.getInstance(project)
-        assertEquals(StudioCollection("blog", StudioCollection.Type.PAGE, listOf("date", "tags", "cover-image")), collections.collectionFor(post))
+        assertEquals(
+            StudioCollection(
+                "blog",
+                StudioCollection.Type.PAGE,
+                listOf(
+                    StudioSchemaField("date", StudioFieldType.DATE),
+                    StudioSchemaField("tags", StudioFieldType.JSON),
+                    StudioSchemaField("cover-image", StudioFieldType.JSON),
+                ),
+            ),
+            collections.collectionFor(post),
+        )
         // excluded from blog, so the catch-all collection
         assertEquals("content", collections.collectionFor(draft)?.name)
         assertEquals("docs", collections.collectionFor(doc)?.name)

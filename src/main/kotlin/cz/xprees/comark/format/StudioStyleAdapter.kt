@@ -1,25 +1,28 @@
 package cz.xprees.comark.format
 
-import cz.xprees.comark.format.studio.StudioBlock
-import cz.xprees.comark.format.studio.StudioBlockKind
 import cz.xprees.comark.format.studio.StudioEmojiData
 import cz.xprees.comark.format.studio.StudioEntities
 import cz.xprees.comark.format.studio.StudioFormatter
-import cz.xprees.comark.format.studio.StudioJs
-import cz.xprees.comark.format.studio.StudioYaml
+import cz.xprees.comark.format.studio.StudioFrontMatterMode
+import cz.xprees.comark.format.studio.StudioStyle
+import cz.xprees.comark.format.studio.StudioTextPathException
+import cz.xprees.comark.format.studio.StudioTreeBuilder
+import cz.xprees.comark.format.studio.StudioUnsupportedException
 import java.util.Optional
+import org.jetbrains.annotations.TestOnly
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
+import cz.xprees.comark.format.studio.StudioCollection as EngineCollection
+import cz.xprees.comark.format.studio.StudioStyleOptions as EngineOptions
 
 /**
  * The one place where the IDE talks to the Nuxt Studio engine (`format/studio/`): everything else (Reformat Code, the settings
  * preview, the inspections) calls [format] and reads a [StudioStyleResult], and never imports the engine.
  *
- * Today this is the engine's *text path* with kept blocks ([StudioFormatter.formatPreserving]: what Studio's code editor writes,
- * except for blocks Studio would damage, which stay as written), followed by the custom options ([StudioStyleRewriter]).
- * [StudioStyleContext.collection] and [StudioStyleContext.fileName] are not used yet: they are for the front matter data rules
- * of Studio's database path (title / description injection, key order by the collection schema), which come with the engine's
- * dual fixed point API. Switching to that API means replacing the [StudioFormatter.formatPreserving] call and the mapping of its
- * blocks in [format]; the result type stays.
+ * [format] is the engine's Nuxt Studio code style ([StudioStyle.format]): per block the form that both of Studio's save paths
+ * (its code editor, and a document opened from Nuxt Content's database) leave unchanged, with the blocks Studio would damage
+ * kept as written, and the front matter completed by Studio's data rules for the file's collection. The Custom options go to
+ * the engine as well; only [StudioStyleOptions.maxBlankLines], which the engine does not have, is applied here afterwards.
  */
 object StudioStyleAdapter {
     /**
@@ -27,34 +30,120 @@ object StudioStyleAdapter {
      * unchanged). Line numbers in the result are 0-based lines of [text] (separated by `\n`, `\r\n` or `\r`).
      */
     fun format(text: String, context: StudioStyleContext): StudioStyleResult? {
-        val preserved = StudioFormatter.formatPreserving(text) ?: return null
-        val blocks = preserved.blocks
-        val kept = blocks.filter { it.kept }.map { block ->
+        formatCalls.incrementAndGet()
+        val styled = StudioStyle.format(text, engineOptions(context)) ?: return null
+        val kept = styled.keptBlocks.map { block ->
+            val lines = block.inputLines
             KeptBlock(
-                lines = block.startLine until maxOf(block.endLine, block.startLine + 1),
+                lines = if (lines.isEmpty()) lines.first until lines.first + 1 else lines,
                 reasons = block.reasons.map { it.name }.sorted(),
-                message = block.reasons.joinToString("; ") { it.description },
+                message = block.messages.joinToString("; ") { it.removePrefix(MESSAGE_PREFIX) },
             )
         }
-        val options = context.options
-        val output = if (options == StudioStyleOptions.STUDIO) {
-            preserved.text
-        } else {
-            val frontMatter = blocks.firstOrNull { it.kind == StudioBlockKind.FRONTMATTER }
-            val sourceLines = text.lines()
-            StudioStyleRewriter(options, yaml).rewrite(
-                text = preserved.text,
-                keptSources = blocks.filter { it.kept }.map { it.source },
-                frontMatter = frontMatter?.let { StudioStyleRewriter.FrontMatter(it.source, if (it.kept) it.source else it.studioOutput.orEmpty()) },
-                bodyBlocks = blocks.filter { it.kind == StudioBlockKind.BLOCK }.mapNotNull { block -> bodyBlock(sourceLines, block) },
-            )
-        }
-        return StudioStyleResult(
-            text = output,
-            blocks = blocks.map { it.startLine until maxOf(it.endLine, it.startLine + 1) },
-            keptBlocks = kept,
+        val blocks = sourceBlocks(text)
+        var output = styled.text
+        if (context.options.maxBlankLines > 1 && blocks != null) output = withSourceBlankLines(text, output, context.options.maxBlankLines)
+        return StudioStyleResult(text = output, blocks = blocks.orEmpty().map { it.lines }, keptBlocks = kept)
+    }
+
+    /** How many times [format] ran, for tests that check a style never reaches the engine. */
+    @TestOnly
+    internal val formatCalls = AtomicInteger()
+
+    private const val MESSAGE_PREFIX = "Nuxt Studio will rewrite this: "
+
+    /** The engine's options for [context]: Nuxt Studio's own values unless the Custom style changes them. */
+    internal fun engineOptions(context: StudioStyleContext): EngineOptions {
+        val o = context.options
+        return EngineOptions(
+            collection = engineCollection(context),
+            indentSize = o.indentSize.coerceIn(0, 8),
+            bulletMarker = o.bulletMarker,
+            orderedDelimiter = o.orderedDelimiter,
+            emphasisChar = o.emphasisMarker,
+            strongChar = o.strongMarker,
+            fenceChar = o.fenceMarker,
+            propsBlockThreshold = o.propsInlineMax.coerceAtLeast(0),
+            sortProps = o.sortProps,
+            frontMatter = when (o.frontMatter) {
+                FrontMatterMode.STUDIO -> StudioFrontMatterMode.STUDIO_RULES
+                FrontMatterMode.REDUMP -> StudioFrontMatterMode.REDUMP_ONLY
+                FrontMatterMode.KEEP -> StudioFrontMatterMode.KEEP
+            },
         )
     }
+
+    private fun engineCollection(context: StudioStyleContext): EngineCollection {
+        val collection = context.collection ?: return EngineCollection.defaults(context.fileName)
+        val fields = collection.fields.map { field ->
+            EngineCollection.Field(
+                field.name,
+                when (field.type) {
+                    StudioFieldType.STRING -> EngineCollection.ColumnType.STRING
+                    StudioFieldType.NUMBER -> EngineCollection.ColumnType.NUMBER
+                    StudioFieldType.BOOLEAN -> EngineCollection.ColumnType.BOOLEAN
+                    StudioFieldType.DATE -> EngineCollection.ColumnType.DATE
+                    StudioFieldType.DATETIME -> EngineCollection.ColumnType.DATETIME
+                    StudioFieldType.JSON -> EngineCollection.ColumnType.JSON
+                },
+                field.hasDefault,
+                field.default,
+            )
+        }
+        val type = if (collection.type == StudioCollection.Type.DATA) EngineCollection.Type.DATA else EngineCollection.Type.PAGE
+        return EngineCollection(type, fields, context.fileName, collection.schemaKnown)
+    }
+
+    // ---- blocks and blank lines -------------------------------------------------------------------------------------------
+
+    /** A top-level block of a document: its [lines] and the blank lines right above it. */
+    private class SourceBlock(val lines: IntRange, val blankLinesBefore: Int, val body: Boolean)
+
+    /** The front matter and the top-level blocks of [text] (0-based line ranges), or null when it does not parse. */
+    private fun sourceBlocks(text: String): List<SourceBlock>? {
+        val doc = try {
+            StudioTreeBuilder.buildSegmented(text)
+        } catch (_: StudioTextPathException) {
+            return null
+        } catch (_: StudioUnsupportedException) {
+            return null
+        } catch (_: StackOverflowError) {
+            return null
+        }
+        val lines = text.split(LINE_BREAK)
+        val result = ArrayList<SourceBlock>()
+        doc.frontmatter?.let { result += SourceBlock(0 until it.contentLine + 1, 0, false) }
+        for (segment in doc.segments) {
+            val start = doc.sourceLine(segment.startLine)
+            val end = maxOf(doc.sourceLine(segment.endLine), start + 1)
+            var blank = 0
+            while (start - blank - 1 >= 0 && lines.getOrNull(start - blank - 1)?.isBlank() == true) blank++
+            result += SourceBlock(start until end, if (start - blank == 0) 0 else blank, true)
+        }
+        return result
+    }
+
+    /**
+     * [output] with the blank lines between its top-level blocks taken from [source] (at least one, at most [max]), block by
+     * block. Extra blank lines between top-level blocks do not change the document; when the two texts do not have the same
+     * blocks (the engine dropped or merged one), [output] is returned as it is.
+     */
+    private fun withSourceBlankLines(source: String, output: String, max: Int): String {
+        val sourceBlocks = sourceBlocks(source)?.filter { it.body } ?: return output
+        val outputBlocks = sourceBlocks(output)?.filter { it.body } ?: return output
+        if (sourceBlocks.size != outputBlocks.size) return output
+        val lines = output.split('\n').toMutableList()
+        for (i in outputBlocks.indices.reversed()) {
+            val block = outputBlocks[i]
+            val start = block.lines.first
+            if (start == 0 || block.blankLinesBefore == 0) continue
+            val wanted = sourceBlocks[i].blankLinesBefore.coerceIn(1, max)
+            repeat(wanted - block.blankLinesBefore) { lines.add(start, "") }
+        }
+        return lines.joinToString("\n")
+    }
+
+    private val LINE_BREAK = Regex("\r\n?|\n")
 
     // ---- pinned versions --------------------------------------------------------------------------------------------------
 
@@ -176,46 +265,6 @@ object StudioStyleAdapter {
 
     private val ENTITY = Regex("&(?:#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[A-Za-z][A-Za-z0-9]{1,31});")
     private val ENTITY_LIKE = Regex("#?[A-Za-z0-9]+;")
-
-    /** A body block for the blank line option: the first line it writes, and the blank lines before it in the source. */
-    private fun bodyBlock(lines: List<String>, block: StudioBlock): StudioStyleRewriter.BodyBlock? {
-        val written = if (block.kept) block.source else block.studioOutput ?: return null
-        val firstLine = written.substringBefore('\n').takeIf { it.isNotBlank() } ?: return null
-        var blank = 0
-        var line = block.startLine - 1
-        while (line >= 0 && line < lines.size && lines[line].all { it == ' ' || it == '\t' }) {
-            blank++
-            line--
-        }
-        return StudioStyleRewriter.BodyBlock(firstLine, blank)
-    }
-
-    /** YAML for the props options, written as Studio writes component props (comark's `comarkYamlAttributes`). */
-    private val yaml = object : StudioStyleRewriter.Yaml {
-        override fun propsYaml(props: List<Pair<String, String>>): String? {
-            val normalized = LinkedHashMap<String, Any?>()
-            for ((key, value) in props) {
-                if (key.startsWith(":")) {
-                    try {
-                        normalized[key.substring(1)] = StudioJs.jsonParse(value)
-                    } catch (_: StudioJs.JsonSyntaxError) {
-                        normalized[key] = value
-                    }
-                } else {
-                    normalized[key] = when (value) {
-                        "true" -> true
-                        "false" -> false
-                        else -> value
-                    }
-                }
-            }
-            return try {
-                StudioJs.trim(StudioYaml.stringify(normalized))
-            } catch (_: RuntimeException) {
-                null
-            }
-        }
-    }
 }
 
 /**
@@ -232,22 +281,43 @@ data class StudioStyleContext(
 )
 
 /**
- * A collection of `content.config.ts` as Studio's front matter rules see it: its [type] and the field names of its schema in
- * declaration order (the order Studio writes front matter keys in).
+ * A collection of `content.config.ts` as Studio's front matter rules see it: its [type] and the top-level [fields] of its
+ * schema in declaration order. Nuxt Content orders the front matter keys itself (`id`, `title`, then the schema columns sorted
+ * by name), so the order of [fields] does not decide the output. [schemaKnown] is false when the schema could not be read
+ * (for example a variable instead of an inline `z.object({...})`).
  */
-data class StudioCollection(val name: String, val type: Type, val schemaFields: List<String>) {
+data class StudioCollection(
+    val name: String,
+    val type: Type,
+    val fields: List<StudioSchemaField> = emptyList(),
+    val schemaKnown: Boolean = true,
+) {
     enum class Type { PAGE, DATA }
+
+    /** The names of [fields], in declaration order. */
+    val schemaFields: List<String> get() = fields.map { it.name }
 }
 
+/** The SQL column kind Nuxt Content gives a schema field, which decides how its front matter value is stored and written back. */
+enum class StudioFieldType { STRING, NUMBER, BOOLEAN, DATE, DATETIME, JSON }
+
 /**
- * The options of the custom style. [STUDIO] holds Nuxt Studio's own choices; every other value is applied on top of Studio's
- * output (see [StudioStyleRewriter]).
+ * A field of a collection schema: its [name], column [type] and, when [hasDefault], the zod `.default(...)` value as a plain
+ * value ([String], [Double], [Boolean], `null`, [List], [Map]), which Nuxt Content writes into documents that lack the key.
+ */
+data class StudioSchemaField(val name: String, val type: StudioFieldType = StudioFieldType.STRING, val hasDefault: Boolean = false, val default: Any? = null)
+
+/**
+ * The options of the style. [STUDIO] holds Nuxt Studio's own choices (the Nuxt Studio preset); the Custom preset changes them.
+ * All of them except [maxBlankLines] are the engine's options ([StudioStyle]): blocks are written again with them where the
+ * result reads the same. With any value other than Studio's, Studio rewrites the document to its own style when it saves it.
  *
  * @property indentSize spaces per level of component nesting (Studio: 2)
  * @property maxBlankLines blank lines kept between top-level blocks, from the source, at most this many (Studio: always 1)
- * @property propsInlineMax a block component with more props writes them as a YAML block (Studio: 3; only 0 to 3 are
- *   supported, larger values act as 3)
- * @property keepFrontMatter leave the front matter as written instead of Studio's re-dump
+ * @property propsInlineMax a block component with more props writes them as a YAML block (Studio: 3)
+ * @property sortProps props in the order Studio's database path gives them (by how often each name occurs on the same tag in
+ *   the document; Studio: true); false keeps the source's order
+ * @property frontMatter Studio's data rules, a plain js-yaml re-dump, or the front matter as written
  */
 data class StudioStyleOptions(
     val indentSize: Int = 2,
@@ -258,8 +328,8 @@ data class StudioStyleOptions(
     val fenceMarker: Char = '`',
     val maxBlankLines: Int = 1,
     val propsInlineMax: Int = 3,
-    val sortProps: Boolean = false,
-    val keepFrontMatter: Boolean = false,
+    val sortProps: Boolean = true,
+    val frontMatter: FrontMatterMode = FrontMatterMode.STUDIO,
 ) {
     companion object {
         val STUDIO = StudioStyleOptions()

@@ -20,7 +20,9 @@ import java.util.concurrent.ConcurrentHashMap
  * The configuration is the one set in [ComarkSettings.contentConfigPath], else the nearest `content.config.*` in the file's
  * directory or above. Each `name: defineCollection({ ... })` gives a collection with its `type` (`page` by default), its
  * `source` (a glob, `{ include, exclude, cwd }`, or an array of these; relative to `content/` next to the configuration unless
- * `cwd` says otherwise) and the top-level fields of its `schema: z.object({ ... })` in declaration order. The first collection
+ * `cwd` says otherwise) and the top-level fields of its `schema: z.object({ ... })` in declaration order, each with its column
+ * type (from the zod type: `z.string()`, `z.number()`, `z.boolean()`, `z.date()`, `z.string().datetime()`, anything else is a
+ * JSON column) and its literal `.default(...)`, if any. The first collection
  * whose source matches the file wins. Parsed configurations are cached per file and modification stamp, so an edited (saved)
  * configuration is read again on the next lookup.
  */
@@ -29,7 +31,15 @@ class ComarkCollections(private val project: Project) {
     private class Parsed(val stamp: Long, val collections: List<Collection>)
 
     /** One `defineCollection`: [sources] are (cwd, include, excludes), cwd relative to the configuration's directory. */
-    internal class Collection(val name: String, val type: StudioCollection.Type, val sources: List<Source>, val fields: List<String>)
+    internal class Collection(
+        val name: String,
+        val type: StudioCollection.Type,
+        val sources: List<Source>,
+        val schema: List<StudioSchemaField>,
+        val schemaKnown: Boolean = true,
+    ) {
+        val fields: List<String> get() = schema.map { it.name }
+    }
 
     internal class Source(val cwd: String, val include: String, val exclude: List<String>)
 
@@ -43,7 +53,7 @@ class ComarkCollections(private val project: Project) {
         val collections = parsed(config)
         for (collection in collections) {
             if (collection.sources.any { matches(root, it, virtualFile.path) }) {
-                return StudioCollection(collection.name, collection.type, collection.fields)
+                return StudioCollection(collection.name, collection.type, collection.schema, collection.schemaKnown)
             }
         }
         return null
@@ -141,12 +151,13 @@ class ComarkCollections(private val project: Project) {
                 val entries = JsScanner.entries(code, open, close)
                 val type = entries["type"]?.let { JsScanner.string(code, it) }
                 val sources = entries["source"]?.let { sources(code, it) }.orEmpty()
-                val fields = entries["schema"]?.let { schemaFields(code, it) }.orEmpty()
+                val schema = entries["schema"]?.let { schemaFields(code, it) }
                 result += Collection(
                     name,
                     if (type == "data") StudioCollection.Type.DATA else StudioCollection.Type.PAGE,
                     sources,
-                    fields,
+                    schema.orEmpty(),
+                    schemaKnown = entries["schema"] == null || schema != null,
                 )
             }
             return result
@@ -179,11 +190,193 @@ class ComarkCollections(private val project: Project) {
             }
         }
 
-        /** Top-level fields of `z.object({ ... })` (or a plain object) in [value]. */
-        private fun schemaFields(code: String, value: IntRange): List<String> {
-            val open = code.indexOf('{', value.first).takeIf { it in value } ?: return emptyList()
-            val close = JsScanner.matching(code, open) ?: return emptyList()
-            return JsScanner.entries(code, open, close).keys.toList()
+        /** Top-level fields of `z.object({ ... })` (or a plain object) in [value], or null when it is not an inline object. */
+        private fun schemaFields(code: String, value: IntRange): List<StudioSchemaField>? {
+            val open = code.indexOf('{', value.first).takeIf { it in value } ?: return null
+            val close = JsScanner.matching(code, open) ?: return null
+            return JsScanner.entries(code, open, close).map { (name, range) -> field(name, code.substring(range.first, range.last + 1)) }
+        }
+
+        private val ZOD_BASE = Regex("""^\s*z\s*\.\s*(?:coerce\s*\.\s*)?(\w+)\s*\(""")
+        private val PROPERTY_CALL = Regex("""^\s*property\s*\(""")
+
+        /** A schema field from its zod expression [expression] (`z.string().default('x')`, `property(z.date()).editor(...)`). */
+        internal fun field(name: String, expression: String): StudioSchemaField {
+            // Nuxt Content's `property(schema)` wrapper: the schema is its argument, the chain after it only adds editor hints
+            var expr = expression.trim()
+            PROPERTY_CALL.find(expr)?.let { call ->
+                val open = call.range.last
+                val close = JsScanner.matching(expr, open)
+                if (close != null) expr = expr.substring(open + 1, close).trim()
+            }
+            val base = ZOD_BASE.find(expr)?.groupValues?.get(1)
+            val calls = chainCalls(expr)
+            val type = when (base) {
+                "string" -> if (calls.any { it.first == "datetime" }) StudioFieldType.DATETIME else StudioFieldType.STRING
+                "enum", "nativeEnum" -> StudioFieldType.STRING
+                "number" -> StudioFieldType.NUMBER
+                "boolean" -> StudioFieldType.BOOLEAN
+                "date" -> StudioFieldType.DATE
+                else -> StudioFieldType.JSON
+            }
+            val default = calls.lastOrNull { it.first == "default" }?.second?.let { JsLiteral.parse(it) }
+            return if (default != null) StudioSchemaField(name, type, true, default.value) else StudioSchemaField(name, type)
+        }
+
+        /** The method calls chained at the top level of [expr] (`.optional()`, `.default(x)`): name and argument text. */
+        private fun chainCalls(expr: String): List<Pair<String, String>> {
+            val result = ArrayList<Pair<String, String>>()
+            var i = 0
+            while (i < expr.length) {
+                when (val c = expr[i]) {
+                    '\'', '"', '`' -> {
+                        i = JsScanner.skipStringAt(expr, i)
+                        continue
+                    }
+                    '(', '[', '{' -> {
+                        i = (JsScanner.matching(expr, i) ?: return result) + 1
+                        continue
+                    }
+                    '.' -> {
+                        var j = i + 1
+                        while (j < expr.length && expr[j].isWhitespace()) j++
+                        val start = j
+                        while (j < expr.length && (expr[j].isLetterOrDigit() || expr[j] == '_' || expr[j] == '$')) j++
+                        val method = expr.substring(start, j)
+                        while (j < expr.length && expr[j].isWhitespace()) j++
+                        if (method.isNotEmpty() && j < expr.length && expr[j] == '(') {
+                            val close = JsScanner.matching(expr, j) ?: return result
+                            result += method to expr.substring(j + 1, close)
+                            i = close + 1
+                            continue
+                        }
+                        i = j
+                        continue
+                    }
+                    else -> if (c == ')' || c == ']' || c == '}') return result
+                }
+                i++
+            }
+            return result
+        }
+    }
+}
+
+/** Plain JavaScript literals (`'x'`, `1.5`, `true`, `null`, `[...]`, `{ ... }`) as values, for schema defaults. */
+internal object JsLiteral {
+    /** A parsed literal ([value] may be null for `null`). */
+    class Literal(val value: Any?)
+
+    /** [text] as a value, or null when it is not a plain literal (a function call, a variable, a template with `${}`). */
+    fun parse(text: String): Literal? {
+        val p = Parser(text)
+        val value = p.value() ?: return null
+        p.blanks()
+        return if (p.at == text.length) value else null
+    }
+
+    private class Parser(val s: String) {
+        var at = 0
+
+        fun blanks() {
+            while (at < s.length && s[at].isWhitespace()) at++
+        }
+
+        fun value(): Literal? {
+            blanks()
+            if (at >= s.length) return null
+            val c = s[at]
+            return when {
+                c == '\'' || c == '"' || c == '`' -> string()?.let { Literal(it) }
+                c == '[' -> array()
+                c == '{' -> obj()
+                c == '-' || c == '+' || c == '.' || c.isDigit() -> number()
+                s.startsWith("true", at) -> word("true", true)
+                s.startsWith("false", at) -> word("false", false)
+                s.startsWith("null", at) -> word("null", null)
+                else -> null
+            }
+        }
+
+        private fun word(w: String, v: Any?): Literal? {
+            val end = at + w.length
+            if (end < s.length && (s[end].isLetterOrDigit() || s[end] == '_' || s[end] == '$')) return null
+            at = end
+            return Literal(v)
+        }
+
+        private fun number(): Literal? {
+            val m = NUMBER.find(s.substring(at)) ?: return null
+            at += m.value.length
+            return m.value.replace("_", "").toDoubleOrNull()?.let { Literal(it) }
+        }
+
+        private fun string(): String? {
+            val quote = s[at++]
+            val sb = StringBuilder()
+            while (at < s.length && s[at] != quote) {
+                var c = s[at]
+                if (quote == '`' && c == '$' && s.startsWith("\${", at)) return null
+                if (c == '\\' && at + 1 < s.length) {
+                    at++
+                    c = when (val e = s[at]) {
+                        'n' -> '\n'
+                        't' -> '\t'
+                        'r' -> '\r'
+                        else -> e
+                    }
+                }
+                sb.append(c)
+                at++
+            }
+            if (at >= s.length) return null
+            at++
+            return sb.toString()
+        }
+
+        private fun array(): Literal? {
+            at++
+            val list = ArrayList<Any?>()
+            while (true) {
+                blanks()
+                if (at < s.length && s[at] == ']') {
+                    at++
+                    return Literal(list)
+                }
+                list += (value() ?: return null).value
+                blanks()
+                if (at < s.length && s[at] == ',') at++ else if (at >= s.length || s[at] != ']') return null
+            }
+        }
+
+        private fun obj(): Literal? {
+            at++
+            val map = LinkedHashMap<String, Any?>()
+            while (true) {
+                blanks()
+                if (at < s.length && s[at] == '}') {
+                    at++
+                    return Literal(map)
+                }
+                if (at >= s.length) return null
+                val key = if (s[at] == '\'' || s[at] == '"') {
+                    string() ?: return null
+                } else {
+                    val start = at
+                    while (at < s.length && (s[at].isLetterOrDigit() || s[at] == '_' || s[at] == '$')) at++
+                    s.substring(start, at).ifEmpty { return null }
+                }
+                blanks()
+                if (at >= s.length || s[at] != ':') return null
+                at++
+                map[key] = (value() ?: return null).value
+                blanks()
+                if (at < s.length && s[at] == ',') at++ else if (at >= s.length || s[at] != '}') return null
+            }
+        }
+
+        companion object {
+            private val NUMBER = Regex("""^[+-]?(?:\d[\d_]*(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?""")
         }
     }
 }
@@ -217,6 +410,8 @@ internal object JsScanner {
     }
 
     /** The offset after the string literal starting at [start]. */
+    fun skipStringAt(text: String, start: Int): Int = skipString(text, start)
+
     private fun skipString(text: String, start: Int): Int {
         val quote = text[start]
         var i = start + 1
