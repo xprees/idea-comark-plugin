@@ -174,6 +174,10 @@ internal object StudioDbBody {
                     if ((parent?.tag == "td" || parent?.tag == "th") && RAW_CELL_TEXT.containsMatchIn(node.text)) {
                         unsupported(Reason.INLINE_SYNTAX, "unescaped Markdown punctuation in a table cell")
                     }
+                    val previous = siblings.getOrNull(index - 1)
+                    if (previous is StudioElement && previous.tag == "br" && Regex("^#[^ \\t\\n#]").containsMatchIn(node.text)) {
+                        unsupported(Reason.SLOT, "a #slot line after a hard break")
+                    }
                     val next = siblings.getOrNull(index + 1)
                     if (next is StudioElement && next.tag == "br" && node.text.lastOrNull().let { it == ' ' || it == '\t' }) {
                         unsupported(Reason.INLINE_SYNTAX, "whitespace before a hard break")
@@ -212,9 +216,20 @@ internal object StudioDbBody {
         fun nestedComponentIndent(container: StudioElement) {
             val first = container.children.indexOfFirst { it is StudioElement && isComponent(it.tag) && styles[it] != ComponentStyle.INLINE }
             if (first < 0) return
-            if (container.children.drop(first + 1).any { it is StudioElement && (it.tag == "ul" || it.tag == "ol" || it.tag == "pre" || containsTag(it, "ul") || containsTag(it, "ol") || containsTag(it, "pre")) }) {
-                unsupported(Reason.BLOCK_SYNTAX, "a list or code block after a nested component")
+            if (container.children.drop(first + 1).any { indentationSensitive(it) }) {
+                unsupported(Reason.BLOCK_SYNTAX, "an indented list or code line after a nested component")
             }
+        }
+
+        /** A list item with more than inline content, or a code line that starts with whitespace, at any depth. */
+        fun indentationSensitive(n: StudioNode): Boolean {
+            if (n !is StudioElement) return false
+            if (n.tag == "li" && n.children.any { it is StudioElement && !isInline(it) && it.tag != "input" }) return true
+            if (n.tag == "pre") {
+                val code = (n.children.singleOrNull() as? StudioElement)?.children?.singleOrNull() as? StudioText ?: return true
+                return code.text.split('\n').any { it.startsWith(" ") || it.startsWith("\t") }
+            }
+            return n.children.any { indentationSensitive(it) }
         }
 
         /** Paragraphs remark-mdc's container repair (`repairMdcRoot`) reads as closing markers. */
@@ -239,6 +254,8 @@ internal object StudioDbBody {
             }
             if ("{{" in text) unsupported(Reason.INLINE_SYNTAX, "{{ }} binding")
             if ("[^" in text) unsupported(Reason.INLINE_SYNTAX, "footnote syntax")
+            // CommonMark reads `<!x` (any case) and `<?` as HTML; markdown-exit only `<!` with an uppercase letter
+            if ("<!" in text || "<?" in text) unsupported(Reason.RAW_HTML, "an HTML declaration or processing instruction opener")
             if (Regex("\\(:[a-zA-Z]").containsMatchIn(text)) unsupported(Reason.INLINE_SYNTAX, "(:name, an inline component for remark-mdc")
             if ("**" in text || "__" in text || "~~" in text) unsupported(Reason.INLINE_SYNTAX, "a literal run of emphasis delimiters")
             if (EMOJI_SHORTCODE.containsMatchIn(text)) unsupported(Reason.INLINE_SYNTAX, "an emoji shortcode remark-emoji converts")
@@ -285,6 +302,16 @@ internal object StudioDbBody {
                     // `- 42. x`: a list that starts on its parent item's line
                     if (el.children.firstOrNull().let { it is StudioElement && (it.tag == "ul" || it.tag == "ol") }) {
                         unsupported(Reason.LIST, "a list on its parent item's first line")
+                    }
+                    // `- [x]{...}`: remark-mdc takes a bracket at the start of an item for a task checkbox, not a span
+                    val first = el.children.firstOrNull()
+                    val firstInline = if (first is StudioElement && first.tag == "p") first.children.firstOrNull() else first
+                    if (firstInline is StudioElement && firstInline.tag == "span") unsupported(Reason.BRACKET_SPAN, "a [span] starting a list item")
+                    // inputs other than the task checkbox (an `:input` component) share the checkbox's attribute counts
+                    if (el.children.withIndex().any { (i, c) -> c is StudioElement && c.tag == "input" && (i > 0 || attrs["class"] != "task-list-item") } ||
+                        el.children.any { it is StudioElement && it.tag != "input" && containsTag(it, "input") }
+                    ) {
+                        unsupported(Reason.LIST, "an input element besides the task checkbox")
                     }
                 }
                 tag == "ul" -> if (attrs.keys.any { it != "class" } || attrs["class"].let { it != null && it != "contains-task-list" }) {
@@ -386,10 +413,28 @@ internal object StudioDbBody {
             }
             if (!prevOk) unsupported(Reason.INLINE_SYNTAX, "inline component after a character remark-mdc does not accept")
             val next = siblings.getOrNull(index + 1)
-            if (el.children.isEmpty() && el.attrs.isEmpty() && next is StudioText && next.text.firstOrNull().let { it != null && (it.isLetterOrDigit() || it in "-_:[{") }) {
-                unsupported(Reason.INLINE_SYNTAX, "inline component followed by name characters")
+            // what follows the component's own syntax must not continue it: its name, a label `[...]` or attributes `{...}`
+            val nextChar: Char? = when (next) {
+                is StudioText -> next.text.firstOrNull()
+                is StudioElement -> when {
+                    next.tag == "span" || next.tag == "a" -> '['
+                    next.tag == "img" -> '!'
+                    next.tag == "strong" || next.tag == "em" -> '*'
+                    next.tag == "code" -> '`'
+                    next.tag == "del" -> '~'
+                    next.tag == "br" -> ' '
+                    else -> ':'
+                }
+                else -> null
             }
-            if (next is StudioElement && el.children.isEmpty() && el.attrs.isEmpty()) unsupported(Reason.INLINE_SYNTAX, "inline component followed by markup")
+            val continues = when {
+                nextChar == null -> false
+                el.children.isEmpty() && el.attrs.isEmpty() -> nextChar.isLetterOrDigit() || nextChar in "-_:[{"
+                el.children.isEmpty() -> nextChar == '['
+                el.attrs.isEmpty() -> nextChar == '{'
+                else -> false
+            }
+            if (continues) unsupported(Reason.INLINE_SYNTAX, "inline component followed by characters that continue it")
             // alone on its line in flow content: remark-mdc reads a block component
             val atLineStart = prev == null || prev is StudioText && prev.text.endsWith("\n") || prev is StudioElement && prev.tag == "br"
             val atLineEnd = next == null || next is StudioText && next.text.startsWith("\n") || next is StudioElement && next.tag == "br"
@@ -407,6 +452,8 @@ internal object StudioDbBody {
                     unsupported(Reason.ATTRIBUTE_NAME, "attribute $key")
                 }
                 if (!Regex("^[A-Za-z][A-Za-z0-9_-]*\\z").matches(name)) unsupported(Reason.ATTRIBUTE_NAME, "attribute name $key")
+                // remark-mdc's bound attribute names take letters, digits and dashes only
+                if (key.startsWith(":") && '_' in name) unsupported(Reason.ATTRIBUTE_NAME, "bound attribute name $key")
                 if (key == "class" && value !is String) unsupported(Reason.ATTRIBUTE_NAME, "class value")
             }
         }
@@ -723,6 +770,7 @@ internal object StudioDbBody {
     private val SAFE_URL = Regex("^[A-Za-z0-9;/?:@&=+$,\\-_.!~*'#]*\\z")
     private val HTTP_URL = Regex("^https?://(?!xn--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.(?!xn--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*(?::[0-9]{1,4})?(?:[/?#][A-Za-z0-9;/?:@&=+$,\\-_.!~*'#]*)?\\z")
     private val SCHEME = Regex("^[A-Za-z][A-Za-z0-9+.-]*:")
+    private val LAST_LABEL_HAS_LETTER = Regex("^https?://(?:[^/?#:]*\\.)?[A-Za-z0-9-]*[A-Za-z][A-Za-z0-9-]*(?::[0-9]+)?(?:[/?#]|\\z)")
 
     /** `isAnchorLinkAllowed`, for the URLs this port accepts (others are unsupported). */
     private fun anchorLinkAllowed(value: Any?): Boolean {
@@ -731,7 +779,8 @@ internal object StudioDbBody {
         if (value.startsWith("//")) unsupported(Reason.URL, "protocol-relative URL")
         val scheme = SCHEME.find(value)?.value?.lowercase() ?: return true
         return when (scheme) {
-            "http:", "https:" -> if (HTTP_URL.matches(value)) true else unsupported(Reason.URL, "absolute URL")
+            // the WHATWG URL parser reads a host whose last label is numeric as IPv4
+            "http:", "https:" -> if (HTTP_URL.matches(value) && LAST_LABEL_HAS_LETTER.containsMatchIn(value)) true else unsupported(Reason.URL, "absolute URL")
             "mailto:", "tel:" -> true
             else -> unsupported(Reason.URL, "URL scheme $scheme")
         }

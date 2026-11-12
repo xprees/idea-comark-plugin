@@ -124,6 +124,10 @@ object StudioDbPath {
         checkDelimiters(text)
         if (CONTROL.containsMatchIn(text)) throw UnsupportedException(Reason.INLINE_SYNTAX, "control characters or Unicode line separators")
         if (Regex("\\*{4,}|_{4,}").containsMatchIn(text)) throw UnsupportedException(Reason.INLINE_SYNTAX, "a long run of emphasis delimiters")
+        // a `***` run between two non-alphanumeric characters: the delimiter algorithms of the two parsers can pair it differently
+        if (Regex("(?<![\\p{L}\\p{N}])(\\*{3}|_{3})(?![\\p{L}\\p{N}])").containsMatchIn(text)) {
+            throw UnsupportedException(Reason.INLINE_SYNTAX, "a run of three emphasis delimiters between punctuation")
+        }
         if ("[^" in text) throw UnsupportedException(Reason.INLINE_SYNTAX, "footnote syntax (remark-gfm)")
         val body = StudioDbBody.transform(doc.nodes, styles, StudioTreeBuilder.listTightness(text))
         val nodes = body.nodes

@@ -43,7 +43,8 @@ Studio throws. One vector per line; recording twice gives identical bytes. `--co
 
 `record-db-vectors.mjs` (Gradle: `recordStudioDbVectors`) records `db-vectors.json`, the ground truth for emulating the
 database path D on documents the IDE writes. For every oracle input and every `text-vectors.json` input where T succeeds,
-plus 128 front matter probes (`FM_PROBES` × `FM_BODIES`), it takes y = T(x) (each distinct y once) and records T(y) and,
+plus 128 front matter probes (`FM_PROBES` × `FM_BODIES`) and the inputs of `db-reproducers.json`, it takes y = T(x) (each
+distinct y once) and records T(y) and,
 under three collection configurations, D(y), T(D(y)) and D(D(y)). The configurations are `pageDefault` (a page collection
 with Nuxt Content's standard schema), `pageSchema` (a page collection whose schema adds `date: z.date()`, `author`,
 `tags`, `image`, `order: z.number()` and `draft: z.boolean().default(false)`) and `data` (a data collection); the content
@@ -52,7 +53,7 @@ applies, and each vector lists the rules that explain D(y) != y (`lib/db-diff.mj
 
 | field | meaning |
 |-------|---------|
-| `y`, `source`, `inputs` | the document, the first input x with T(x) = y (`oracle:<case>`, `text-vectors:<index>`, `fm-probe:<i>.<j>`), and how many inputs gave it |
+| `y`, `source`, `inputs` | the document, the first input x with T(x) = y (`oracle:<case>`, `text-vectors:<index>`, `fm-probe:<i>.<j>`, `db-fuzz:<i>`, `db-probe:<i>`), and how many inputs gave it |
 | `yStable`, `ty` | T(y) == y; T(y) when not (a string or `{"error": ...}`) |
 | `<config>.id` | the content id used |
 | `<config>.d` | D(y), present when it differs from y; `{"error": ...}` when Studio has no document (Nuxt Content's parse failed, or a value does not fit its column) |
@@ -63,6 +64,11 @@ applies, and each vector lists the rules that explain D(y) != y (`lib/db-diff.mj
 The header's `summary` has the counts per configuration, over all y and over T-stable y (`onTStable`), and the most
 frequent unexplained structure differences (`structureNotes`). `StudioDbVectorsTest` checks the file against the vectors
 and prints the statistics; `StudioDbVectors` loads it. Recording takes about two minutes and is deterministic.
+
+`db-reproducers.json` holds inputs for the Kotlin emulation of D (`StudioDbPath`, see [DB-PATH.md](DB-PATH.md#5-the-kotlin-emulation)):
+`fuzz`, documents (each already a text-path output) on which a seeded local fuzz run of the emulation against this
+recorder's D found a difference, and `probes`, hand-written documents with the constructs the emulation follows.
+`StudioDbPathDifferentialTest` compares the emulation with every vector of `db-vectors.json`.
 
 ## What runs
 
