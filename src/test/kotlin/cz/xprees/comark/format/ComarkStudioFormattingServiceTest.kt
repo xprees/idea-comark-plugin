@@ -108,6 +108,15 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
         assertEquals("::few{a=\"1\"}\nbody\n::\n\n::many\n---\n$yaml---\nbody\n::\n", reformatted(PropsLayout.UP_TO))
     }
 
+    fun testComponentPropsLayoutWithChildrenAtIndentFour() = withStyle(ComarkStylePreset.CUSTOM, {
+        it.getCommonSettings(cz.xprees.comark.lang.ComarkLanguage).indentOptions!!.INDENT_SIZE = 4
+        ComarkCodeStyleSettings.getInstance(it).PROPS_LAYOUT = PropsLayout.BLOCK
+    }) {
+        configureInDataCollection("nested.mdc", "::card{title=\"A\"}\nParent text\n\n:::badge{color=\"red\"}\nChild\n:::\n::\n")
+        reformat()
+        myFixture.checkResult("::card\n---\ntitle: A\n---\nParent text\n\n  :::badge\n  ---\n  color: red\n  ---\n  Child\n  :::\n::\n")
+    }
+
     fun testKeptBlocksStayAsWritten() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
         configureInDataCollection("page.mdc", "* a\n\n<div>\n*raw*  html\n</div>\n")
         reformat()

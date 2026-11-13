@@ -44,6 +44,8 @@
 
 ### Fixed
 
+- Custom style: with an indent size of 4 or more, components that contain other components ignored the props choice and the
+  other options (a YAML props block turned back into inline props); they now get them, nested by Studio's two spaces
 - *Code Style › Comark › Style*: a number typed into *Inline props, at most* or *Blank lines between blocks* is now saved when you
   click OK or Apply right away; before, it was taken only after Enter or leaving the field, so Reformat Code kept the old value
 
