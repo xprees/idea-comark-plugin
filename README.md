@@ -134,7 +134,7 @@ always inline (`::name{a="1" b="2"}`), always in a YAML props block, or inline u
 and array props always use a block), props in Studio's order or in the order written, front matter with Studio's data rules, only
 re-dumped by js-yaml (as Studio's code editor does) or kept as written. The options are applied to a block only where the result
 reads the same (with an indent of 4 or more, blocks with nested components keep Studio's two spaces, which would otherwise read
-as code); with any option other than Studio's, Studio rewrites the file to its own style when it saves it. Picking a preset sets
+as code, and still get the other options); with any option other than Studio's, Studio rewrites the file to its own style when it saves it. Picking a preset sets
 the options; changing an option switches to Custom.
 
 **Sharing the settings.** They are part of the code style scheme (shareable in `.idea/codeStyles`) and can be set in

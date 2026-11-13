@@ -284,6 +284,30 @@ class StudioStyleTest {
     }
 
     @Test
+    fun customOptionsReachComponentsWithChildrenAtAWideIndent() {
+        // with indent 4 the nested component would read as code: the block keeps Studio's two spaces but still gets the
+        // props layout, instead of falling back to Studio's form (up to 3 props inline)
+        val nested = "::card\n---\ntitle: A\n---\nParent text\n\n  :::badge\n  ---\n  color: red\n  ---\n  Child\n  :::\n::\n"
+        val block = StudioStyleOptions(collection = data, indentSize = 4, propsBlockThreshold = 0)
+        assertEquals(nested, StudioStyle.format("::card{title=\"A\"}\nParent text\n\n:::badge{color=\"red\"}\nChild\n:::\n::\n", block)!!.text)
+        // already in that form: unchanged (before, the YAML blocks turned back into inline props)
+        assertEquals(nested, StudioStyle.format(nested, block)!!.text)
+        val deep = "::tabs{default=\"a\"}\n:::tab{label=\"A\"}\n::::alert{type=\"info\"}\nDeep\n::::\n:::\n::\n"
+        assertEquals(
+            "::tabs\n---\ndefault: a\n---\n  :::tab\n  ---\n  label: A\n  ---\n    ::::alert\n    ---\n    type: info\n    ---\n    Deep\n    ::::\n  :::\n::\n",
+            StudioStyle.format(deep, block)!!.text,
+        )
+        // and the other options too
+        val underscore = StudioStyleOptions(collection = data, indentSize = 4, emphasisChar = '_')
+        assertEquals(
+            "::card\nSome _text_\n\n  :::badge\n  Child\n  :::\n::\n",
+            StudioStyle.format("::card\nSome *text*\n\n:::badge\nChild\n:::\n::\n", underscore)!!.text,
+        )
+        // without nested components the wide indent is used as before
+        assertEquals("::card\n---\ntitle: A\n---\nBody\n::\n", StudioStyle.format("::card{title=\"A\"}\nBody\n::\n", block)!!.text)
+    }
+
+    @Test
     fun byteOrderMarkAndCrlfAreDropped() {
         val r = format("﻿# Title\r\n\r\nText\r\n")
         assertEquals("---\ntitle: Title\ndescription: Text\n---\n\n# Title\n\nText\n", r.text)

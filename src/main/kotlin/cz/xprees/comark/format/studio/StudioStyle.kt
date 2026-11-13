@@ -942,10 +942,15 @@ object StudioStyle {
             val range = start until start + sourceLines.size
             if (kept.any { it.first <= range.last && range.first <= it.last }) continue
             if (range.last >= lines.size || lines.subList(range.first, range.last + 1) != sourceLines) continue
-            val piece = StudioPostProcess.padBlankLinesInComponents(StudioJs.trim(StudioRenderer.renderNodes(segment.nodes, null, style)))
-            if (piece == segment.source) continue
-            val same = nodes(piece + "\n")?.let { it == nodes(segment.source + "\n") } ?: false
-            if (same) replacements += range to piece
+            val original = nodes(segment.source + "\n")
+            fun render(with: StudioRenderer.Style): String? {
+                val piece = StudioPostProcess.padBlankLinesInComponents(StudioJs.trim(StudioRenderer.renderNodes(segment.nodes, null, with)))
+                return piece.takeIf { original != null && nodes(it + "\n") == original }
+            }
+            // a wider indent can push nested components to four spaces, where they read as code: the block then keeps Studio's
+            // two-space nesting, but still gets the other options (props layout, markers, ...)
+            val piece = render(style) ?: style.takeIf { it.indentSize != StudioStyleOptions.STUDIO_INDENT_SIZE }?.let { render(it.copy(indentSize = StudioStyleOptions.STUDIO_INDENT_SIZE)) }
+            if (piece != null && piece != segment.source) replacements += range to piece
         }
         fun apply(chosen: List<Pair<IntRange, String>>): Restyled {
             val out = lines.toMutableList()
