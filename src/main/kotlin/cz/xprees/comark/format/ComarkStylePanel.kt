@@ -9,9 +9,9 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.psi.codeStyle.CodeStyleSettings
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings
 import com.intellij.ui.CollectionComboBoxModel
-import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -122,7 +122,8 @@ internal class ComarkStylePanel(currentSettings: CodeStyleSettings?, settings: C
     }
 
     private fun <T> combo(values: List<T>, text: (T) -> String): ComboBox<T> =
-        ComboBox(CollectionComboBoxModel(values)).apply { renderer = SimpleListCellRenderer.create { label, value, _ -> label.text = value?.let(text) ?: "" } }
+        // the Kotlin UI DSL renderer: SimpleListCellRenderer.create is scheduled for removal
+        ComboBox(CollectionComboBoxModel(values)).apply { renderer = textListCellRenderer<T?> { value -> value?.let(text) ?: "" } }
 
     /**
      * A number spinner that takes a typed number as soon as it is valid: by default a spinner keeps it in its text field until
