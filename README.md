@@ -52,7 +52,7 @@ view, lists, tables, header anchors, code fence injection, …) still applies.
 | Formatting | *Code › Reformat Code* uses a line-by-line port of the VS Code extension's formatter (`@nuxtlabs/monarch-mdc` 0.10.0; the Comark VS Code extension 0.6.2 ships 0.9.0, whose formatter output is identical), checked byte for byte against the original on 58,766 cases. Where the original would change what a document says, the IDE keeps it instead (see *Known limitations*); everywhere else the result is the same as in VS Code. Indent size: *Settings › Editor › Code Style › Comark* (2 by default; EditorConfig wins); indentation is always spaces. Enter and *Code › Auto-Indent Lines* indent lines the same way |
 | Nuxt Studio style | Reformat Code can also write what Nuxt Studio writes when it saves a file, or a custom variant of it, with inspections for what Studio would change; see [Formatting](#formatting) |
 | Components | Completion of component names (`::`, `:::`, inline `:`), props inside `{…}` and in props YAML, prop values from string unions, slot names after `#`; Go to Declaration to the `.vue` file, prop and `<slot>`; quick documentation; Find Usages of a `.vue` file (or from a usage) lists its block and inline usages in Comark files, and renaming the file renames them, keeping each usage's style (`info-box`, `InfoBox`, `infoBox`). Sources: Vue SFCs in `components/` (Nuxt naming, including grouping folders and `islands/`; files in `components/content/` subfolders get Nuxt Content's name without the folder prefix), `.nuxt/component-meta.mjs` / `.json`, an optional metadata URL. Props come from `defineProps<…>()` type literals, local or imported interfaces and type aliases (`import type { Props } from './types'`, relative paths and the `~/`, `@/`, `~~/`, `@@/` aliases, `extends`, `A & B`, re-exports, member types that name type aliases such as `variant?: Variant`), runtime `defineProps({…})`, `withDefaults` and the options API. No Vue plugin needed |
-| Route links | In Nuxt Content packages, page routes in links (`[Install](/guide/install#setup)`) resolve to their content file (`content/1.guide/2.install.md`, `index` files for directories, ordering prefixes and extensions dropped): Go to Declaration opens the page, `#anchor` resolves and completes against its headings, and routes complete after `](/`. Routes that match no content file are not reported (custom pages may exist) |
+| Route links | In Nuxt Content packages, page routes in links (`[Install](/guide/install#setup)`) resolve to their content file (`content/1.guide/2.install.md`, `index` files for directories, ordering prefixes and extensions dropped; with collections in `content.config.ts`, each collection's `prefix`, so `/threats/phishing` for `threats/en/01.phishing.md` with `prefix: '/threats'`; a front matter `path:` wins): Go to Declaration opens the page, `#anchor` resolves and completes against its headings, and routes complete after `](/`. Routes that match no content file are not reported (custom pages may exist) |
 | Editor | Folding of components, slots and props (Markdown folds kept); matching `::name` / `::` highlighting and navigation; YAML highlighting and checks in props blocks; live templates from the VS Code snippets; Enter after an unclosed opener inserts its closer; breadcrumbs and sticky lines; structure view with headers, components and slots; spellchecking of component content and attribute values |
 | Images | Site paths of images (`![](/images/hero.webp)`, reference definitions, image-like attributes and props such as `src`, `image`, `heroImage`, `cover`, `logo`, and front matter keys such as `image`, `seo.image`, `og:image`, `image.src`) resolve to the image in the Nuxt image directories (see [Images](#images)): Go to Declaration, completion with thumbnails and pixel sizes, quick documentation with a preview, size and directory, Find Usages of image files, Rename and Move of image files and directories, a *Missing Nuxt image* inspection with a fix to the closest existing path, and images shown in the preview |
 | Preview | Components, props and slots render as labelled blocks in the built-in (JCEF) Markdown preview; image paths load from the Nuxt image directories, and image props of components show as thumbnails |
@@ -221,8 +221,9 @@ The platform's formatter controls apply: *Code Style › Formatter › Do not fo
   are pinned in `StudioStyleOracleTest`. Where a document holds blocks kept as
   written, prop order and the injected title and description are worked out without them, so Studio may still reorder props
   there or write a different description (reported when a kept block may supply it). The collection schema is read from
-  `content.config.ts` as text: collections defined in a variable are followed, but a schema held in a variable or built with
-  `.extend()` / `.merge()`, or defaults that are not plain literals, are not seen. A file outside every collection is treated as
+  `content.config.ts` as text: collections and schemas defined in variables are followed, with `.extend()`, `.merge()`,
+  `.omit()`, `.pick()` and `.passthrough()`, but schemas imported from other files, built with other calls (`.and()`,
+  `.transform()`, spreads) or with defaults that are not plain literals are not seen. A file outside every collection is treated as
   a page with Studio's defaults.
 - The formatter always indents with spaces, so the Comark code style offers no tab options: Markdown counts a leading tab as four
   columns, which would turn tab-indented nested components into code blocks.
@@ -239,8 +240,10 @@ The platform's formatter controls apply: *Code Style › Formatter › Do not fo
   every project, with relative entries resolved per project. An open preview shows changed image settings or a changed
   `nuxt.config` after its next update (an edit, or reopening it). Completion and documentation show thumbnails for PNG, JPEG, GIF
   and BMP; WebP, AVIF, SVG and ICO get their pixel size (except AVIF and ICO) but no thumbnail.
-- Route links follow Nuxt Content's default routing from the package's `content/` directory; collection `prefix` / `source` settings
-  in `content.config.ts` and custom routes in front matter (`path:`) are not read, so such links don't resolve (and aren't reported).
+- Route links follow the page collections of `content.config.ts` (`include`, `exclude`, `cwd` and `prefix`, as Nuxt Content 3
+  builds routes) or, without collections, Nuxt Content's default routing from the package's `content/` directory, and a `path:`
+  in a page's front matter. Sources other than local files (`repository`) and routes set in code are not known, so such links
+  don't resolve (and aren't reported).
 
 ## How it works
 

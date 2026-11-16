@@ -83,11 +83,8 @@ class ComarkCollectionsTest : BasePlatformTestCase() {
             ),
             fields,
         )
-        // a schema held in a variable cannot be read
-        val unknown = ComarkCollections.parse("const s = z.object({});\nexport default { c: defineCollection({ type: 'page', source: '**', schema: s }) }").single()
-        assertFalse(unknown.schemaKnown)
         assertTrue(ComarkCollections.parse("export default { c: defineCollection({ type: 'page', source: '**' }) }").single().schemaKnown)
-        // a schema whose fields a chained call changes is not known either
+        // a schema built from something the configuration doesn't define (an import) is not known
         val extended = ComarkCollections.parse(
             "export default defineContentConfig({ collections: { docs: defineCollection({ type: 'page', source: '**', schema: base.extend({ x: z.string() }) }) } })",
         ).single()
@@ -96,6 +93,59 @@ class ComarkCollectionsTest : BasePlatformTestCase() {
         val passthrough = ComarkCollections.parse("export default { c: defineCollection({ type: 'page', source: '**', schema: z.object({ a: z.string() }).passthrough() }) }").single()
         assertTrue(passthrough.schemaKnown)
         assertEquals(listOf("a"), passthrough.fields)
+        assertFalse(ComarkCollections.parse("export default { c: defineCollection({ type: 'page', source: '**', schema: z.object({ ...shared }) }) }").single().schemaKnown)
+        assertFalse(ComarkCollections.parse("export default { c: defineCollection({ type: 'page', source: '**', schema: z.object({ a: z.string() }).transform(f) }) }").single().schemaKnown)
+    }
+
+    fun testSchemasHeldInVariables() {
+        val code = """
+            import { z } from 'zod'
+            const base = z.object({
+                title: z.string(),
+                icon: z.string().default('i-lucide-box'),
+                hidden: z.boolean().default(false).describe('Hide'),
+            })
+            const extra = z.object({ order: z.number().default(0) })
+            // with a type annotation, over several lines
+            const page: any = base
+                .passthrough()
+                .extend({ icon: z.string().optional(), toc: z.boolean().default(false) })
+            export default defineContentConfig({
+                collections: {
+                    plain: defineCollection({ type: 'page', source: 'a/**', schema: base }),
+                    extended: defineCollection({ type: 'page', source: 'b/**', schema: page.extend({ sitemap: defineSitemapSchema({ z }) }) }),
+                    merged: defineCollection({ type: 'page', source: 'c/**', schema: base.merge(extra).omit({ hidden: true }) }),
+                    picked: defineCollection({ type: 'page', source: 'd/**', schema: base.pick({ title: true }).partial() }),
+                    imported: defineCollection({ type: 'page', source: 'e/**', schema: importedSchema }),
+                },
+            })
+        """.trimIndent()
+        val parsed = ComarkCollections.parse(code).associateBy { it.name }
+        assertEquals(listOf("title", "icon", "hidden"), parsed.getValue("plain").fields)
+        assertTrue(parsed.getValue("plain").schemaKnown)
+        // a replaced field keeps its place, new ones come last
+        val extended = parsed.getValue("extended")
+        assertEquals(listOf("title", "icon", "hidden", "toc", "sitemap"), extended.fields)
+        assertEquals(StudioSchemaField("icon", StudioFieldType.STRING), extended.schema[1])
+        assertEquals(StudioSchemaField("toc", StudioFieldType.BOOLEAN, true, false), extended.schema[3])
+        assertEquals(StudioSchemaField("sitemap", StudioFieldType.JSON), extended.schema[4])
+        assertEquals(listOf("title", "icon", "order"), parsed.getValue("merged").fields)
+        assertEquals(listOf("title"), parsed.getValue("picked").fields)
+        assertFalse(parsed.getValue("imported").schemaKnown)
+    }
+
+    fun testSourcePrefix() {
+        val source = ComarkCollections.parse(
+            "export default defineContentConfig({ collections: { t: defineCollection({ type: 'page', source: { include: 'threats/en/**/*.md', prefix: '/threats' } }), " +
+                "d: defineCollection({ type: 'page', source: 'docs/**' }), f: defineCollection({ type: 'page', source: 'single.md' }) } })",
+        ).associateBy { it.name }
+        val threats = source.getValue("t").sources.single()
+        assertEquals("threats/en/", threats.fixed)
+        assertEquals("/threats", threats.routePrefix)
+        // without a prefix, the static part of include
+        assertEquals("/docs", source.getValue("d").sources.single().routePrefix)
+        assertEquals("", source.getValue("f").sources.single().fixed)
+        assertEquals("", source.getValue("f").sources.single().routePrefix)
     }
 
     fun testCollectionsDefinedInVariables() {

@@ -44,6 +44,11 @@
 
 ### Fixed
 
+- Route links in projects with several Nuxt Content collections: routes follow each page collection's `include`, `exclude`,
+  `cwd` and `prefix` in `content.config.ts` (`/threats/phishing` for `threats/en/01.phishing.md` with `prefix: '/threats'`), and a
+  `path:` in a page's front matter, as Nuxt Content builds them
+- Nuxt Studio style: collection schemas held in variables (`const pageSchema = z.object({...})`) and changed with `.extend()`,
+  `.merge()`, `.omit()`, `.pick()` or `.passthrough()` are read, so their fields and defaults get Studio's front matter rules
 - Custom style: with an indent size of 4 or more, components that contain other components ignored the props choice and the
   other options (a YAML props block turned back into inline props); they now get them, nested by Studio's two spaces
 - *Code Style › Comark › Style*: a number typed into *Inline props, at most* or *Blank lines between blocks* is now saved when you
