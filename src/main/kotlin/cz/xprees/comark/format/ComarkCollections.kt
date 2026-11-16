@@ -19,8 +19,9 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * The configuration is the one set in [ComarkSettings.contentConfigPath], else the nearest `content.config.*` in the file's
  * directory or above. Each `name: defineCollection({ ... })` gives a collection with its `type` (`page` by default), its
- * `source` (a glob, `{ include, exclude, cwd }`, or an array of these; relative to `content/` next to the configuration unless
- * `cwd` says otherwise) and the top-level fields of its `schema: z.object({ ... })` in declaration order, each with its column
+ * `source` (a glob, `{ include, exclude, cwd, prefix }`, or an array of these; relative to `content/` next to the configuration
+ * unless `cwd` says otherwise) and the top-level fields of its `schema` in declaration order (`z.object({ ... })`, also held in
+ * a variable and changed by `.extend()`, `.merge()`, `.omit()` or `.pick()`, see [resolveSchema]), each with its column
  * type (from the zod type: `z.string()`, `z.number()`, `z.boolean()`, `z.date()`, `z.string().datetime()`, anything else is a
  * JSON column) and its literal `.default(...)`, if any. The first collection
  * whose source matches the file wins. Parsed configurations are cached per file and modification stamp, so an edited (saved)
@@ -41,7 +42,17 @@ class ComarkCollections(private val project: Project) {
         val fields: List<String> get() = schema.map { it.name }
     }
 
-    internal class Source(val cwd: String, val include: String, val exclude: List<String>)
+    /**
+     * One collection source: files matching [include] (minus [exclude]) below [cwd]. Routes are [prefix] (by default the static
+     * part of [include], see [fixed]) followed by the file's path below [fixed], as Nuxt Content's `defineLocalSource` builds them.
+     */
+    internal class Source(val cwd: String, val include: String, val exclude: List<String>, val prefix: String? = null) {
+        /** The part of [include] before its first `*` (`threats/en/` for `threats/en/**/*.md`), empty without a `*`. */
+        val fixed: String get() = include.removePrefix("./").let { if ('*' in it) it.substringBefore('*') else "" }
+
+        /** [prefix], or the static part of [include] with a leading and no trailing slash. */
+        val routePrefix: String get() = prefix ?: ("/" + fixed.trim('/')).trimEnd('/')
+    }
 
     private val cache = ConcurrentHashMap<String, Parsed>()
 
@@ -59,14 +70,23 @@ class ComarkCollections(private val project: Project) {
         return null
     }
 
-    private fun configFor(file: VirtualFile): VirtualFile? {
+    /**
+     * The Nuxt Content configuration that applies to the directory [directory] (the configured one, else the nearest
+     * `content.config.*` in it or above) and its collections; null without a configuration.
+     */
+    internal fun configurationAt(directory: VirtualFile): Pair<VirtualFile, List<Collection>>? {
+        val config = configFor(directory, startAt = directory) ?: return null
+        return config to parsed(config)
+    }
+
+    private fun configFor(file: VirtualFile, startAt: VirtualFile? = file.parent): VirtualFile? {
         val setting = ComarkSettings.getInstance().contentConfigPath
         if (setting.isNotEmpty()) {
             val path = FileUtil.toSystemIndependentName(setting)
             return (if (FileUtil.isAbsolute(setting)) LocalFileSystem.getInstance().findFileByPath(path)
             else project.guessProjectDir()?.findFileByRelativePath(path))?.takeIf { !it.isDirectory }
         }
-        var directory = file.parent
+        var directory = startAt
         while (directory != null) {
             directory.children.firstOrNull { !it.isDirectory && CONTENT_CONFIG.matches(it.name) }?.let { return it }
             directory = directory.parent
@@ -186,7 +206,7 @@ class ComarkCollections(private val project: Project) {
             val entries = JsScanner.entries(code, open, close)
             val type = entries["type"]?.let { JsScanner.string(code, it) }
             val sources = entries["source"]?.let { sources(code, it) }.orEmpty()
-            val schema = entries["schema"]?.let { schemaFields(code, it) }
+            val schema = entries["schema"]?.let { resolveSchema(code.substring(it.first, it.last + 1), variables(code), 0) }
             return Collection(
                 name,
                 if (type == "data") StudioCollection.Type.DATA else StudioCollection.Type.PAGE,
@@ -217,38 +237,129 @@ class ComarkCollections(private val project: Project) {
                             listOfNotNull(JsScanner.string(code, range))
                         }
                     }.orEmpty()
-                    listOf(Source(cwd, include, exclude))
+                    val prefix = entries["prefix"]?.let { JsScanner.string(code, it) }
+                    listOf(Source(cwd, include, exclude, prefix))
                 }
                 else -> listOfNotNull(JsScanner.string(code, value)?.let { Source(DEFAULT_CWD, it, emptyList()) })
             }
         }
 
         private val ZOD_OBJECT = Regex("""^z\s*\.\s*(?:object|strictObject|looseObject)\s*\(\s*\{""")
-        /** Chained methods that change an object schema's fields. */
-        private val FIELD_CHANGING = setOf("extend", "merge", "and", "or", "pick", "omit", "partial", "required", "deepPartial", "transform", "pipe", "keyof")
+        private val LEADING_IDENTIFIER = Regex("""^([A-Za-z_$][\w$]*)""")
+        private val DECLARATION = Regex("""\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;\n]+)?=\s*""")
+
+        /** Chained calls that keep an object schema's fields and their column types. */
+        private val FIELD_KEEPING = setOf(
+            "passthrough", "strict", "strip", "catchall", "describe", "meta", "optional", "nullable", "nullish", "readonly",
+            "brand", "partial", "required", "deepPartial", "default",
+        )
+        private const val MAX_SCHEMA_DEPTH = 8
+
+        /** Top-level `const` / `let` / `var` initializers of [code], by name (the first one wins). */
+        private fun variables(code: String): Map<String, String> {
+            val result = LinkedHashMap<String, String>()
+            for (m in DECLARATION.findAll(code)) {
+                val start = m.range.last + 1
+                result.putIfAbsent(m.groupValues[1], code.substring(start, expressionEnd(code, start)))
+            }
+            return result
+        }
 
         /**
-         * Top-level fields of `z.object({ ... })` (or a plain object) in [value], or null when the schema is anything else: a
-         * variable, a call, or an object whose fields a chained call changes (`base.extend({...})`, `z.object({...}).merge(x)`).
+         * The end of the expression starting at [start]: a `;` or `,` outside brackets, or a line break not followed by a chained
+         * `.call`.
          */
-        private fun schemaFields(code: String, value: IntRange): List<StudioSchemaField>? {
-            val start = JsScanner.skipBlanks(code, value.first)
-            if (start > value.last) return null
-            val head = code.substring(start, value.last + 1)
-            val open = when {
-                code[start] == '{' -> start
-                ZOD_OBJECT.containsMatchIn(head) -> code.indexOf('{', start)
-                else -> return null
+        private fun expressionEnd(code: String, start: Int): Int {
+            var i = start
+            while (i < code.length) {
+                when (val c = code[i]) {
+                    '\'', '"', '`' -> {
+                        i = JsScanner.skipStringAt(code, i)
+                        continue
+                    }
+                    '(', '[', '{' -> {
+                        i = (JsScanner.matching(code, i) ?: return code.length) + 1
+                        continue
+                    }
+                    ';', ',', ')', ']', '}' -> return i
+                    '\n' -> {
+                        val next = JsScanner.skipBlanks(code, i)
+                        if (next >= code.length || code[next] != '.' && !code.startsWith("?.", next)) return i
+                        i = next
+                        continue
+                    }
+                    else -> if (c == '=' && code.startsWith("=>", i)) i++
+                }
+                i++
             }
-            val close = JsScanner.matching(code, open) ?: return null
-            if (code[start] != '{') {
-                val callClose = JsScanner.matching(code, code.indexOf('(', start)) ?: return null
-                val rest = code.substring(callClose + 1, value.last + 1)
-                if (chainCalls(rest).any { it.first in FIELD_CHANGING }) return null
-            } else if (code.substring(close + 1, value.last + 1).isNotBlank()) {
-                return null
+            return code.length
+        }
+
+        /**
+         * The top-level fields of the object schema [expression], or null when it cannot be read: `z.object({ ... })` (also
+         * `strictObject`, `looseObject`) or a plain object, or a variable holding one, followed by chained calls. Calls that change
+         * the fields are applied: `.extend({ ... })` and `.merge(other)` add or replace fields (a replaced field keeps its place,
+         * as with JavaScript's object spread), `.omit({ a: true })` and `.pick({ a: true })` drop fields; `.passthrough()`,
+         * `.partial()`, `.describe()` and the like keep them. Anything else (`.and()`, `.transform()`, an imported schema, a
+         * spread in an object) makes the schema unknown.
+         */
+        private fun resolveSchema(expression: String, variables: Map<String, String>, depth: Int): List<StudioSchemaField>? {
+            if (depth > MAX_SCHEMA_DEPTH) return null
+            val e = expression.trim()
+            if (e.isEmpty()) return null
+            val fields: LinkedHashMap<String, StudioSchemaField>
+            val rest: String
+            when {
+                e[0] == '{' -> {
+                    val close = JsScanner.matching(e, 0) ?: return null
+                    fields = objectFields(e, 0, close) ?: return null
+                    rest = e.substring(close + 1)
+                }
+                ZOD_OBJECT.containsMatchIn(e) -> {
+                    val open = e.indexOf('{')
+                    val close = JsScanner.matching(e, open) ?: return null
+                    val callClose = JsScanner.matching(e, e.indexOf('(')) ?: return null
+                    if (e.substring(close + 1, callClose).isNotBlank()) return null
+                    fields = objectFields(e, open, close) ?: return null
+                    rest = e.substring(callClose + 1)
+                }
+                else -> {
+                    val name = LEADING_IDENTIFIER.find(e)?.value ?: return null
+                    val value = variables[name] ?: return null
+                    val base = resolveSchema(value, variables, depth + 1) ?: return null
+                    fields = LinkedHashMap(base.associateBy { it.name })
+                    rest = e.substring(name.length)
+                }
             }
-            return JsScanner.entries(code, open, close).map { (name, range) -> field(name, code.substring(range.first, range.last + 1)) }
+            val calls = chainCalls(rest)
+            // anything after the calls (`as Schema`, an operator) is not followed
+            if (!rest.trim().let { it.isEmpty() || it.startsWith(".") }) return null
+            for ((method, argument) in calls) {
+                when (method) {
+                    in FIELD_KEEPING -> {}
+                    "extend", "merge", "safeExtend" -> {
+                        val added = resolveSchema(argument, variables, depth + 1) ?: return null
+                        for (field in added) fields[field.name] = field
+                    }
+                    "omit", "pick" -> {
+                        val a = argument.trim()
+                        if (!a.startsWith("{")) return null
+                        val close = JsScanner.matching(a, 0) ?: return null
+                        val keys = JsScanner.entries(a, 0, close).keys
+                        if (method == "omit") keys.forEach { fields.remove(it) } else fields.keys.retainAll(keys)
+                    }
+                    else -> return null
+                }
+            }
+            return fields.values.toList()
+        }
+
+        /** The fields of the object literal between [open] and [close] of [code], or null when it holds a spread. */
+        private fun objectFields(code: String, open: Int, close: Int): LinkedHashMap<String, StudioSchemaField>? {
+            if (JsScanner.items(code, open, close).any { code.substring(it.first, it.last + 1).trimStart().startsWith("...") }) return null
+            val result = LinkedHashMap<String, StudioSchemaField>()
+            for ((name, range) in JsScanner.entries(code, open, close)) result[name] = field(name, code.substring(range.first, range.last + 1))
+            return result
         }
 
         private val ZOD_BASE = Regex("""^\s*z\s*\.\s*(?:coerce\s*\.\s*)?(\w+)\s*\(""")

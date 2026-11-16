@@ -1,15 +1,22 @@
 package cz.xprees.comark.navigation
 
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
+import com.intellij.psi.util.PsiModificationTracker
+import cz.xprees.comark.format.ComarkCollections
+import cz.xprees.comark.format.StudioCollection
+import cz.xprees.comark.lang.ComarkLanguage
 import cz.xprees.comark.lang.ComarkProjectDetector
+import cz.xprees.comark.lang.NuxtPaths
 import cz.xprees.comark.psi.ComarkFile
 import java.util.Locale
 
@@ -22,8 +29,12 @@ import java.util.Locale
  * directory (`content/index.md` is `/`, `content/1.guide/1.index.md` is `/guide`). Data files (`.yml`, `.json`, `.csv`) are no
  * pages, and neither are hidden (`.`) or partial (`_`) files and directories.
  *
- * Collections of Nuxt Content v3 can mount their files under a `prefix` (or a different source directory) in `content.config.ts`;
- * such routes are not known here and simply don't resolve.
+ * When the package has a Nuxt Content v3 configuration (`content.config.*`, see [ComarkCollections]) with collections, the routes
+ * are those of its page collections instead, as Nuxt Content 3.16 builds them (`defineLocalSource`, `describeId`,
+ * `generatePath`): for each source, the files below its `cwd` that match `include` and not `exclude`, each routed as the source's
+ * `prefix` (by default the static part of `include`, `/threats/en` for `threats/en/**/*.md`) followed by its path below that
+ * static part, every segment refined as above. Data collections have no routes. A `path` in a page's front matter replaces the
+ * generated route in both cases.
  */
 object ComarkContentRoutes {
     /** A route link in a link destination: [path] is the route without a trailing `/`, [range] its range in the destination text. */
@@ -65,11 +76,26 @@ object ComarkContentRoutes {
         return null
     }
 
-    /** Routes of the pages in [contentDirectory], mapped to their files; cached until files are added, removed or renamed. */
+    /**
+     * Routes of the pages of the package whose content directory is [contentDirectory], mapped to their files; cached until files
+     * are added, removed or renamed, a Comark file changes (its front matter may set `path`) or the configuration changes.
+     */
     fun routes(project: Project, contentDirectory: VirtualFile): Map<String, VirtualFile> {
         val directory = PsiManager.getInstance(project).findDirectory(contentDirectory) ?: return emptyMap()
         return CachedValuesManager.getCachedValue(directory) {
-            CachedValueProvider.Result.create(collect(contentDirectory), VirtualFileManager.VFS_STRUCTURE_MODIFICATIONS)
+            val configuration = contentDirectory.parent?.let { ComarkCollections.getInstance(project).configurationAt(it) }
+            val dependencies = mutableListOf<Any>(
+                VirtualFileManager.VFS_STRUCTURE_MODIFICATIONS,
+                PsiModificationTracker.getInstance(project).forLanguage(ComarkLanguage),
+            )
+            configuration?.first?.let { dependencies += it }
+            val collections = configuration?.second?.takeIf { it.isNotEmpty() }
+            val routes = if (configuration != null && collections != null) {
+                collectionRoutes(configuration.first, collections)
+            } else {
+                collect(contentDirectory)
+            }
+            CachedValueProvider.Result.create(withFrontMatterPaths(routes), *dependencies.toTypedArray())
         }
     }
 
@@ -113,6 +139,76 @@ object ComarkContentRoutes {
         return routes
     }
 
+    /** Routes of the page collections of the configuration [config], as Nuxt Content generates them. */
+    private fun collectionRoutes(config: VirtualFile, collections: List<ComarkCollections.Collection>): Map<String, VirtualFile> {
+        val root = config.parent?.path ?: return emptyMap()
+        val routes = LinkedHashMap<String, VirtualFile>()
+        for (collection in collections) {
+            if (collection.type != StudioCollection.Type.PAGE) continue
+            for (source in collection.sources) {
+                val cwd = config.fileSystem.findFileByPath(NuxtPaths.resolve(root, source.cwd))?.takeIf { it.isDirectory } ?: continue
+                val fixed = source.fixed
+                fun visit(directory: VirtualFile, relative: String) {
+                    ProgressManager.checkCanceled()
+                    for (child in directory.children.sortedWith(compareBy({ it.isDirectory }, { it.name }))) {
+                        val path = if (relative.isEmpty()) child.name else "$relative/${child.name}"
+                        if (child.isDirectory) {
+                            if (child.name != NODE_MODULES && child.name != ".git") visit(child, path)
+                            continue
+                        }
+                        if (child.extension?.lowercase(Locale.ROOT) !in PAGE_EXTENSIONS) continue
+                        if (!path.startsWith(fixed) || !ComarkCollections.matches(root, source, child.path)) continue
+                        routes.putIfAbsent(collectionRoute(source.routePrefix, path.substring(fixed.length)), child)
+                    }
+                }
+                visit(cwd, "")
+            }
+        }
+        return routes
+    }
+
+    /** Nuxt Content's `generatePath` of [prefix] + [key] (the file's path below the source's static part, with its extension). */
+    internal fun collectionRoute(prefix: String, key: String): String {
+        val stem = key.substringBeforeLast('.', key).takeIf { '/' !in key.substringAfterLast('.', "") } ?: key
+        val segments = (prefix.split('/') + stem.split('/')).filter { it.isNotEmpty() }.map(::refineUrlPart).filter { it.isNotEmpty() }
+        return "/" + segments.joinToString("/")
+    }
+
+    /** Nuxt Content's `refineUrlPart` and `slugify` (lower case): no ordering prefix, `index` and `.draft` dropped. */
+    private fun refineUrlPart(part: String): String {
+        val refined = if (SEMVER.matches(part)) part else part.replace(ORDERING_PREFIX, "").let { if (it == "index" || it == "index.draft") "" else it.removeSuffix(".draft") }
+        return refined.trim().replace(BLANKS, "-").lowercase(Locale.ROOT)
+    }
+
+    /** [routes] with each page whose front matter sets `path` moved to that route (as Nuxt Content lets front matter override it). */
+    private fun withFrontMatterPaths(routes: Map<String, VirtualFile>): Map<String, VirtualFile> {
+        val overrides = routes.values.mapNotNull { file -> frontMatterPath(file)?.let { it to file } }
+        if (overrides.isEmpty()) return routes
+        val moved = overrides.map { it.second }.toSet()
+        val result = LinkedHashMap<String, VirtualFile>()
+        for ((path, file) in overrides) result.putIfAbsent(path, file)
+        for ((route, file) in routes) if (file !in moved) result.putIfAbsent(route, file)
+        return result
+    }
+
+    private val FRONT_MATTER_PATH = Regex("""^path\s*:\s*(['"]?)(/[^'"#\s]*)\1\s*(?:#.*)?$""", RegexOption.MULTILINE)
+
+    /** The `path` the front matter of [file] sets (an absolute route), read from its document when open, else from disk. */
+    internal fun frontMatterPath(file: VirtualFile): String? {
+        val text = FileDocumentManager.getInstance().getCachedDocument(file)?.charsSequence ?: try {
+            VfsUtilCore.loadText(file, 4096)
+        } catch (_: Exception) {
+            return null
+        }
+        if (!text.startsWith("---")) return null
+        val firstBreak = text.indexOf('\n').takeIf { it >= 0 } ?: return null
+        if (text.substring(0, firstBreak).trimEnd() != "---") return null
+        val end = Regex("""^(?:---|\.\.\.)\s*$""", RegexOption.MULTILINE).find(text, firstBreak + 1)?.range?.first ?: return null
+        val path = FRONT_MATTER_PATH.find(text.substring(firstBreak + 1, end))?.groupValues?.get(2) ?: return null
+        return if (path.length > 1) path.trimEnd('/') else path
+    }
+
+    private const val NODE_MODULES = "node_modules"
     private const val MANIFEST = "package.json"
     private const val CONTENT = "content"
 }
