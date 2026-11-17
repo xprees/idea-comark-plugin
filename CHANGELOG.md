@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.3.18] - 2026-11-17
+
 ### Added
 
 - Translation switcher for localized content (`content/pages/en/` next to `content/pages/cs/`): a button in the editor's top-right
@@ -138,7 +140,8 @@ Markdown plugin.
   comark heading ids and `{#id}` / `id` attributes resolve too
 - Components, props and slots render as labelled blocks in the built-in Markdown preview
 
-[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.8...HEAD
+[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.18...HEAD
+[2026.3.18]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.8...2026.3.18
 [2026.3.8]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.5...2026.3.8
 [2026.3.5]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.2...2026.3.5
 [2026.3.2]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.0...2026.3.2
