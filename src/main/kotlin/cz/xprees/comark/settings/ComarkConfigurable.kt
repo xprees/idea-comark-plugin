@@ -192,7 +192,7 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
             for (project in ProjectManager.getInstance().openProjects) {
                 if (project.isDisposed) continue
                 ComarkTranslations.getInstance(project).settingsTracker.incModificationCount()
-                DaemonCodeAnalyzer.getInstance(project).restart()
+                DaemonCodeAnalyzer.getInstance(project).restart("Comark translation settings changed")
             }
         }
         if (settings.mode != modeBefore || settings.excludedPatterns != excludedBefore || settings.contentConfigPath != configBefore ||

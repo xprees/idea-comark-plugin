@@ -207,9 +207,9 @@ class ComarkTranslationsTest : BasePlatformTestCase() {
         myFixture.configureFromExistingVirtualFile(file("pages/en/about.md"))
         val provider = ComarkTranslationsToolbarProvider()
         val context = SimpleDataContext.getSimpleContext(CommonDataKeys.EDITOR, myFixture.editor)
-        assertTrue(provider.isApplicable(context))
+        assertTrue(provider.applies(context))
         ComarkSettings.getInstance().translationsEnabled = false
-        assertFalse(provider.isApplicable(context))
+        assertFalse(provider.applies(context))
         ComarkSettings.getInstance().translationsEnabled = true
         // a single translation opens directly
         myFixture.testAction(ComarkSwitchTranslationAction())

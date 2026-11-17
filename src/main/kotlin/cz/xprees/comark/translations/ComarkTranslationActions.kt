@@ -144,7 +144,7 @@ internal object ComarkTranslationNavigation {
                 return
             }
         }
-        FileEditorManager.getInstance(project).openFile(file, true)
+        FileEditorManager.getInstance(project).openFile(file)
     }
 }
 
@@ -196,15 +196,16 @@ class ComarkTranslationsToolbarProvider : FloatingToolbarProvider {
 
     override val autoHideable: Boolean get() = false
 
-    override fun isApplicable(dataContext: DataContext): Boolean {
+    // shown only where it applies: the toolbar is not auto-hideable, so it stays hidden in every other editor
+    override fun register(dataContext: DataContext, component: FloatingToolbarComponent, parentDisposable: Disposable) {
+        if (applies(dataContext)) component.scheduleShow()
+    }
+
+    internal fun applies(dataContext: DataContext): Boolean {
         if (!ComarkSettings.getInstance().translationsEnabled) return false
         val editor = dataContext.getData(CommonDataKeys.EDITOR) ?: return false
         val project = editor.project ?: return false
         val file = editor.virtualFile ?: FileDocumentManager.getInstance().getFile(editor.document) ?: return false
         return ComarkTranslations.getInstance(project).localeOf(file) != null
-    }
-
-    override fun register(dataContext: DataContext, component: FloatingToolbarComponent, parentDisposable: Disposable) {
-        component.scheduleShow()
     }
 }
