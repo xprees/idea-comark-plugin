@@ -40,6 +40,7 @@
     <xi:include href="/META-INF/comark-editor.xml" xpointer="xpointer(/idea-plugin/*)"/>
     <xi:include href="/META-INF/comark-components.xml" xpointer="xpointer(/idea-plugin/*)"/>
     <xi:include href="/META-INF/comark-markdown-compat.xml" xpointer="xpointer(/idea-plugin/*)"/>
+    <xi:include href="/META-INF/comark-translations.xml" xpointer="xpointer(/idea-plugin/*)"/>
 
     <extensions defaultExtensionNs="org.intellij.markdown">
         <markdownCompatibilityChecker implementation="cz.xprees.comark.lang.ComarkCompatibilityChecker"/>

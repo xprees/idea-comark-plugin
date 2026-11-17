@@ -47,6 +47,9 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         var imageDirectories: String = ""
         var imageCdnUrl: String = ""
         var previewImagesFromCdn: Boolean = false
+        var translationsEnabled: Boolean = true
+        var translationLocales: String = ""
+        var translationKeys: String = DEFAULT_TRANSLATION_KEYS
     }
 
     private var state = State()
@@ -140,6 +143,30 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
             state.previewImagesFromCdn = value
         }
 
+    /** The translation switcher (floating editor button) is shown for localized content pages. */
+    var translationsEnabled: Boolean
+        get() = state.translationsEnabled
+        set(value) {
+            state.translationsEnabled = value
+        }
+
+    /**
+     * Locale codes of localized content (`en, cs`), which then are the only locale directories and the locales a page may be
+     * missing in. Empty: the project's `i18n.locales`, else sibling directories named like locale codes.
+     */
+    var translationLocales: String
+        get() = state.translationLocales
+        set(value) {
+            state.translationLocales = value.trim()
+        }
+
+    /** Front matter keys that name a page's counterpart in another locale (a stem, slug or path), comma separated. */
+    var translationKeys: String
+        get() = state.translationKeys
+        set(value) {
+            state.translationKeys = value.trim()
+        }
+
     /** The entries of [imageDirectories], comments and blank lines dropped. */
     fun imageDirectoryList(): List<String> =
         imageDirectories.lineSequence().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
@@ -151,6 +178,8 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
     }
 
     companion object {
+        const val DEFAULT_TRANSLATION_KEYS = "counterpart"
+
         fun getInstance(): ComarkSettings = service()
     }
 }

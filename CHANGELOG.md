@@ -4,6 +4,12 @@
 
 ### Added
 
+- Translation switcher for localized content (`content/pages/en/` next to `content/pages/cs/`): a button in the editor's top-right
+  corner shows the page's locale and lists its translations to switch to, open side by side, or create when missing. Pages pair
+  by the same path, a front matter `counterpart` key (stem, slug or path) or a string map in `content.config.ts`; locales come
+  from `i18n.locales`, the settings or sibling locale directories. Also *Navigate › Switch to Translation*, *Related Symbol*, and
+  a *Missing translation* inspection whose fix creates the page. Configured in *Settings › Languages & Frameworks › Comark ›
+  Translations* (on/off, locales, front matter keys)
 - *Code Style › Comark › Style*, Custom style: *Component props* picks how block components write their props: always inline
   (`::card{title="A" icon="i-x"}`, any number of props), always in a YAML props block, or inline up to a number of props (Nuxt
   Studio's rule, up to 3). Object and array props always use a YAML block. In `.editorconfig`: `ij_comark_props_layout =

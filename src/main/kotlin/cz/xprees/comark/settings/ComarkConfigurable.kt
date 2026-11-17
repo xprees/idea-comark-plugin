@@ -24,6 +24,8 @@ import cz.xprees.comark.ComarkBundle
 import cz.xprees.comark.images.NuxtImageDirectories
 import cz.xprees.comark.lang.ComarkExclusions
 import cz.xprees.comark.lang.ComarkProjectDetector
+import cz.xprees.comark.translations.ComarkTranslations
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import java.net.URI
 
 /** Settings | Languages & Frameworks | Comark. */
@@ -105,6 +107,25 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
                 label(ComarkBundle.message("settings.metadata.cache.unit"))
             }
         }
+        group(ComarkBundle.message("settings.group.translations")) {
+            row {
+                checkBox(ComarkBundle.message("settings.translations.enabled"))
+                    .bindSelected(settings::translationsEnabled)
+                    .comment(ComarkBundle.message("settings.translations.enabled.comment"))
+            }
+            row(ComarkBundle.message("settings.translations.locales")) {
+                textField()
+                    .align(AlignX.FILL)
+                    .bindText(settings::translationLocales)
+                    .comment(ComarkBundle.message("settings.translations.locales.comment"))
+            }
+            row(ComarkBundle.message("settings.translations.keys")) {
+                textField()
+                    .align(AlignX.FILL)
+                    .bindText(settings::translationKeys)
+                    .comment(ComarkBundle.message("settings.translations.keys.comment"))
+            }
+        }
         group(ComarkBundle.message("settings.group.images")) {
             lateinit var enabled: Cell<JBCheckBox>
             row {
@@ -164,7 +185,16 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
         val configBefore = settings.contentConfigPath
         val dialectBefore = settings.dialect
         val imagesBefore = imageSettings()
+        val translationsBefore = translationSettings()
         super.apply()
+        if (translationSettings() != translationsBefore) {
+            // locales or counterpart keys changed: recompute translations and the missing-translation warnings
+            for (project in ProjectManager.getInstance().openProjects) {
+                if (project.isDisposed) continue
+                ComarkTranslations.getInstance(project).settingsTracker.incModificationCount()
+                DaemonCodeAnalyzer.getInstance(project).restart()
+            }
+        }
         if (settings.mode != modeBefore || settings.excludedPatterns != excludedBefore || settings.contentConfigPath != configBefore ||
             settings.dialect != dialectBefore
         ) {
@@ -181,6 +211,8 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
             }
         }
     }
+
+    private fun translationSettings() = listOf(settings.translationsEnabled, settings.translationLocales, settings.translationKeys)
 
     private fun imageSettings() = listOf(settings.imagesEnabled, settings.imageDirectories, settings.imageCdnUrl, settings.previewImagesFromCdn)
 
