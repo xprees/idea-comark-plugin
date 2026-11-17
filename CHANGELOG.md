@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [2026.3.17] - 2026-11-16
+## [2026.3.18] - 2026-11-17
 
 ### Added
 
@@ -12,10 +12,53 @@
   from `i18n.locales`, the settings or sibling locale directories. Also *Navigate › Switch to Translation*, *Related Symbol*, and
   a *Missing translation* inspection whose fix creates the page. Configured in *Settings › Languages & Frameworks › Comark ›
   Translations* (on/off, locales, front matter keys)
+
+## [2026.3.17] - 2026-11-16
+
+### Fixed
+
+- Route links in projects with several Nuxt Content collections: routes follow each page collection's `include`, `exclude`,
+  `cwd` and `prefix` in `content.config.ts` (`/threats/phishing` for `threats/en/01.phishing.md` with `prefix: '/threats'`), and a
+  `path:` in a page's front matter, as Nuxt Content builds them
+- Nuxt Studio style: collection schemas held in variables (`const pageSchema = z.object({...})`) and changed with `.extend()`,
+  `.merge()`, `.omit()`, `.pick()` or `.passthrough()` are read, so their fields and defaults get Studio's front matter rules
+
+## [2026.3.15] - 2026-11-13
+
+### Fixed
+
+- Custom style: with an indent size of 4 or more, components that contain other components ignored the props choice and the
+  other options (a YAML props block turned back into inline props); they now get them, nested by Studio's two spaces
+
+## [2026.3.14] - 2026-11-12
+
+### Added
+
 - *Code Style › Comark › Style*, Custom style: *Component props* picks how block components write their props: always inline
   (`::card{title="A" icon="i-x"}`, any number of props), always in a YAML props block, or inline up to a number of props (Nuxt
   Studio's rule, up to 3). Object and array props always use a YAML block. In `.editorconfig`: `ij_comark_props_layout =
   inline`, `block` or `up_to`
+
+### Changed
+
+- Nuxt Studio style: blocks that Studio's code editor rewrites because a damaged block before them runs into them (a kept
+  raw HTML block or `::a` component swallowing the next heading, for example) are now reported with *Nuxt Studio will rewrite
+  this*, naming the line of the block that causes it. The formatter finds them by running its exact port of the code editor's
+  save on its own output. Against the real nuxt-studio 1.8.0, the documents of the test corpora that Studio changes outside the
+  reported blocks drop from 138 to 40, none of them on the code editor's path
+- The raw HTML warning says when a tag is never closed (`<Counter />` included, since HTML ignores the `/>` of a non-void
+  element): Studio's database path puts everything after it inside that element. The footnote warning says the definitions move
+  to a section at the end of the document
+
+### Fixed
+
+- *Code Style › Comark › Style*: a number typed into *Inline props, at most* or *Blank lines between blocks* is now saved when you
+  click OK or Apply right away; before, it was taken only after Enter or leaving the field, so Reformat Code kept the old value
+
+## [2026.3.10] - 2026-11-12
+
+### Added
+
 - *Code Style › Comark › Style*: Reformat Code can write the **Nuxt Studio** style, next to the VS Code formatter (the default).
   The result is a form Nuxt Studio's code editor keeps unchanged when it saves the file, and its visual editor too wherever the
   engine can emulate that save path (other blocks are reported as not checked). Content Studio would damage is kept as written.
@@ -38,29 +81,6 @@
   per version
 - Projects that depend on nuxt-studio and still use the VS Code style (and do not set the preset in `.editorconfig`) are
   offered the Nuxt Studio style once (*Use Nuxt Studio style*, *Not now*, *Don't ask again*)
-
-### Changed
-
-- Nuxt Studio style: blocks that Studio's code editor rewrites because a damaged block before them runs into them (a kept
-  raw HTML block or `::a` component swallowing the next heading, for example) are now reported with *Nuxt Studio will rewrite
-  this*, naming the line of the block that causes it. The formatter finds them by running its exact port of the code editor's
-  save on its own output. Against the real nuxt-studio 1.8.0, the documents of the test corpora that Studio changes outside the
-  reported blocks drop from 138 to 40, none of them on the code editor's path
-- The raw HTML warning says when a tag is never closed (`<Counter />` included, since HTML ignores the `/>` of a non-void
-  element): Studio's database path puts everything after it inside that element. The footnote warning says the definitions move
-  to a section at the end of the document
-
-### Fixed
-
-- Route links in projects with several Nuxt Content collections: routes follow each page collection's `include`, `exclude`,
-  `cwd` and `prefix` in `content.config.ts` (`/threats/phishing` for `threats/en/01.phishing.md` with `prefix: '/threats'`), and a
-  `path:` in a page's front matter, as Nuxt Content builds them
-- Nuxt Studio style: collection schemas held in variables (`const pageSchema = z.object({...})`) and changed with `.extend()`,
-  `.merge()`, `.omit()`, `.pick()` or `.passthrough()` are read, so their fields and defaults get Studio's front matter rules
-- Custom style: with an indent size of 4 or more, components that contain other components ignored the props choice and the
-  other options (a YAML props block turned back into inline props); they now get them, nested by Studio's two spaces
-- *Code Style › Comark › Style*: a number typed into *Inline props, at most* or *Blank lines between blocks* is now saved when you
-  click OK or Apply right away; before, it was taken only after Enter or leaving the field, so Reformat Code kept the old value
 
 ## [2026.3.8] - 2026-11-11
 
@@ -140,8 +160,12 @@ Markdown plugin.
   comark heading ids and `{#id}` / `id` attributes resolve too
 - Components, props and slots render as labelled blocks in the built-in Markdown preview
 
-[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.17...HEAD
-[2026.3.17]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.8...2026.3.17
+[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.18...HEAD
+[2026.3.18]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.17...2026.3.18
+[2026.3.17]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.15...2026.3.17
+[2026.3.15]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.14...2026.3.15
+[2026.3.14]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.10...2026.3.14
+[2026.3.10]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.8...2026.3.10
 [2026.3.8]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.5...2026.3.8
 [2026.3.5]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.2...2026.3.5
 [2026.3.2]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.0...2026.3.2
