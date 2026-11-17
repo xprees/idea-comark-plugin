@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The translation switcher in the editor's top-right corner showed two drop-down arrows; it now shows one, after the locale
+
 ## [2026.3.18] - 2026-11-17
 
 ### Added
