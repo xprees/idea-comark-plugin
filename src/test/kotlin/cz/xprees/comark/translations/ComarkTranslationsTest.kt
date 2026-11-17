@@ -192,6 +192,8 @@ class ComarkTranslationsTest : BasePlatformTestCase() {
         group.update(e)
         assertTrue(e.presentation.isEnabledAndVisible)
         assertEquals("EN", e.presentation.text)
+        // no icon of its own: the toolbar draws the drop-down arrow after the text, so a chevron icon would show twice
+        assertNull(e.presentation.icon)
         assertEquals(listOf("EN · 02.vishing.md (this page)", "--", "Create CS translation…"), items(file("threats/en/02.vishing.md")))
         assertEquals(
             listOf("EN · about.md (this page)", "CS · o-nas.md", "--", "Open CS side by side · o-nas.md"),

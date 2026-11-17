@@ -73,7 +73,6 @@ class ComarkTranslationsGroup : ActionGroup() {
         if (locale != null) {
             e.presentation.text = label(locale)
             e.presentation.description = ComarkBundle.message("translations.group.description")
-            e.presentation.icon = AllIcons.General.ChevronDown
         }
     }
 
