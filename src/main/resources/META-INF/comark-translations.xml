@@ -1,0 +1,22 @@
+<!-- Translations of localized content pages: switcher, navigation, missing-translation warning -->
+<idea-plugin>
+    <extensions defaultExtensionNs="com.intellij">
+        <projectService serviceImplementation="cz.xprees.comark.translations.ComarkTranslations"/>
+        <editorFloatingToolbarProvider implementation="cz.xprees.comark.translations.ComarkTranslationsToolbarProvider"/>
+        <gotoRelatedProvider implementation="cz.xprees.comark.translations.ComarkTranslationsGotoRelatedProvider"/>
+        <localInspection language="Comark" shortName="ComarkMissingTranslation" enabledByDefault="true" level="WEAK WARNING"
+                         bundle="messages.ComarkBundle" key="translations.inspection.name"
+                         groupBundle="messages.ComarkBundle" groupKey="highlighting.inspection.group"
+                         implementationClass="cz.xprees.comark.translations.ComarkMissingTranslationInspection"/>
+    </extensions>
+
+    <actions>
+        <!-- the floating editor toolbar shows this group; its one child is the drop-down of translations -->
+        <group id="Comark.TranslationsToolbar">
+            <group id="Comark.Translations" class="cz.xprees.comark.translations.ComarkTranslationsGroup" popup="true"/>
+        </group>
+        <action id="Comark.SwitchTranslation" class="cz.xprees.comark.translations.ComarkSwitchTranslationAction">
+            <add-to-group group-id="GoToMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

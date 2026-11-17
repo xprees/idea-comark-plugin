@@ -1,0 +1,14 @@
+<html>
+<body>
+Reports a localized content page that has no translation in some locale of its group.
+<p>
+Localized content keeps one directory per locale next to each other (<code>content/pages/en/</code>, <code>content/pages/cs/</code>).
+A page's translation is the page at the same path in the other locale's directory, else the page that a front matter key
+(<code>counterpart</code> by default) or a string map in <code>content.config.ts</code> pairs it with.
+</p>
+<p>
+The quick fix creates the missing translation as a copy of the page. Locales and front matter keys are set in
+<i>Settings | Languages &amp; Frameworks | Comark | Translations</i>.
+</p>
+</body>
+</html>
