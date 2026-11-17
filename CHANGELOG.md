@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.3.21] - 2026-11-17
+
 ### Fixed
 
 - The translation switcher in the editor's top-right corner showed two drop-down arrows; it now shows one, after the locale
@@ -164,7 +166,8 @@ Markdown plugin.
   comark heading ids and `{#id}` / `id` attributes resolve too
 - Components, props and slots render as labelled blocks in the built-in Markdown preview
 
-[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.18...HEAD
+[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.21...HEAD
+[2026.3.21]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.18...2026.3.21
 [2026.3.18]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.17...2026.3.18
 [2026.3.17]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.15...2026.3.17
 [2026.3.15]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.14...2026.3.15
