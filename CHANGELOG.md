@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Links to the `id` of inline HTML (`<a id="top"></a>`, `<span id="x">`) or the `name` of an `<a>` in a Comark file are no longer
+  reported as unresolved anchors
+
 ## [2026.3.21] - 2026-11-17
 
 ### Fixed
