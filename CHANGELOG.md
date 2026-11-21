@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Moving a component's `.vue` file, or a directory of components, to another directory (*Refactor › Move*) updates its usages in
+  Comark files to the name the new location gives (`components/base/Button.vue` moved to `components/ui/` turns `::base-button`
+  into `::ui-base-button`); renaming a directory of components does the same. Moves inside `components/content/` keep the names,
+  since Nuxt Content registers that directory without path prefixes
+
 ### Fixed
 
 - Links to the `id` of inline HTML (`<a id="top"></a>`, `<span id="x">`) or the `name` of an `<a>` in a Comark file are no longer

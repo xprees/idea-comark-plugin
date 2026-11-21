@@ -205,4 +205,55 @@ class ComponentFindUsagesTest : ComponentsTestBase() {
         assertEquals("Inline :notice here.\n\n::notice\n::\n", myFixture.editor.document.text)
         assertNotNull(myFixture.findFileInTempDir("site/components/content/Notice.vue"))
     }
+
+    // ---- Move -------------------------------------------------------------------------------------------------------
+
+    private fun move(element: com.intellij.psi.PsiFileSystemItem, to: String) {
+        val target = com.intellij.openapi.application.WriteAction.computeAndWait<com.intellij.openapi.vfs.VirtualFile, Throwable> {
+            com.intellij.openapi.vfs.VfsUtil.createDirectoryIfMissing(myFixture.tempDirFixture.getFile("")!!, to)
+        }
+        // the project detector re-parses open Markdown files later when package.json appears; let that happen before the usages are found
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+        com.intellij.refactoring.move.moveFilesOrDirectories.MoveFilesOrDirectoriesProcessor(
+            project, arrayOf(element), PsiManager.getInstance(project).findDirectory(target)!!, true, false, false, null, null,
+        ).run()
+        com.intellij.psi.PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(myFixture.editor.document)
+    }
+
+    fun testMoveVueFileUpdatesUsages() {
+        page("::alert[see :badge and :badge]\n::\n\n:Badge{a=\"b\"} and :badge, then :badge.\n")
+        move(vueFile("Badge.vue"), "site/components/forms")
+        assertEquals(
+            "::alert[see :forms-badge and :forms-badge]\n::\n\n:FormsBadge{a=\"b\"} and :forms-badge, then :forms-badge.\n",
+            myFixture.editor.document.text,
+        )
+    }
+
+    fun testMoveWithinContentKeepsName() {
+        // components/content/ is registered without path prefixes: a file moved inside it keeps its name
+        page("::card\n::\n")
+        move(vueFile("content/prose/Card.vue"), "site/components/content/ui")
+        assertEquals("::card\n::\n", myFixture.editor.document.text)
+    }
+
+    fun testMoveOutOfContentGetsPrefix() {
+        page("::card\n::\n\n:::Card\n:::\n")
+        move(vueFile("content/prose/Card.vue"), "site/components/ui")
+        assertEquals("::ui-card\n::\n\n:::UiCard\n:::\n", myFixture.editor.document.text)
+    }
+
+    fun testMoveDirectoryUpdatesUsages() {
+        myFixture.addFileToProject("site/components/base/Button.vue", BADGE)
+        page("::base-button\n::\n\nInline :BaseButton[x].\n")
+        move(PsiManager.getInstance(project).findDirectory(myFixture.findFileInTempDir("site/components/base"))!!, "site/components/ui")
+        assertEquals("::ui-base-button\n::\n\nInline :UiBaseButton[x].\n", myFixture.editor.document.text)
+    }
+
+    fun testRenameDirectoryUpdatesUsages() {
+        myFixture.addFileToProject("site/components/base/Button.vue", BADGE)
+        page("::base-button\n::\n\nInline :BaseButton[x] and :badge.\n")
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+        myFixture.renameElement(PsiManager.getInstance(project).findDirectory(myFixture.findFileInTempDir("site/components/base"))!!, "core")
+        assertEquals("::core-button\n::\n\nInline :CoreButton[x] and :badge.\n", myFixture.editor.document.text)
+    }
 }
