@@ -4,6 +4,9 @@
 
 ### Added
 
+- Imported prop types resolve through the `paths` of the project's `tsconfig.json` too (`import type { Props } from
+  '#shared/types/alert'`), following the configurations it `extends` and, for Nuxt 4's solution-style setup, the ones it
+  `references`, so the aliases Nuxt writes to `.nuxt/` (`#shared`, custom `alias` entries) work once `nuxi prepare` has run
 - Moving a component's `.vue` file, or a directory of components, to another directory (*Refactor › Move*) updates its usages in
   Comark files to the name the new location gives (`components/base/Button.vue` moved to `components/ui/` turns `::base-button`
   into `::ui-base-button`); renaming a directory of components does the same. Moves inside `components/content/` keep the names,
