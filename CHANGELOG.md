@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.3.23] - 2026-11-21
+
 ### Fixed
 
 - Links to the `id` of inline HTML (`<a id="top"></a>`, `<span id="x">`) or the `name` of an `<a>` in a Comark file are no longer
@@ -171,7 +173,8 @@ Markdown plugin.
   comark heading ids and `{#id}` / `id` attributes resolve too
 - Components, props and slots render as labelled blocks in the built-in Markdown preview
 
-[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.21...HEAD
+[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.23...HEAD
+[2026.3.23]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.21...2026.3.23
 [2026.3.21]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.18...2026.3.21
 [2026.3.18]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.17...2026.3.18
 [2026.3.17]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.15...2026.3.17
