@@ -12,6 +12,7 @@ import cz.xprees.comark.parser.ComarkInlineScanner
 import cz.xprees.comark.parser.ComarkTypes
 import cz.xprees.comark.psi.ComarkAttribute
 import cz.xprees.comark.psi.ComarkFile
+import org.intellij.plugins.markdown.lang.MarkdownElementTypes
 import org.intellij.plugins.markdown.lang.MarkdownTokenTypes
 import java.util.Locale
 
@@ -22,7 +23,8 @@ import java.util.Locale
  * with trailing attributes gets its automatic id from the text before them (`# Intro {.big}` is `#intro`). The Markdown plugin
  * computes header anchors from the whole heading text, so links to these anchors would look unresolved. Every heading also gets the
  * id comark and Nuxt Content generate for it: its text content (inline components and spans reduced to their content), slugified
- * with comark's rules (`## Install :badge[New]` is `#install-new`, `## 1. Setup` is `#_1-setup`).
+ * with comark's rules (`## Install :badge[New]` is `#install-new`, `## 1. Setup` is `#_1-setup`). Raw HTML defines anchors too:
+ * the `id` of any element and the `name` of an `<a>`.
  */
 object ComarkAnchors {
     fun anchors(file: ComarkFile): Set<String> = CachedValuesManager.getCachedValue(file) {
@@ -44,6 +46,10 @@ object ComarkAnchors {
                 element.elementType == ComarkTypes.PROPS_CONTENT -> PROPS_ID.find(element.text)?.let { match ->
                     unquote(match.groupValues[1].trim()).takeIf { it.isNotEmpty() }?.let(result::add)
                 }
+                // raw HTML: `<a id="top"></a>`, `<div id="x">`, `<a name="old">`
+                element.elementType == MarkdownTokenTypes.HTML_BLOCK_CONTENT -> htmlIds(element.text, result)
+                // the Markdown lexer marks HTML-looking text in code spans as tags too
+                element.elementType == MarkdownTokenTypes.HTML_TAG -> if (element.parent?.elementType != MarkdownElementTypes.CODE_SPAN) htmlIds(element.text, result)
                 ComarkInlineSyntax.isInlineHolder(element) -> collectInline(element, result, headingSlugs)
             }
         }
@@ -124,6 +130,24 @@ object ComarkAnchors {
             .replace(LEADING_MARKS_AND_HYPHENS, "")
         if (slug.isNotEmpty() && slug[0] in '0'..'9') slug = "_$slug"
         return slug
+    }
+
+    /** An HTML start tag with its attributes. */
+    private val HTML_START_TAG = Regex("""<([A-Za-z][A-Za-z0-9-]*)((?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*/?>""")
+    private val HTML_ATTRIBUTE = Regex("""\s+([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?""")
+
+    /** Adds the ids of the HTML start tags in [html]: every element's `id`, and the `name` of `<a>` (a legacy anchor). */
+    private fun htmlIds(html: String, into: MutableSet<String>) {
+        if ('<' !in html) return
+        for (tag in HTML_START_TAG.findAll(html)) {
+            val isLink = tag.groupValues[1].equals("a", ignoreCase = true)
+            for (attribute in HTML_ATTRIBUTE.findAll(tag.groupValues[2])) {
+                val name = attribute.groupValues[1].lowercase(Locale.ROOT)
+                if (name != "id" && !(isLink && name == "name")) continue
+                val value = attribute.groupValues.drop(2).firstOrNull { it.isNotEmpty() } ?: continue
+                into += value
+            }
+        }
     }
 
     /** A top-level `id: value` line of a props block (YAML), value without a trailing comment. */

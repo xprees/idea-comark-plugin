@@ -64,6 +64,22 @@ class ComarkMarkdownInspectionSuppressorTest : BasePlatformTestCase() {
         assertEquals(listOf("nowhere"), reported.map { it.removePrefix("#") })
     }
 
+    fun testAnchorsDefinedByInlineHtml() {
+        val text = """
+            Back to <a id="top"></a>the top, a <span class="box" id='box'>box</span>,
+            an <a name="legacy">old anchor</a> and <span data-id="no" title="id=fake">x</span>.
+
+            `<a id="code">` is code
+
+            <div id="block">
+            A block whose id is not linked to.
+            </div>
+
+            [a](#top) [b](#box) [c](#legacy) [d](#no) [e](#fake) [f](#code)
+        """.trimIndent()
+        assertEquals(listOf("no", "fake", "code"), reported("h.mdc", text).map { it.removePrefix("#") })
+    }
+
     fun testAnchorsInAnotherComarkFile() {
         myFixture.addFileToProject("docs/target.mdc", "# Target {#custom}\n")
         val source = myFixture.addFileToProject("docs/source.mdc", "[ok](target.mdc#custom) [bad](target.mdc#other)\n")

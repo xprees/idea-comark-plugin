@@ -285,9 +285,10 @@ class MarkdownCompatAuditTest : BasePlatformTestCase() {
         assertTrue("the same actions work in Markdown files", isEnabled("Markdown.Table.InsertTableColumn.InsertAfter"))
     }
 
-    fun testLimitationHtmlAnchorsAreNotLinkTargets() {
-        mdc("<a id=\"custom\"></a>\n\n[x](#custom)\n")
+    fun testInlineHtmlAnchorsAreLinkTargets() {
+        // `<a id></a>` on a line of its own is inline HTML (CommonMark starts no HTML block with a tag followed by more text)
+        mdc("<a id=\"custom\"></a>\n\n[x](#custom) [y](#missing)\n")
         myFixture.enableInspections(inspection("org.intellij.plugins.markdown.model.psi.headers.UnresolvedHeaderReferenceInspection"))
-        assertEquals(listOf("custom"), myFixture.doHighlighting(HighlightSeverity.WARNING).mapNotNull { it.text })
+        assertEquals(listOf("missing"), myFixture.doHighlighting(HighlightSeverity.WARNING).mapNotNull { it.text })
     }
 }
