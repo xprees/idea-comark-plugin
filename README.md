@@ -228,8 +228,9 @@ The platform's formatter controls apply: *Code Style › Formatter › Do not fo
   written, prop order and the injected title and description are worked out without them, so Studio may still reorder props
   there or write a different description (reported when a kept block may supply it). The collection schema is read from
   `content.config.ts` as text: collections and schemas defined in variables are followed, with `.extend()`, `.merge()`,
-  `.omit()`, `.pick()` and `.passthrough()`, but schemas imported from other files, built with other calls (`.and()`,
-  `.transform()`, spreads) or with defaults that are not plain literals are not seen. A file outside every collection is treated as
+  `.omit()`, `.pick()` and `.passthrough()`, also when imported by name from the project's own files (`import { pageSchema } from
+  './schemas'`), but schemas imported from packages or as a namespace, built with other calls (`.and()`, `.transform()`,
+  spreads) or with defaults that are not plain literals are not seen. A file outside every collection is treated as
   a page with Studio's defaults.
 - The formatter always indents with spaces, so the Comark code style offers no tab options: Markdown counts a leading tab as four
   columns, which would turn tab-indented nested components into code blocks.

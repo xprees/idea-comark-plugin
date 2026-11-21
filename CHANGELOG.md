@@ -4,6 +4,9 @@
 
 ### Added
 
+- Nuxt Studio style: collection schemas imported by name from the project's own files (`import { pageSchema } from './schemas'`
+  in `content.config.ts`, also through further imports) are read, so their fields and defaults get Studio's front matter rules;
+  editing the imported file takes effect without touching the configuration
 - Moving a component's `.vue` file, or a directory of components, to another directory (*Refactor › Move*) updates its usages in
   Comark files to the name the new location gives (`components/base/Button.vue` moved to `components/ui/` turns `::base-button`
   into `::ui-base-button`); renaming a directory of components does the same. Moves inside `components/content/` keep the names,

@@ -29,7 +29,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 @Service(Service.Level.PROJECT)
 class ComarkCollections(private val project: Project) {
-    private class Parsed(val stamp: Long, val collections: List<Collection>)
+    /** Collections of a configuration, valid while it and the files it imports schemas from keep their stamps. */
+    private class Parsed(val stamp: Long, val imports: Map<VirtualFile, Long>, val collections: List<Collection>)
 
     /** One `defineCollection`: [sources] are (cwd, include, excludes), cwd relative to the configuration's directory. */
     internal class Collection(
@@ -96,15 +97,62 @@ class ComarkCollections(private val project: Project) {
 
     private fun parsed(config: VirtualFile): List<Collection> {
         val stamp = config.modificationStamp
-        cache[config.path]?.takeIf { it.stamp == stamp }?.let { return it.collections }
-        val text = try {
-            VfsUtilCore.loadText(config)
-        } catch (_: Exception) {
-            ""
-        }
-        val collections = parse(text)
-        cache[config.path] = Parsed(stamp, collections)
+        cache[config.path]?.takeIf { cached -> cached.stamp == stamp && cached.imports.all { (file, fileStamp) -> file.isValid && file.modificationStamp == fileStamp } }
+            ?.let { return it.collections }
+        val text = load(config).orEmpty()
+        val imports = LinkedHashMap<VirtualFile, Long>()
+        val imported = importedVariables(config, JsScanner.blankComments(text), imports, 0)
+        val collections = parse(text, imported)
+        cache[config.path] = Parsed(stamp, imports, collections)
         return collections
+    }
+
+    private fun load(file: VirtualFile): String? = try {
+        VfsUtilCore.loadText(file)
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * Top-level variables that [code] (the text of [file], comments blanked) imports by name from project files (`import {
+     * pageSchema, base as baseSchema } from './schemas'`), under their local names, with the other top-level variables of those
+     * files their initializers may name. Imports of imported files are followed too; every file read goes to [imports].
+     */
+    private fun importedVariables(file: VirtualFile, code: String, imports: MutableMap<VirtualFile, Long>, depth: Int): Map<String, String> {
+        if (depth >= MAX_IMPORT_DEPTH) return emptyMap()
+        val directory = file.parent ?: return emptyMap()
+        val result = LinkedHashMap<String, String>()
+        val aliases = LinkedHashMap<String, String>()
+        for (match in IMPORT.findAll(code)) {
+            val target = module(directory, match.groupValues[2]) ?: continue
+            if (target in imports) continue
+            val targetText = load(target) ?: continue
+            imports[target] = target.modificationStamp
+            val targetCode = JsScanner.blankComments(targetText)
+            val theirs = LinkedHashMap(importedVariables(target, targetCode, imports, depth + 1)).apply { putAll(variables(targetCode)) }
+            for ((name, expression) in theirs) result.putIfAbsent(name, expression)
+            for (binding in match.groupValues[1].split(',')) {
+                val parts = binding.trim().removePrefix("type ").split(Regex("""\s+as\s+"""))
+                val exported = parts[0].trim()
+                val local = parts.getOrNull(1)?.trim() ?: exported
+                if (local != exported && IDENTIFIER.matches(local)) theirs[exported]?.let { aliases[local] = it }
+            }
+        }
+        // an alias names the imported variable's initializer under the local name
+        result.putAll(aliases)
+        return result
+    }
+
+    /** The project file a relative import [specifier] names below [directory]; package imports are not followed. */
+    private fun module(directory: VirtualFile, specifier: String): VirtualFile? {
+        if (!specifier.startsWith("./") && !specifier.startsWith("../")) return null
+        val path = specifier.trimEnd('/')
+        val candidates = if (MODULE_EXTENSION.containsMatchIn(path)) {
+            listOf(path)
+        } else {
+            listOf("$path.ts", "$path.mts", "$path.js", "$path.mjs", "$path/index.ts", "$path/index.js")
+        }
+        return candidates.firstNotNullOfOrNull { directory.findFileByRelativePath(it)?.takeIf { file -> !file.isDirectory } }
     }
 
     companion object {
@@ -114,6 +162,9 @@ class ComarkCollections(private val project: Project) {
         private val COLLECTIONS = Regex("""\bcollections\s*:\s*\{""")
         private val IDENTIFIER = Regex("""^[A-Za-z_$][\w$]*$""")
         private const val DEFAULT_CWD = "content"
+        private const val MAX_IMPORT_DEPTH = 4
+        private val IMPORT = Regex("""\bimport\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]""")
+        private val MODULE_EXTENSION = Regex("""\.(?:ts|mts|cts|js|mjs|cjs)$""")
 
         fun getInstance(project: Project): ComarkCollections = project.service()
 
@@ -162,18 +213,21 @@ class ComarkCollections(private val project: Project) {
             return Regex(sb.toString())
         }
 
-        /** The collections of a `content.config.*` [text]. */
-        internal fun parse(text: String): List<Collection> {
+        /**
+         * The collections of a `content.config.*` [text]; [imported] are the variables it imports from other files (see
+         * [importedVariables]), which its own top-level variables shadow.
+         */
+        internal fun parse(text: String, imported: Map<String, String> = emptyMap()): List<Collection> {
             val code = JsScanner.blankComments(text)
             val result = ArrayList<Collection>()
             for (match in DEFINE.findAll(code)) {
                 val name = match.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: continue
-                collection(code, name, match.range.last)?.let { result += it }
+                collection(code, name, match.range.last, imported)?.let { result += it }
             }
             // `const blog = defineCollection({...})`, listed as `collections: { blog }` or `collections: { posts: blog }`
             val variables = LinkedHashMap<String, Collection>()
             for (match in VARIABLE_DEFINE.findAll(code)) {
-                collection(code, match.groupValues[1], match.range.last)?.let { variables[it.name] = it }
+                collection(code, match.groupValues[1], match.range.last, imported)?.let { variables[it.name] = it }
             }
             if (variables.isEmpty()) return result
             val listed = COLLECTIONS.findAll(code).mapNotNull { m ->
@@ -199,14 +253,14 @@ class ComarkCollections(private val project: Project) {
         }
 
         /** The collection of the `defineCollection(` call whose `(` ends at [callEnd], named [name]. */
-        private fun collection(code: String, name: String, callEnd: Int): Collection? {
+        private fun collection(code: String, name: String, callEnd: Int, imported: Map<String, String>): Collection? {
             val open = code.indexOf('{', callEnd)
             if (open < 0) return null
             val close = JsScanner.matching(code, open) ?: return null
             val entries = JsScanner.entries(code, open, close)
             val type = entries["type"]?.let { JsScanner.string(code, it) }
             val sources = entries["source"]?.let { sources(code, it) }.orEmpty()
-            val schema = entries["schema"]?.let { resolveSchema(code.substring(it.first, it.last + 1), variables(code), 0) }
+            val schema = entries["schema"]?.let { resolveSchema(code.substring(it.first, it.last + 1), imported + variables(code), 0) }
             return Collection(
                 name,
                 if (type == "data") StudioCollection.Type.DATA else StudioCollection.Type.PAGE,
