@@ -204,7 +204,11 @@ The platform's formatter controls apply: *Code Style › Formatter › Do not fo
 ## Known limitations
 
 - Some Markdown plugin features check for the plain Markdown language and stay off in Comark files: *Create Link*, *Insert Image*,
-  table column/row actions and image drag and drop. HTML `<a id>` anchors are not link targets.
+  table column/row actions and image drag and drop.
+- Links to the `id` of an element in a raw HTML block (`<div id="box">` on a line of its own, opening the block) don't resolve: the
+  Markdown plugin's support for HTML anchors accepts plain Markdown files only and logs an IDE error when such a link is checked or
+  followed in a Comark file. Ids of inline HTML (`<a id="top"></a>`, also on a line of its own, or `<span id="x">` in text) and
+  Comark ids (`{#top}`) work.
 - In the VS Code style, Reformat Code re-aligns top-level tables only; tables inside components are left as they are (the Nuxt
   Studio and Custom styles align them too, as Studio does).
 - Reformat Code deliberately differs from the VS Code extension's formatter where that one changes content or structure, so a
