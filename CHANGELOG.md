@@ -8,6 +8,12 @@
   for. **Automatic**, the default, follows the release the project uses (the newest supported one not newer than it), and the
   newest supported release in projects without nuxt-studio. nuxt-studio 1.8.0 is supported today; support for 1.8.2, which moved to
   comark 0.9.2, is in progress
+- Nuxt Studio style: collection schemas imported by name from the project's own files (`import { pageSchema } from './schemas'`
+  in `content.config.ts`, also through further imports) are read, so their fields and defaults get Studio's front matter rules;
+  editing the imported file takes effect without touching the configuration
+- Imported prop types resolve through the `paths` of the project's `tsconfig.json` too (`import type { Props } from
+  '#shared/types/alert'`), following the configurations it `extends` and, for Nuxt 4's solution-style setup, the ones it
+  `references`, so the aliases Nuxt writes to `.nuxt/` (`#shared`, custom `alias` entries) work once `nuxi prepare` has run
 - Moving a component's `.vue` file, or a directory of components, to another directory (*Refactor › Move*) updates its usages in
   Comark files to the name the new location gives (`components/base/Button.vue` moved to `components/ui/` turns `::base-button`
   into `::ui-base-button`); renaming a directory of components does the same. Moves inside `components/content/` keep the names,

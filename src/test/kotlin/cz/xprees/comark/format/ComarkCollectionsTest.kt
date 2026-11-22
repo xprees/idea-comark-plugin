@@ -196,6 +196,45 @@ class ComarkCollectionsTest : BasePlatformTestCase() {
         assertEquals("blog", ComarkStudioFormatting.context(post, ComarkStyle.VSCODE).collection?.name)
     }
 
+    fun testSchemasImportedFromOtherFiles() {
+        myFixture.addFileToProject("site/package.json", """{ "dependencies": { "@nuxt/content": "^3.0.0" } }""")
+        myFixture.addFileToProject(
+            "site/schemas/index.ts",
+            """
+            import { z } from '@nuxt/content'
+            import { seo } from './seo'
+            // a shared page schema
+            export const pageSchema = z.object({ date: z.date(), tags: z.array(z.string()) }).merge(seo)
+            export const unrelated = z.object({ nope: z.string() })
+            """.trimIndent(),
+        )
+        myFixture.addFileToProject("site/schemas/seo.ts", "import { z } from '@nuxt/content'\nexport const seo = z.object({ ogImage: z.string() })\n")
+        myFixture.addFileToProject(
+            "site/content.config.ts",
+            """
+            import { defineCollection, defineContentConfig, z } from '@nuxt/content'
+            import { pageSchema as base, type unrelated } from './schemas'
+            export default defineContentConfig({
+              collections: {
+                blog: defineCollection({ type: 'page', source: 'blog/**', schema: base.extend({ author: z.string() }) }),
+              },
+            })
+            """.trimIndent(),
+        )
+        val post = myFixture.addFileToProject("site/content/blog/hello.md", "# Hello\n")
+        val collections = ComarkCollections.getInstance(project)
+        val collection = collections.collectionFor(post)!!
+        assertTrue(collection.schemaKnown)
+        assertEquals(listOf("date", "tags", "ogImage", "author"), collection.fields.map { it.name })
+
+        // editing the imported file is seen without touching the configuration
+        val seo = myFixture.findFileInTempDir("site/schemas/seo.ts")
+        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+            com.intellij.openapi.vfs.VfsUtil.saveText(seo, "import { z } from '@nuxt/content'\nexport const seo = z.object({ ogImage: z.string(), canonical: z.string() })\n")
+        }
+        assertEquals(listOf("date", "tags", "ogImage", "canonical", "author"), collections.collectionFor(post)!!.fields.map { it.name })
+    }
+
     fun testNoConfiguration() {
         val file = myFixture.addFileToProject("other/content/page.md", "# Page\n")
         assertNull(ComarkCollections.getInstance(project).collectionFor(file))

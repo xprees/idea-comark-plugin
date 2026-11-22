@@ -7,7 +7,10 @@ import cz.xprees.comark.lang.NuxtPaths
  * Resolves the import specifiers of one component's scripts to TypeScript files, the way a Nuxt project sees them:
  * - relative paths (`./types`, `../types/alert`), against the importing file,
  * - `~/` and `@/`: the app's source directory, which is `app/` (Nuxt 4) when the root has one, else the root,
- * - `~~/` and `@@/`: the root directory itself.
+ * - `~~/` and `@@/`: the root directory itself,
+ * - any other specifier through the `compilerOptions.paths` of the root's `tsconfig.json` ([TsConfigPaths]): the configuration
+ *   it `extends` and, for Nuxt 4's solution-style configuration, the ones it `references`, which is where Nuxt writes the
+ *   project's aliases (`#shared`, custom `alias` entries) once `nuxi prepare` has run.
  *
  * The root is the nearest directory above the importing file that holds a `package.json` or `nuxt.config.*` ([rootFallback]
  * when there is none). A specifier without an extension is tried as `.ts`, `.d.ts`, `/index.ts` and `/index.d.ts`.
@@ -45,8 +48,16 @@ internal class NuxtTypeModules(
             specifier == "." || specifier == ".." || specifier.startsWith("./") || specifier.startsWith("../") -> directory to specifier
             specifier.startsWith("~~/") || specifier.startsWith("@@/") -> (root(directory) ?: return null) to specifier.substring(3)
             specifier.startsWith("~/") || specifier.startsWith("@/") -> (sourceRoot(directory) ?: return null) to specifier.substring(2)
-            else -> return null
+            else -> {
+                val root = root(directory) ?: return null
+                return tsConfig(root).targets(specifier).firstNotNullOfOrNull { (base, path) -> file(base, path) }
+            }
         }
+        return file(base, path)
+    }
+
+    /** The TypeScript file [path] (with or without an extension) names below [base]. */
+    private fun file(base: VirtualFile, path: String): VirtualFile? {
         val trimmed = path.trimEnd('/')
         val candidates = if (MODULE_EXTENSIONS.any { trimmed.endsWith(it) }) {
             listOf(trimmed)
@@ -57,6 +68,16 @@ internal class NuxtTypeModules(
             base.findFileByRelativePath(candidate)?.takeIf { it.isValid && !it.isDirectory }?.let { return it }
         }
         return null
+    }
+
+    private val tsConfigs = HashMap<VirtualFile, TsConfigPaths>()
+
+    /** The path mappings of [root]'s `tsconfig.json`; the configuration files read are dependencies of the component. */
+    private fun tsConfig(root: VirtualFile): TsConfigPaths = tsConfigs.getOrPut(root) {
+        TsConfigPaths.read(root) { file ->
+            val modificationStamp = stamp(file)
+            load(file)?.also { dependencies[file] = modificationStamp }
+        }
     }
 
     private fun root(directory: VirtualFile): VirtualFile? {
@@ -82,5 +103,8 @@ internal class NuxtTypeModules(
 
         /** Whether a file named [name] can be a module that component types are imported from. */
         fun isTypeModule(name: String) = MODULE_EXTENSIONS.any { name.endsWith(it, ignoreCase = true) }
+
+        /** Whether a file named [name] is a TypeScript configuration whose path mappings can change how imports resolve. */
+        fun isTsConfig(name: String) = name.startsWith("tsconfig") && name.endsWith(".json", ignoreCase = true)
     }
 }
