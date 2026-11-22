@@ -1,5 +1,6 @@
 package cz.xprees.comark.format.studio
 
+import cz.xprees.comark.format.StudioEngine
 import cz.xprees.comark.format.studio.StudioDbPath.Reason
 import cz.xprees.comark.format.studio.StudioDbPath.UnsupportedException
 import cz.xprees.comark.format.studio.StudioRenderer.ComponentStyle
@@ -82,6 +83,7 @@ internal object StudioDbBody {
         textStyles: Map<StudioElement, ComponentStyle>,
         listTightness: List<Boolean?>,
         sortAttributes: Boolean = true,
+        release: StudioEngine = StudioEngine.V1_8_0,
     ): Body {
         Checker(textStyles).children(input, null, false)
         val styles = IdentityHashMap(textStyles)
@@ -99,7 +101,7 @@ internal object StudioDbBody {
             n.children.forEach { collect(it) }
         }
         nodes.forEach { collect(it) }
-        val converter = Converter(raw, counts, styles, listTightness, sortAttributes)
+        val converter = Converter(raw, counts, styles, listTightness, sortAttributes, release)
         val root = converter.children(nodes, normalize = false)
         if (converter.lists != listTightness.size) unsupported(Reason.LIST, "lists the text path's tokens do not match")
         return Body(normalizeMdcChildren(root), root)
@@ -572,6 +574,8 @@ internal object StudioDbBody {
         val styles: Map<StudioElement, ComponentStyle>,
         val tightness: List<Boolean?>,
         val sortAttributes: Boolean,
+        /** The release whose text path wrote the document (its code blocks' info strings). */
+        val release: StudioEngine,
     ) {
         /** Lists converted so far, in document order (the order of [tightness]). */
         var lists = 0
@@ -603,7 +607,7 @@ internal object StudioDbBody {
             if (node !is StudioElement) return node
             val tag = node.tag
             return when {
-                tag == "pre" -> pre(node)
+                tag == "pre" -> pre(node, release)
                 tag == "code" -> node
                 tag == "ul" || tag == "ol" -> list(node)
                 tag == "th" || tag == "td" -> StudioElement(tag, emptyMap(), children(node.children))
@@ -856,7 +860,7 @@ internal object StudioDbBody {
     // ---- code blocks ----------------------------------------------------------------------------------------------------
 
     /** A text-path `pre` as the database path gives it to the renderer. */
-    private fun pre(el: StudioElement): StudioNode {
+    private fun pre(el: StudioElement, release: StudioEngine): StudioNode {
         val a = el.attrs
         val codeEl = el.children.singleOrNull() as? StudioElement
         val code = (codeEl?.children?.singleOrNull() as? StudioText)?.text ?: if (codeEl != null && codeEl.children.isEmpty()) "" else null
@@ -866,7 +870,7 @@ internal object StudioDbBody {
         }
         if (code.isEmpty()) unsupported(Reason.CODE_BLOCK, "empty code block")
         // the info string as the renderer wrote it, read the way micromark and the code handler do
-        val rendered = StudioRenderer.renderNodes(listOf(el))
+        val rendered = StudioRenderer.renderNodes(listOf(el), null, StudioRenderer.Style.STUDIO, release)
         val firstLine = rendered.substringBefore('\n')
         val info = firstLine.trimStart(firstLine.firstOrNull() ?: '`')
         if ('\\' in info || '&' in info) unsupported(Reason.CODE_BLOCK, "info string with escapes or references")

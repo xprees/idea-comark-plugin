@@ -56,6 +56,18 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
 
     private val messy = "# Title\nSome *text*\n* a\n* b\n\n\n::card{a=\"1\" b=\"2\" c=\"3\" d=\"4\"}\nbody\n::\n"
 
+    /** The style follows the release [ComarkStudioVersions.engineFor] picks for the file: only 1.8.0 is available so far. */
+    fun testContextCarriesTheFilesRelease() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
+        myFixture.addFileToProject("package.json", """{ "dependencies": { "nuxt-studio": "1.8.2" } }""")
+        myFixture.configureFromExistingVirtualFile(myFixture.addFileToProject("content/page.mdc", "# A\n").virtualFile)
+        val context = ComarkStudioFormatting.context(myFixture.file, ComarkStyle.of(myFixture.file))
+        assertEquals(ComarkStudioVersions.getInstance(project).engineFor(myFixture.file.virtualFile), context.engine)
+        assertEquals(StudioEngine.V1_8_0, context.engine)
+        // a file without a virtual file gets the newest available release
+        val inMemory = com.intellij.psi.PsiFileFactory.getInstance(project).createFileFromText("memory.mdc", myFixture.file.fileType, "# A\n")
+        assertEquals(StudioEngine.newest, ComarkStudioFormatting.engineFor(inMemory))
+    }
+
     fun testWholeFileInTheNuxtStudioStyle() = withStyle(ComarkStylePreset.NUXT_STUDIO) {
         myFixture.configureByText("page.mdc", messy)
         reformat()

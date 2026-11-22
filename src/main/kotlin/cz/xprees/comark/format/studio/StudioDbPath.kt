@@ -1,5 +1,6 @@
 package cz.xprees.comark.format.studio
 
+import cz.xprees.comark.format.StudioEngine
 import java.util.IdentityHashMap
 
 /**
@@ -95,17 +96,18 @@ object StudioDbPath {
     }
 
     /** D([text]) for a T-normal document in [collection], or `null` where Studio has no document or [text] is outside the domain. */
-    fun emulate(text: String, collection: StudioCollection = StudioCollection.DEFAULTS): String? =
-        (emulateOutcome(text, collection) as? Outcome.Written)?.text
+    fun emulate(text: String, collection: StudioCollection = StudioCollection.DEFAULTS, release: StudioEngine = StudioEngine.V1_8_0): String? =
+        (emulateOutcome(text, collection, release) as? Outcome.Written)?.text
 
-    fun emulateOutcome(text: String, collection: StudioCollection = StudioCollection.DEFAULTS): Outcome = emulateOutcome(text, collection, true)
+    fun emulateOutcome(text: String, collection: StudioCollection = StudioCollection.DEFAULTS, release: StudioEngine = StudioEngine.V1_8_0): Outcome =
+        emulateOutcome(text, collection, true, release)
 
     /**
      * [emulateOutcome]; with [sortAttributes] `false`, attributes keep the text path's order instead of rehype-sort-attributes'
      * frequency order (not what Studio writes: the Custom style's "keep prop order").
      */
-    internal fun emulateOutcome(text: String, collection: StudioCollection, sortAttributes: Boolean): Outcome = try {
-        Outcome.Written(emulateChecked(text, collection, sortAttributes))
+    internal fun emulateOutcome(text: String, collection: StudioCollection, sortAttributes: Boolean, release: StudioEngine): Outcome = try {
+        Outcome.Written(emulateChecked(text, collection, sortAttributes, release))
     } catch (e: UnsupportedException) {
         Outcome.Unsupported(e.reason, e.message ?: "")
     } catch (e: StudioDbFrontMatter.NoDocument) {
@@ -114,9 +116,9 @@ object StudioDbPath {
         Outcome.Unsupported(Reason.TEXT_PATH_FAILS, "nesting too deep")
     }
 
-    private fun emulateChecked(text: String, collection: StudioCollection, sortAttributes: Boolean): String {
+    private fun emulateChecked(text: String, collection: StudioCollection, sortAttributes: Boolean, release: StudioEngine): String {
         val doc = try {
-            StudioTreeBuilder.build(text)
+            StudioTreeBuilder.build(text, release)
         } catch (e: StudioTextPathException) {
             throw UnsupportedException(Reason.TEXT_PATH_FAILS, e.message ?: "text path fails")
         } catch (e: StudioUnsupportedException) {
@@ -135,13 +137,13 @@ object StudioDbPath {
             throw UnsupportedException(Reason.INLINE_SYNTAX, "a run of three emphasis delimiters between punctuation")
         }
         if ("[^" in text) throw UnsupportedException(Reason.INLINE_SYNTAX, "footnote syntax (remark-gfm)")
-        val body = StudioDbBody.transform(doc.nodes, styles, StudioTreeBuilder.listTightness(text), sortAttributes)
+        val body = StudioDbBody.transform(doc.nodes, styles, StudioTreeBuilder.listTightness(text, release), sortAttributes, release)
         val nodes = body.nodes
         // contentHeading reads the compiled body, before Studio's mdcToComark wraps inline runs at the root in paragraphs
         val heading = if (collection.type == StudioCollection.Type.PAGE) contentHeading(body.compiledRoot) else null
         @Suppress("UNCHECKED_CAST")
         val frontmatter = StudioDbFrontMatter.frontMatter(yaml as Map<String, Any?>, collection, heading)
-        return StudioPipeline.render(StudioDocument(frontmatter = frontmatter, nodes = nodes))
+        return StudioPipeline.render(StudioDocument(frontmatter = frontmatter, nodes = nodes, release = release))
     }
 
     /**

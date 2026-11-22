@@ -1,5 +1,7 @@
 package cz.xprees.comark.format.studio
 
+import cz.xprees.comark.format.StudioEngine
+
 /**
  * What Nuxt Studio 1.8.0 writes for a Markdown document: the tail of `contentFromMarkdownDocument`
  * (`dist/module/runtime/utils/document/generate.js`),
@@ -15,6 +17,6 @@ object StudioPipeline {
     fun render(document: StudioDocument, observer: StudioRenderer.ComponentObserver? = null): String =
         StudioPostProcess.padBlankLinesInComponents(StudioRenderer.renderMarkdown(document, observer)) + "\n"
 
-    fun render(nodes: List<StudioNode>, frontmatter: Map<String, Any?>): String =
-        render(StudioDocument(frontmatter = frontmatter, nodes = nodes))
+    fun render(nodes: List<StudioNode>, frontmatter: Map<String, Any?>, release: StudioEngine = StudioEngine.V1_8_0): String =
+        render(StudioDocument(frontmatter = frontmatter, nodes = nodes, release = release))
 }

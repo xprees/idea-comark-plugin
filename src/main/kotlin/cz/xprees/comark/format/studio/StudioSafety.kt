@@ -1,5 +1,6 @@
 package cz.xprees.comark.format.studio
 
+import cz.xprees.comark.format.StudioEngine
 import java.util.EnumSet
 
 /**
@@ -78,7 +79,7 @@ object StudioSafety {
      * [StudioFormatter.formatPreserving] may keep more blocks than this reports: blocks whose output only fails to converge
      * next to the blocks around it.
      */
-    fun classify(text: String): List<StudioBlock>? = analyze(text)?.blocks?.map { it.block }
+    fun classify(text: String, release: StudioEngine = StudioEngine.V1_8_0): List<StudioBlock>? = analyze(text, release)?.blocks?.map { it.block }
 
     /** A block and, for a body block, its rendering: the concatenated output of its nodes, untrimmed. */
     internal class AnalyzedBlock(val block: StudioBlock, val rendered: String?)
@@ -87,23 +88,23 @@ object StudioSafety {
 
     /**
      * Memoized results for one caller that analyzes related documents (such as [StudioStyle]'s passes over a document and its
-     * own output): whole analyses by text, and the convergence checks of single blocks by their rendering.
+     * own output): whole analyses by release and text, and the convergence checks of single blocks by release and rendering.
      */
     internal class Cache {
-        val analyses = HashMap<String, Analysis?>()
-        val converges = HashMap<String, Boolean>()
+        val analyses = HashMap<Pair<StudioEngine, String>, Analysis?>()
+        val converges = HashMap<Pair<StudioEngine, String>, Boolean>()
     }
 
-    internal fun analyze(text: String, cache: Cache?): Analysis? {
-        if (cache == null) return analyze(text)
-        return cache.analyses.getOrPut(text) { analyzeUncached(text, cache) }
+    internal fun analyze(text: String, release: StudioEngine, cache: Cache?): Analysis? {
+        if (cache == null) return analyze(text, release)
+        return cache.analyses.getOrPut(release to text) { analyzeUncached(text, release, cache) }
     }
 
-    internal fun analyze(text: String): Analysis? = analyzeUncached(text, null)
+    internal fun analyze(text: String, release: StudioEngine = StudioEngine.V1_8_0): Analysis? = analyzeUncached(text, release, null)
 
-    private fun analyzeUncached(text: String, cache: Cache?): Analysis? {
+    private fun analyzeUncached(text: String, release: StudioEngine, cache: Cache?): Analysis? {
         val doc = try {
-            StudioTreeBuilder.buildSegmented(text)
+            StudioTreeBuilder.buildSegmented(text, release)
         } catch (_: StudioTextPathException) {
             return null
         } catch (_: StudioUnsupportedException) {
@@ -119,7 +120,7 @@ object StudioSafety {
             if (fm.yaml != null && StudioYamlLoader.hasComment(fm.yaml)) reasons += StudioRewriteReason.FRONTMATTER_COMMENT
             if (fm.error == null && fm.data !is Map<*, *>) reasons += StudioRewriteReason.FRONTMATTER_NOT_MAPPING
             val yaml = if (fm.error != null) null else StudioRenderer.frontmatterYaml(fm.data)
-            if (reasons.isEmpty() && yaml != null && !memo(cache, "\u0000fm\u0000" + yaml) { frontmatterConverges(yaml) }) {
+            if (reasons.isEmpty() && yaml != null && !memo(cache, release, "\u0000fm\u0000" + yaml) { frontmatterConverges(yaml, release) }) {
                 reasons += StudioRewriteReason.NOT_IDEMPOTENT
             }
             val raw = fm.raw.replace(Regex("\r\n?"), "\n")
@@ -127,6 +128,11 @@ object StudioSafety {
             blocks += AnalyzedBlock(StudioBlock(StudioBlockKind.FRONTMATTER, 0, fm.contentLine + 1, raw, reasons, output), null)
         }
         val segments = doc.segments
+        // the blocks rendered as one render of the document renders them (comark 0.9's heading ids count earlier blocks)
+        val renderings = StudioRenderer.renderEach(
+            segments.map { segment -> segment.nodes.takeIf { StudioTreeBuilder.treeDepth(it) <= StudioTreeBuilder.MAX_TREE_DEPTH } },
+            null, StudioRenderer.Style.STUDIO, release,
+        )
         for ((i, segment) in segments.withIndex()) {
             val reasons: MutableSet<StudioRewriteReason> = EnumSet.noneOf(StudioRewriteReason::class.java)
             classifyTokens(segment.tokens, reasons)
@@ -141,12 +147,12 @@ object StudioSafety {
             }
             val tooDeep = StudioTreeBuilder.treeDepth(segment.nodes) > StudioTreeBuilder.MAX_TREE_DEPTH
             if (tooDeep) reasons += StudioRewriteReason.NESTING_LIMIT
-            val rendered = if (tooDeep) null else StudioRenderer.renderNodes(segment.nodes)
+            val rendered = renderings[i]
             if (rendered != null && StudioJs.trim(rendered).isEmpty() && StudioJs.trim(segment.source).isNotEmpty()) {
                 // a dropped block: the blocks around it may then merge, which only the next save would show
                 reasons += StudioRewriteReason.DROPPED_BLOCK
             }
-            if (reasons.isEmpty() && rendered != null && !StudioJs.trimEnd(rendered).let { piece -> memo(cache, piece) { converges(piece) } }) {
+            if (reasons.isEmpty() && rendered != null && !StudioJs.trimEnd(rendered).let { piece -> memo(cache, release, piece) { converges(piece, release) } }) {
                 reasons += StudioRewriteReason.NOT_IDEMPOTENT
             }
             val block = StudioBlock(
@@ -162,17 +168,17 @@ object StudioSafety {
      * Studio's text path leaves the block it wrote unchanged on the next save. [piece] is the block's output as it stands in
      * the document, after a blank line; checked alone, with no front matter.
      */
-    private inline fun memo(cache: Cache?, key: String, check: () -> Boolean): Boolean =
-        if (cache == null) check() else cache.converges.getOrPut(key, check)
+    private inline fun memo(cache: Cache?, release: StudioEngine, key: String, check: () -> Boolean): Boolean =
+        if (cache == null) check() else cache.converges.getOrPut(release to key, check)
 
-    private fun converges(piece: String): Boolean {
+    private fun converges(piece: String, release: StudioEngine): Boolean {
         val written = StudioPostProcess.padBlankLinesInComponents(piece)
-        return StudioFormatter.format("\n" + written + "\n") == written + "\n"
+        return StudioFormatter.format("\n" + written + "\n", release) == written + "\n"
     }
 
-    private fun frontmatterConverges(yaml: String): Boolean {
+    private fun frontmatterConverges(yaml: String, release: StudioEngine): Boolean {
         val text = "---\n$yaml\n---\n\nx\n"
-        return StudioFormatter.format(text) == text
+        return StudioFormatter.format(text, release) == text
     }
 
     private fun listKind(segment: StudioSegment?): String? = segment?.tokens?.firstOrNull()?.type?.takeIf { it == "bullet_list_open" || it == "ordered_list_open" }
@@ -213,7 +219,7 @@ object StudioSafety {
                     if (token.content.contains("<!--")) reasons += StudioRewriteReason.HTML_COMMENT
                     if (StudioJs.trim(token.content.replace(HTML_COMMENT, "")).isNotEmpty()) reasons += StudioRewriteReason.RAW_HTML
                 }
-                "reference" -> reasons += if (token.info.startsWith("^")) StudioRewriteReason.FOOTNOTE else StudioRewriteReason.LINK_REFERENCE_DEFINITION
+                "reference", "reference_definition" -> reasons += if (token.info.startsWith("^")) StudioRewriteReason.FOOTNOTE else StudioRewriteReason.LINK_REFERENCE_DEFINITION
                 "link_open", "image" -> token.reference?.let {
                     reasons += if (it.startsWith("^")) StudioRewriteReason.FOOTNOTE else StudioRewriteReason.REFERENCE_LINK
                 }

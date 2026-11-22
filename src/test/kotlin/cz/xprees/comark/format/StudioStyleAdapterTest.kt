@@ -36,6 +36,21 @@ class StudioStyleAdapterTest {
         assertEquals(listOf(0..0, 1..1, 2..3, 5..5, 7..9), result.blocks.map { it.first..it.last })
     }
 
+    /** The context's release reaches the engine: comark 0.9 (nuxt-studio 1.8.2) writes an empty link destination as `<>`. */
+    @Test
+    fun releaseFromTheContext() {
+        assertEquals(StudioEngine.newest, StudioStyleContext("page.md").engine)
+        assertEquals("A [x]() link\n", StudioStyleAdapter.format("A [x]() link\n", StudioStyleContext("page.md", data))!!.text)
+        assertEquals("A [x](<>) link\n", StudioStyleAdapter.format("A [x]() link\n", StudioStyleContext("page.md", data, engine = StudioEngine.V1_8_2))!!.text)
+        // blank lines between blocks are read with the release's parse too
+        val custom = StudioStyleOptions(maxBlankLines = 2)
+        assertEquals(
+            "A [x](<>) link\n\n\nB\n",
+            StudioStyleAdapter.format("A [x]() link\n\n\nB\n", StudioStyleContext("page.md", data, custom, StudioEngine.V1_8_2))!!.text,
+        )
+        assertEquals(StudioEngine.V1_8_2, StudioStyleAdapter.engineOptions(StudioStyleContext("page.md", engine = StudioEngine.V1_8_2)).release)
+    }
+
     @Test
     fun unreadableDocument() {
         // front matter Studio cannot load keeps that block; only a document that cannot be parsed at all gives null

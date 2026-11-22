@@ -475,11 +475,29 @@ internal object StudioTreeBuilder09 {
     }
 
     /** `tokenListToTree(tokens, { headingIds: true })` */
-    fun tokenListToTree(tokens: List<MdToken>): ArrayList<Any?> {
+    fun tokenListToTree(tokens: List<MdToken>): ArrayList<Any?> = ArrayList(treeGroups(tokens).flatMap { it.nodes })
+
+    /**
+     * Not comark: a top-level token group `tokens[start, end)` and the root nodes [tokenListToTree] makes of it. A group ends
+     * where the HTML stack is empty again, so an HTML element left open in one block takes the blocks it swallows with it.
+     */
+    class Group(val start: Int, val end: Int, val nodes: List<Any?>)
+
+    /** [tokenListToTree], split into its top-level [Group]s. */
+    fun treeGroups(tokens: List<MdToken>): List<Group> {
         val state = State()
         val nodes = ArrayList<Any?>()
+        val groups = ArrayList<Group>()
+        var groupStart = 0
+        var groupFrom = 0
         var i = 0
+        fun closeGroup(end: Int) {
+            groups += Group(groupStart, end, ArrayList(nodes.subList(groupFrom, nodes.size)))
+            groupStart = end
+            groupFrom = nodes.size
+        }
         while (i < tokens.size) {
+            if (i > groupStart && state.htmlStack.isEmpty()) closeGroup(i)
             val token = tokens[i]
             if (token.type == "inline") {
                 val free = processInline(token.children ?: emptyList(), state)
@@ -510,7 +528,8 @@ internal object StudioTreeBuilder09 {
             val node = frameToNode(frame)
             if (state.htmlStack.isNotEmpty()) state.htmlStack.last().children.add(node) else nodes.add(node)
         }
-        return nodes
+        if (groupStart < tokens.size || groupFrom < nodes.size) closeGroup(tokens.size)
+        return groups
     }
 
     // ---- tree-utils.js ------------------------------------------------------------------------------------------------
@@ -960,4 +979,17 @@ internal object StudioTreeBuilder09 {
         alert(tree)
         return tree.map { toNode(it) }
     }
+
+    /**
+     * [nodes] split into the top-level token groups (`tokens[start, end)`) they come from. Every step after the token
+     * conversion (`applyAutoUnwrap`, the alert plugin's walk) works on one root node at a time, so the nodes of all groups
+     * are exactly [nodes]. Trees deeper than [StudioTreeBuilder.MAX_TREE_DEPTH] are not declined here: the caller checks
+     * each group.
+     */
+    fun nodeGroups(tokens: List<MdToken>): List<Triple<Int, Int, List<StudioNode>>> =
+        treeGroups(tokens).map { g ->
+            val tree = g.nodes.map { applyAutoUnwrap(it) }.toMutableList()
+            alert(tree)
+            Triple(g.start, g.end, tree.map { toNode(it) })
+        }
 }

@@ -45,12 +45,13 @@ object StudioStyleAdapter {
         val affected = styled.affectedBlocks.filter { !it.inputLines.isEmpty() }.map { block ->
             AffectedBlock(block.inputLines, block.causeOutputLines?.let { cause -> styled.blockMap.firstOrNull { it.outputLines == cause }?.inputLines?.takeIf { !it.isEmpty() } })
         }
-        val blocks = sourceBlocks(text)
+        val release = context.engine
+        val blocks = sourceBlocks(text, release)
         var output = styled.text
         var mapping = styled.blockMap.map { BlockMapping(it.inputLines, it.outputLines) }
         if (context.options.maxBlankLines > 1 && blocks != null) {
             val inserted = ArrayList<Int>()
-            output = withSourceBlankLines(text, output, context.options.maxBlankLines, inserted)
+            output = withSourceBlankLines(text, output, context.options.maxBlankLines, inserted, release)
             mapping = mapping.map { m ->
                 val before = inserted.count { it <= m.output.first }
                 BlockMapping(m.input, (m.output.first + before)..(m.output.last + before))
@@ -90,6 +91,7 @@ object StudioStyleAdapter {
                 FrontMatterMode.REDUMP -> StudioFrontMatterMode.REDUMP_ONLY
                 FrontMatterMode.KEEP -> StudioFrontMatterMode.KEEP
             },
+            release = context.engine,
         )
     }
 
@@ -120,9 +122,9 @@ object StudioStyleAdapter {
     private class SourceBlock(val lines: IntRange, val blankLinesBefore: Int, val body: Boolean)
 
     /** The front matter and the top-level blocks of [text] (0-based line ranges), or null when it does not parse. */
-    private fun sourceBlocks(text: String): List<SourceBlock>? {
+    private fun sourceBlocks(text: String, release: StudioEngine): List<SourceBlock>? {
         val doc = try {
-            StudioTreeBuilder.buildSegmented(text)
+            StudioTreeBuilder.buildSegmented(text, release)
         } catch (_: StudioTextPathException) {
             return null
         } catch (_: StudioUnsupportedException) {
@@ -148,9 +150,9 @@ object StudioStyleAdapter {
      * block. Extra blank lines between top-level blocks do not change the document; when the two texts do not have the same
      * blocks (the engine dropped or merged one), [output] is returned as it is.
      */
-    private fun withSourceBlankLines(source: String, output: String, max: Int, inserted: MutableList<Int>): String {
-        val sourceBlocks = sourceBlocks(source)?.filter { it.body } ?: return output
-        val outputBlocks = sourceBlocks(output)?.filter { it.body } ?: return output
+    private fun withSourceBlankLines(source: String, output: String, max: Int, inserted: MutableList<Int>, release: StudioEngine): String {
+        val sourceBlocks = sourceBlocks(source, release)?.filter { it.body } ?: return output
+        val outputBlocks = sourceBlocks(output, release)?.filter { it.body } ?: return output
         if (sourceBlocks.size != outputBlocks.size) return output
         val lines = output.split('\n').toMutableList()
         for (i in outputBlocks.indices.reversed()) {
@@ -182,10 +184,10 @@ object StudioStyleAdapter {
      * Emoji shortcodes (`:smile:`) and character references (`&copy;`, `&#169;`) in [text] between [start] and [end] that Studio
      * turns into characters when it saves, with what it writes instead. The caller passes inline text only (paragraphs, headings,
      * table cells) and drops matches inside code, links' destinations and the like; escaped markers (`\:smile:`) are skipped here.
-     * Detection uses the engine's tables (comark 0.7.0's emoji list, markdown-it's entity rule); the replacement is the engine's
-     * own output for the token, so escapes come out as Studio writes them (`&lt;` becomes `\<`).
+     * Detection uses the engine's tables (comark's emoji list, the [engine]'s markdown-it entity rule); the replacement is the
+     * [engine]'s own output for the token, so escapes come out as Studio writes them (`&lt;` becomes `\<`).
      */
-    fun conversions(text: CharSequence, start: Int, end: Int): List<StudioConversion> {
+    fun conversions(text: CharSequence, start: Int, end: Int, engine: StudioEngine = StudioEngine.V1_8_0): List<StudioConversion> {
         val result = ArrayList<StudioConversion>()
         var i = start
         while (i < end) {
@@ -194,7 +196,7 @@ object StudioStyleAdapter {
                 c != ':' && c != '&' -> null
                 isEscaped(text, i) -> null
                 c == ':' -> emojiAt(text, i, end)
-                else -> entityAt(text, i, end)
+                else -> entityAt(text, i, end, engine)
             }
             if (match == null) {
                 i++
@@ -202,7 +204,7 @@ object StudioStyleAdapter {
             }
             val (tokenEnd, kind) = match
             val token = text.substring(i, tokenEnd)
-            var replacement = replacementFor(token, atLineStart(text, i), followingWord(text, tokenEnd, end))
+            var replacement = replacementFor(token, atLineStart(text, i), followingWord(text, tokenEnd, end), engine)
             if (replacement == "&" && ENTITY_LIKE.matchesAt(text, tokenEnd)) replacement = "\\&"
             if (replacement != null) result += StudioConversion(i, tokenEnd, kind, token, replacement)
             // markdown-it's emoji rule fails at a `:` without consuming it, so the next `:` may start a shortcode
@@ -229,10 +231,20 @@ object StudioStyleAdapter {
         return null
     }
 
-    /** markdown-it's entity rule: numeric references, and named ones (with `;`) that decode. */
-    private fun entityAt(text: CharSequence, at: Int, end: Int): Pair<Int, StudioConversion.Kind>? {
+    /**
+     * markdown-it's entity rule: numeric references, and named ones (with `;`) that decode (markdown-exit 2, in comark 0.9,
+     * decodes only the names of its own entity table).
+     */
+    private fun entityAt(text: CharSequence, at: Int, end: Int, engine: StudioEngine): Pair<Int, StudioConversion.Kind>? {
         val match = ENTITY.matchAt(text.subSequence(0, end), at) ?: return null
-        if (match.value[1] != '#' && StudioEntities.decodeHtmlStrict(match.value) == match.value) return null
+        if (match.value[1] != '#') {
+            val decodes = if (engine >= StudioEngine.V1_8_2) {
+                StudioEntities.named[match.value.substring(1, match.value.length - 1)] != null
+            } else {
+                StudioEntities.decodeHtmlStrict(match.value) != match.value
+            }
+            if (!decodes) return null
+        }
         return (at + match.value.length) to StudioConversion.Kind.ENTITY
     }
 
@@ -243,18 +255,18 @@ object StudioStyleAdapter {
      * What Studio writes for [token] in a paragraph, followed by [following] (the rest of the word, which decides some escapes:
      * `&lt; x` stays `<`, `&lt;tag>` becomes `\<tag>`), at the start of a line when [lineStart]; null when it keeps the token.
      */
-    private fun replacementFor(token: String, lineStart: Boolean, following: String): String? {
-        if (following.isNotEmpty()) probe(token, lineStart, following)?.let { return it.orElse(null) }
-        return probe(token, lineStart, "")?.orElse(null)
+    private fun replacementFor(token: String, lineStart: Boolean, following: String, engine: StudioEngine): String? {
+        if (following.isNotEmpty()) probe(token, lineStart, following, engine)?.let { return it.orElse(null) }
+        return probe(token, lineStart, "", engine)?.orElse(null)
     }
 
     /** The probe's answer, or null when Studio's output doesn't keep [following] as it is (then the answer is unknown). */
-    private fun probe(token: String, lineStart: Boolean, following: String): Optional<String>? {
-        val key = "$lineStart:$token\u0000$following"
+    private fun probe(token: String, lineStart: Boolean, following: String, engine: StudioEngine): Optional<String>? {
+        val key = "${engine.studio}:$lineStart:$token\u0000$following"
         replacements[key]?.let { return it }
         val prefix = if (lineStart) "" else "x "
         val suffix = "$following x\n"
-        val out = StudioFormatter.format("$prefix$token$suffix") ?: return null
+        val out = StudioFormatter.format("$prefix$token$suffix", engine) ?: return null
         if (!out.startsWith(prefix) || !out.endsWith(suffix) || out.length < prefix.length + suffix.length) return null
         val written = out.substring(prefix.length, out.length - suffix.length)
         // Studio escaped the character after the token (`\]`, `\*`): that backslash belongs to the following text, which in the
@@ -299,11 +311,14 @@ object StudioStyleAdapter {
  * @property fileName the file's name, for the front matter title Studio derives from it when there is no `# heading`
  * @property collection the Nuxt Content collection the file belongs to, or `null` for Studio's defaults
  * @property options the custom style's options ([StudioStyleOptions.STUDIO] for exactly what Studio writes)
+ * @property engine the nuxt-studio release whose save paths the style reproduces ([ComarkStudioVersions.engineFor]); the newest
+ *   available one when the file's package is unknown
  */
 data class StudioStyleContext(
     val fileName: String,
     val collection: StudioCollection? = null,
     val options: StudioStyleOptions = StudioStyleOptions.STUDIO,
+    val engine: StudioEngine = StudioEngine.newest,
 )
 
 /**

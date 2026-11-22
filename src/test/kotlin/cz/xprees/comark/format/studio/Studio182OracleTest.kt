@@ -5,6 +5,7 @@ import com.google.gson.JsonObject
 import cz.xprees.comark.format.StudioEngine
 import cz.xprees.comark.format.studio.StudioOracleCases.Outcome
 import cz.xprees.comark.format.studio.StudioOracleCases.text
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -48,6 +49,40 @@ class Studio182OracleTest {
         }
     }
 
+    /**
+     * The block-wise machinery ([StudioTreeBuilder.buildSegmented], [StudioSafety], [StudioFormatter.formatPreserving]) with
+     * release 1.8.2, as `StudioPreservingDifferentialTest` checks 1.8.0: rendering each top-level block and joining them gives
+     * exactly what 1.8.2 writes, and a document with no kept block comes out exactly as 1.8.2 writes it.
+     */
+    @Test
+    fun blockwiseRendering() {
+        val docs = cases.map { it["name"].asString to it } + StudioOracleCases.textVectors182.mapIndexed { i, v -> "vector #$i" to v }
+        ratchet("1.8.2 block-wise rendering", BLOCKWISE_FLOOR, docs.filter { it.second.text("text") != null }.map { it.second }) {
+            diff(it.text("text"), StudioFormatter.formatBlockwise(it["input"].asString, StudioEngine.V1_8_2))
+        }
+        var unclassified = 0
+        ratchet("1.8.2 formatPreserving without kept blocks", PRESERVING_FLOOR, docs.map { it.second }) {
+            val r = StudioFormatter.formatPreserving(it["input"].asString, StudioEngine.V1_8_2)
+            if (r == null || r.kept.isNotEmpty()) return@ratchet null
+            unclassified++
+            diff(it.text("text"), r.text)
+        }
+        println("1.8.2: $unclassified documents with no kept block")
+        assertTrue("1.8.2: $unclassified documents with no kept block, below $UNCLASSIFIED_FLOOR", unclassified >= UNCLASSIFIED_FLOOR)
+    }
+
+    /** The 1.8.2 Studio style is idempotent on the oracle inputs and the random documents, and every run finds a fixed point. */
+    @Test
+    fun styleIsIdempotent() {
+        val docs = cases.map { it["input"].asString } + StudioOracleCases.textVectors182.map { it["input"].asString }
+        val options = StudioStyleOptions(collection = StudioCollection.page(DOC_ID), release = StudioEngine.V1_8_2)
+        ratchet("1.8.2 style idempotence", IDEMPOTENT_FLOOR, docs.map { JsonObject().apply { addProperty("input", it) } }) {
+            val r = StudioStyle.format(it["input"].asString, options) ?: return@ratchet null
+            if (!r.diagnostics.converged) return@ratchet "no fixed point"
+            diff(r.text, StudioStyle.format(r.text, options)?.text)
+        }
+    }
+
     private fun verdict(v: StudioOracleCases.Verdict): String? =
         if (v.outcome == Outcome.MATCH || v.outcome == Outcome.BOTH_FAIL) null else "${v.outcome} ${v.detail}"
 
@@ -82,5 +117,10 @@ class Studio182OracleTest {
         const val TEXT_FLOOR = 480
         const val VECTOR_TREE_FLOOR = 5021
         const val VECTOR_TEXT_FLOOR = 5021
+        const val DOC_ID = "content/docs/page.md"
+        const val BLOCKWISE_FLOOR = 4849
+        const val PRESERVING_FLOOR = 5501
+        const val UNCLASSIFIED_FLOOR = 2998
+        const val IDEMPOTENT_FLOOR = 5501
     }
 }

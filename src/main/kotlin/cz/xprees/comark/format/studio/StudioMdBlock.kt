@@ -73,6 +73,12 @@ internal class MdEnv {
     /** Not comark: with [lenientPropsYaml], the lines of the opening `---` of props blocks whose YAML has a comment. */
     val propsYamlComments = ArrayList<Int>()
 
+    /**
+     * Not comark: the `reference_definition` tokens markdown-exit 2 strips after the block parse, so that
+     * [StudioTreeBuilder.buildSegmented] can tell which lines a definition took.
+     */
+    val strippedReferenceDefinitions = ArrayList<MdToken>()
+
     /** comark 0.9 `attributes` plugin's `restoring`: an unpaired props text is being parsed again as plain inline content. */
     var propsRestoring = false
 }

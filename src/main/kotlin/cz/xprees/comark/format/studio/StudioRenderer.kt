@@ -71,17 +71,29 @@ object StudioRenderer {
     fun render(document: StudioDocument, observer: ComponentObserver? = null): String =
         StudioJs.trim(renderNodes(document.nodes, observer, Style.STUDIO, document.release)) + "\n"
 
-    /** The concatenated output of top-level [nodes], before `render` trims the whole body. */
-    fun renderNodes(nodes: List<StudioNode>, observer: ComponentObserver? = null): String = renderNodes(nodes, observer, Style.STUDIO)
+    /** The concatenated output of top-level [nodes] in [release]'s comark, before `render` trims the whole body. */
+    fun renderNodes(nodes: List<StudioNode>, observer: ComponentObserver? = null, release: StudioEngine = StudioEngine.V1_8_0): String =
+        renderNodes(nodes, observer, Style.STUDIO, release)
 
-    internal fun renderNodes(nodes: List<StudioNode>, observer: ComponentObserver?, style: Style, release: StudioEngine = StudioEngine.V1_8_0): String {
+    internal fun renderNodes(nodes: List<StudioNode>, observer: ComponentObserver?, style: Style, release: StudioEngine): String =
+        renderEach(listOf(nodes), observer, style, release).single()!!
+
+    /**
+     * The output of each of [groups] (consecutive runs of a document's top-level nodes; `null` for a run not rendered) as one
+     * render of the whole document writes it: the groups share the render's state, so that comark 0.9's heading ids count the
+     * headings of the groups before (a repeated `## A` is `a-1` there, and written without `{#a-1}`).
+     */
+    internal fun renderEach(groups: List<List<StudioNode>?>, observer: ComponentObserver?, style: Style, release: StudioEngine): List<String?> {
         val previous = currentRelease.get()
         currentRelease.set(release)
         try {
             val state = State(Context(observer, style), 0)
-            val sb = StringBuilder()
-            for (child in nodes) sb.append(one(child, state, null))
-            return sb.toString()
+            return groups.map { nodes ->
+                if (nodes == null) return@map null
+                val sb = StringBuilder()
+                for (child in nodes) sb.append(one(child, state, null))
+                sb.toString()
+            }
         } finally {
             currentRelease.set(previous)
         }
