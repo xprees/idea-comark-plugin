@@ -74,11 +74,11 @@ class ComarkStudioEndToEndTest : BasePlatformTestCase() {
         }
     }
 
-    /** The same over every Studio-written file of the corpus, through the adapter the formatting service calls. */
+    /** The same over every Studio-written file of the 1.8.0 corpus, through the adapter the formatting service calls (1.8.2: `Studio182OracleTest`). */
     fun testEveryStudioWrittenFileIsAFixedPoint() {
         assertTrue(studioWritten.size > 300)
         val changed = studioWritten.filter { (name, written) ->
-            StudioStyleAdapter.format(written, StudioStyleContext(name.substringAfterLast('/')))?.text != written
+            StudioStyleAdapter.format(written, StudioStyleContext(name.substringAfterLast('/'), engine = StudioEngine.V1_8_0))?.text != written
         }
         assertEquals(changed.take(3).joinToString("\n=====\n") { it.first + "\n" + it.second }, 0, changed.size)
     }

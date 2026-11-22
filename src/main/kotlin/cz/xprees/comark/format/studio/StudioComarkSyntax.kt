@@ -16,7 +16,7 @@ internal object StudioComarkSyntax {
 
     private val RE_BLOCK_NAME = Regex("^[a-zA-Z$][$\\w.-]*")
 
-    fun parseBlockParams(input: String): BlockParams {
+    fun parseBlockParams(input: String, comark09: Boolean = StudioParseRelease.comark09): BlockParams {
         val str = StudioJs.trim(input)
         if (str.isEmpty()) return BlockParams("")
         val name = RE_BLOCK_NAME.find(str)?.value ?: throw StudioParseException("Invalid block params: $str")
@@ -33,7 +33,7 @@ internal object StudioComarkSyntax {
             }
         }
         if (remaining.startsWith("{")) {
-            val p = searchProps(remaining, 0)
+            val p = searchProps(remaining, 0, comark09)
             if (p != null) {
                 props = p.props
                 malformed = p.malformed
@@ -87,8 +87,11 @@ internal object StudioComarkSyntax {
      */
     class PropsSearch(val props: List<Pair<String, String>>, val end: Int, val closed: Boolean, val malformed: Boolean = false)
 
-    /** comark `searchProps(content, index)`, or null for `{{`. */
-    fun searchProps(content: String, start: Int): PropsSearch? {
+    /**
+     * comark `searchProps(content, index)`, or null for `{{`. With [comark09], comark 0.9's version: a `.class` value skips
+     * over balanced brackets, and an unbalanced bracket in a value ends the bracket scan.
+     */
+    fun searchProps(content: String, start: Int, comark09: Boolean = StudioParseRelease.comark09): PropsSearch? {
         fun at(i: Int): Char? = if (i >= 0 && i < content.length) content[i] else null
         if (at(start) != '{') throw StudioParseException("Invalid props, expected `{` but got '${at(start)}'")
         val props = ArrayList<Pair<String, String>>()
@@ -101,11 +104,21 @@ internal object StudioComarkSyntax {
             return if (s >= e) "" else content.substring(s, e)
         }
 
-        fun searchUntil(stops: String): String {
+        lateinit var searchBracketRef: (Char) -> Boolean
+
+        fun searchUntil(stops: String, bracketAware: Boolean = false): String {
             val from = index
             while (index < content.length) {
                 index += 1
                 if (at(index) == '\\') index += 2
+                if (bracketAware) {
+                    val b = at(index)
+                    if (b != null && b in BRACKETS) {
+                        val open = index
+                        if (searchBracketRef(BRACKETS.getValue(b))) continue
+                        index = open
+                    }
+                }
                 val c = at(index)
                 if (c == null) {
                     // `str.includes(undefined)` is false
@@ -120,19 +133,22 @@ internal object StudioComarkSyntax {
             searchUntil(end.toString())
         }
 
-        fun searchBracket(end: Char) {
+        /** Whether the closing [end] was found (comark 0.9 returns it; 0.7 ignores a nested bracket's result). */
+        fun searchBracket(end: Char): Boolean {
             while (index < content.length) {
                 index++
                 val c = at(index)
                 if (c != null && c in QUOTES) {
                     searchString(QUOTES.getValue(c))
                 } else if (c != null && c in BRACKETS) {
-                    searchBracket(BRACKETS.getValue(c))
+                    if (!searchBracket(BRACKETS.getValue(c)) && comark09) return false
                 } else if (c == end) {
-                    return
+                    return true
                 }
             }
+            return false
         }
+        searchBracketRef = ::searchBracket
 
         fun searchValue(): String {
             val from = index
@@ -164,7 +180,7 @@ internal object StudioComarkSyntax {
                 index += 1
             } else if (c == '.') {
                 index += 1
-                props += "class" to searchUntil(" #.}")
+                props += "class" to searchUntil(" #.}", bracketAware = comark09)
             } else if (c == '#') {
                 index += 1
                 props += "id" to searchUntil(" #.}")

@@ -33,7 +33,7 @@ import java.util.BitSet
 internal object ComarkStudioFormatting {
     private val LOG = logger<ComarkStudioFormatting>()
 
-    /** The context the adapter needs for [file]: its name, collection and the style's options. */
+    /** The context the adapter needs for [file]: its name, collection, the style's options and the nuxt-studio release. */
     fun context(file: PsiFile, style: ComarkStyle): StudioStyleContext {
         val collection = try {
             if (file is ComarkFile) ComarkCollections.getInstance(file.project).collectionFor(file) else null
@@ -41,7 +41,21 @@ internal object ComarkStudioFormatting {
             LOG.debug("Cannot read the collection of ${file.name}", e)
             null
         }
-        return StudioStyleContext(file.originalFile.name, collection, style.options)
+        return StudioStyleContext(file.originalFile.name, collection, style.options, engineFor(file))
+    }
+
+    /**
+     * The nuxt-studio release the Studio style reproduces for [file] ([ComarkStudioVersions.engineFor]), or the newest available
+     * one when the file has no virtual file (a file built in memory).
+     */
+    fun engineFor(file: PsiFile): StudioEngine {
+        val virtualFile = file.originalFile.virtualFile ?: return StudioEngine.newest
+        return try {
+            ComarkStudioVersions.getInstance(file.project).engineFor(virtualFile)
+        } catch (e: RuntimeException) {
+            LOG.debug("Cannot read the nuxt-studio version of ${file.name}", e)
+            StudioEngine.newest
+        }
     }
 
     /**

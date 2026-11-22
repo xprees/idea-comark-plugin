@@ -1,5 +1,7 @@
 package cz.xprees.comark.format.studio
 
+import cz.xprees.comark.format.StudioEngine
+
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -41,6 +43,8 @@ data class StudioDocument(
     val nodes: List<StudioNode> = emptyList(),
     val meta: Map<String, Any?> = emptyMap(),
     val frontmatterValue: Any? = frontmatter,
+    /** The nuxt-studio release whose comark parsed the document and renders it. */
+    val release: StudioEngine = StudioEngine.V1_8_0,
 )
 
 /** JavaScript `undefined` as a value (an object property that exists but holds `undefined`). */

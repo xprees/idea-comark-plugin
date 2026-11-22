@@ -1,5 +1,7 @@
 package cz.xprees.comark.format.studio
 
+import cz.xprees.comark.format.StudioEngine
+
 /** Studio's text path cannot produce a document: comark, js-yaml or Studio itself would throw on this input. */
 class StudioTextPathException(message: String) : RuntimeException(message)
 
@@ -19,10 +21,15 @@ class StudioUnsupportedException(message: String) : RuntimeException(message)
  * continuation, emphasis, HTML blocks and list tightness.
  */
 object StudioTreeBuilder {
-    /** The tree for [text]; throws [StudioTextPathException] where Studio's text path throws. */
-    fun build(text: String): StudioDocument {
+    /**
+     * The tree for [text] as the [release]'s Studio builds it (the document carries the release, so that rendering follows it
+     * too); throws [StudioTextPathException] where Studio's text path throws.
+     */
+    fun build(text: String, release: StudioEngine = StudioEngine.V1_8_0): StudioDocument {
         try {
-            return withDeepStack { buildChecked(text) }
+            return withDeepStack {
+                if (release >= StudioEngine.V1_8_2) StudioParseRelease.with(true) { buildChecked09(text) }.copy(release = release) else buildChecked(text)
+            }
         } catch (e: StudioYamlException) {
             throw StudioTextPathException("YAML: ${e.message}")
         } catch (e: StudioParseException) {
@@ -62,6 +69,15 @@ object StudioTreeBuilder {
         return StudioDocument(frontmatter = frontmatter, nodes = nodes, frontmatterValue = data)
     }
 
+    /** nuxt-studio 1.8.2: comark 0.9.2's parse (see [StudioTreeBuilder09]), the shiki plugin and Studio's unbinding. */
+    private fun buildChecked09(text: String): StudioDocument {
+        val (content, data) = parseFrontmatter(text)
+        val tokens = StudioMarkdownIt.parse(content)
+        val nodes = shiki(StudioTreeBuilder09.nodes(tokens)).map { unbind(it) }
+        val frontmatter = documentFrontmatter(data)
+        return StudioDocument(frontmatter = frontmatter, nodes = nodes, frontmatterValue = data)
+    }
+
     /**
      * The deepest element nesting this port renders. markdown-it bounds block and inline-rule nesting at 100 levels, but
      * not emphasis or inline HTML, so `*` runs or nested tags can build trees as deep as the input is long. comark renders
@@ -78,8 +94,8 @@ object StudioTreeBuilder {
      * tight (the paragraphs of its items hidden), or `null` for a list whose items have no paragraph. [StudioDbBody] needs
      * it: Nuxt Content's parse unwraps list paragraphs differently in tight and loose lists.
      */
-    internal fun listTightness(text: String): List<Boolean?> {
-        val tokens = StudioMarkdownIt.parse(parseFrontmatter(text).first)
+    internal fun listTightness(text: String, release: StudioEngine = StudioEngine.V1_8_0): List<Boolean?> {
+        val tokens = StudioParseRelease.with(release >= StudioEngine.V1_8_2) { StudioMarkdownIt.parse(parseFrontmatter(text).first) }
         val result = ArrayList<Boolean?>()
         for ((i, t) in tokens.withIndex()) {
             if (t.type != "bullet_list_open" && t.type != "ordered_list_open") continue
@@ -129,9 +145,11 @@ object StudioTreeBuilder {
      * and read as empty, and a component props block that does not load is read as if empty and reported by line.
      * Other parse failures still throw [StudioTextPathException].
      */
-    internal fun buildSegmented(text: String): StudioSegmentedDocument {
+    internal fun buildSegmented(text: String, release: StudioEngine = StudioEngine.V1_8_0): StudioSegmentedDocument {
         try {
-            return withDeepStack { buildSegmentedChecked(text) }
+            return withDeepStack {
+                if (release >= StudioEngine.V1_8_2) StudioParseRelease.with(true) { buildSegmentedChecked(text, release) } else buildSegmentedChecked(text, release)
+            }
         } catch (e: StudioYamlException) {
             throw StudioTextPathException("YAML: ${e.message}")
         } catch (e: StudioParseException) {
@@ -141,7 +159,7 @@ object StudioTreeBuilder {
         }
     }
 
-    private fun buildSegmentedChecked(text: String): StudioSegmentedDocument {
+    private fun buildSegmentedChecked(text: String, release: StudioEngine): StudioSegmentedDocument {
         val split = splitFrontmatter(text)
         var frontmatter: StudioFrontmatterBlock? = null
         if (split.raw != null) {
@@ -158,26 +176,44 @@ object StudioTreeBuilder {
         }
         val content = normalizeNewlines(split.content)
         val env = MdEnv().apply { lenientPropsYaml = true }
+        val comark09 = release >= StudioEngine.V1_8_2
         val tokens = StudioMarkdownIt.parse(content, env)
-        val groups = TokenProcessor().documentGroups(tokens)
-        val nodes = postProcess(groups.flatMap { it.nodes })
-        val lines = content.split("\n")
-        val segments = ArrayList<StudioSegment>()
+        val groups = if (comark09) {
+            StudioTreeBuilder09.nodeGroups(tokens).map { (start, end, nodes) -> Group(start, end, nodes) }
+        } else {
+            TokenProcessor().documentGroups(tokens)
+        }
+        val nodes = if (comark09) shiki(groups.flatMap { it.nodes }).map { unbind(it) } else postProcess(groups.flatMap { it.nodes })
+        // each group's tokens and nodes, with its first line
+        class Piece(val start: Int, val tokens: List<MdToken>, val nodes: List<StudioNode>)
+        val pieces = ArrayList<Piece>()
         var at = 0
-        for ((index, group) in groups.withIndex()) {
+        for (group in groups) {
             val groupTokens = tokens.subList(group.start, group.end)
             val start = groupTokens.mapNotNull { it.map?.get(0) }.minOrNull()
                 ?: throw StudioUnsupportedException("a top-level block without a source map")
-            val nextStart = groups.getOrNull(index + 1)?.let { g -> tokens.subList(g.start, g.end).mapNotNull { it.map?.get(0) }.minOrNull() }
-                ?: lines.size
+            pieces += Piece(start, groupTokens, nodes.subList(at, at + group.nodes.size))
+            at += group.nodes.size
+        }
+        // markdown-exit 2 strips reference definitions before comark sees the tokens: a top-level one is a block of its own
+        // that makes no nodes, so that its lines belong to no other block
+        for (definition in env.strippedReferenceDefinitions) {
+            if (definition.level == 0) definition.map?.let { pieces += Piece(it[0], listOf(definition), emptyList()) }
+        }
+        pieces.sortBy { it.start }
+        val lines = content.split("\n")
+        val segments = ArrayList<StudioSegment>()
+        for ((index, piece) in pieces.withIndex()) {
+            val start = piece.start
+            val nextStart = pieces.getOrNull(index + 1)?.start ?: lines.size
             var end = maxOf(nextStart, start + 1)
             // markdown-it's blank line: spaces and tabs only (a line of U+00A0 is content)
             while (end > start + 1 && lines.getOrElse(end - 1) { "" }.all { it == ' ' || it == '\t' }) end--
-            val groupNodes = nodes.subList(at, at + group.nodes.size)
-            at += group.nodes.size
-            segments += StudioSegment(start, end, lines.subList(start, minOf(end, lines.size)).joinToString("\n"), groupTokens, groupNodes)
+            segments += StudioSegment(start, end, lines.subList(start, minOf(end, lines.size)).joinToString("\n"), piece.tokens, piece.nodes)
         }
-        return StudioSegmentedDocument(text, frontmatter, content, segments, env.propsYamlErrors.toList(), env.propsYamlComments.toList(), env.nestingLimitLines.toList())
+        return StudioSegmentedDocument(
+            text, frontmatter, content, segments, env.propsYamlErrors.toList(), env.propsYamlComments.toList(), env.nestingLimitLines.toList(), release,
+        )
     }
 
     private fun normalizeNewlines(s: String): String {
@@ -799,7 +835,7 @@ object StudioTreeBuilder {
      * another one. Nodes are handled as JavaScript-like arrays here (`[tag, attrs, ...children]`, strings for text).
      */
     @Suppress("UNCHECKED_CAST")
-    private fun shiki(nodes: List<StudioNode>): List<StudioNode> {
+    internal fun shiki(nodes: List<StudioNode>): List<StudioNode> {
         fun toJs(n: StudioNode): Any = when (n) {
             is StudioText -> n.text
             is StudioElement -> ArrayList<Any?>(n.children.size + 2).also { a -> a += n.tag; a += n.attrs; n.children.forEach { a += toJs(it) } }
@@ -876,7 +912,7 @@ object StudioTreeBuilder {
 
     // ---- Studio unbindComarkTree (utils/document/legacy.js) --------------------------------------------------------------
 
-    private fun unbind(node: StudioNode): StudioNode {
+    internal fun unbind(node: StudioNode): StudioNode {
         if (node !is StudioElement) return node
         val next = LinkedHashMap<String, Any?>()
         @Suppress("UNCHECKED_CAST")
@@ -911,11 +947,15 @@ internal object StudioMarkdownIt {
             val state = MdStateBlock(src, env, tokens)
             StudioMdBlock.tokenize(state, state.line, state.lineMax)
         }
+        val comark09 = StudioParseRelease.comark09
+        // markdown-exit 2's `strip_references` core rule
+        if (comark09) tokens.removeAll { (it.type == "reference_definition").also { stripped -> if (stripped) env.strippedReferenceDefinitions += it } }
         taskListsPre(tokens)
         for (t in tokens) if (t.type == "inline") StudioMdInline.parse(t.content, env, t.children!!)
         taskListsPost(tokens)
         textJoin(tokens)
         inlinePropsHook(tokens)
+        if (comark09) StudioTreeBuilder09.htmlBlocksToParagraphs(tokens)
         return tokens
     }
 
@@ -1056,6 +1096,8 @@ internal class StudioSegmentedDocument(
     val propsYamlErrorLines: List<Int>,
     val propsYamlCommentLines: List<Int> = emptyList(),
     val nestingLimitLines: List<Int> = emptyList(),
+    /** The nuxt-studio release whose parse made the [segments] (and whose renderer writes their nodes). */
+    val release: StudioEngine = StudioEngine.V1_8_0,
 ) {
     /** Content line [line] as a line of [text] (counting `\r\n`, `\r` and `\n` as one line break each). */
     fun sourceLine(line: Int): Int = line + (frontmatter?.contentLine ?: 0)

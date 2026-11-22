@@ -210,6 +210,7 @@ class ComarkStudioConversionInspection : LocalInspectionTool() {
         val file = holder.file
         val text = file.viewProvider.contents
         if (text.length > ComarkStudioAnalysis.MAX_LENGTH) return PsiElementVisitor.EMPTY_VISITOR
+        val engine = ComarkStudioFormatting.engineFor(file)
         return object : PsiElementVisitor() {
             override fun visitElement(element: PsiElement) {
                 val type = element.elementType
@@ -217,7 +218,7 @@ class ComarkStudioConversionInspection : LocalInspectionTool() {
                     element !is MarkdownHeader
                 ) return
                 val range = element.textRange
-                for (conversion in StudioStyleAdapter.conversions(text, range.startOffset, range.endOffset)) {
+                for (conversion in StudioStyleAdapter.conversions(text, range.startOffset, range.endOffset, engine)) {
                     val leaf = file.findElementAt(conversion.start) ?: continue
                     if (ComponentUsages.isInsideNonContent(leaf)) continue
                     val key = if (conversion.kind == StudioConversion.Kind.EMOJI) "studio.inspection.conversion.emoji" else "studio.inspection.conversion.entity"

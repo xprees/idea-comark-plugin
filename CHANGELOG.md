@@ -8,8 +8,11 @@
 
 - *Settings › Languages & Frameworks › Comark › Nuxt Studio version* chooses the nuxt-studio release the Nuxt Studio style writes
   for. **Automatic**, the default, follows the release the project uses (the newest supported one not newer than it), and the
-  newest supported release in projects without nuxt-studio. nuxt-studio 1.8.0 is supported today; support for 1.8.2, which moved to
-  comark 0.9.2, is in progress
+  newest supported release in projects without nuxt-studio
+- The Nuxt Studio style supports nuxt-studio 1.8.2, which moved to comark 0.9.2, alongside 1.8.0. Projects without nuxt-studio
+  and projects on 1.8.2 or later get 1.8.2's output, for example explicit heading ids kept (`## Title {#custom}`), inline code
+  fenced with as many backticks as it needs, empty link destinations written `[text](<>)` and `<` escaped in raw HTML text;
+  projects on 1.8.0 or 1.8.1 keep 1.8.0's
 - Nuxt Studio style: collection schemas imported by name from the project's own files (`import { pageSchema } from './schemas'`
   in `content.config.ts`, also through further imports) are read, so their fields and defaults get Studio's front matter rules;
   editing the imported file takes effect without touching the configuration

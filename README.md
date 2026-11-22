@@ -65,14 +65,14 @@ view, lists, tables, header anchors, code fence injection, …) still applies.
 | Preset | What Reformat Code does |
 |---|---|
 | **VS Code (monarch-mdc)** (default) | Indentation and trailing whitespace only, like the Comark VS Code extension (see *Formatting* under [Features](#features)) |
-| **Nuxt Studio** | Writes the document in the form Nuxt Studio 1.8.0 keeps unchanged when it saves the file, from its code editor and from its visual editor alike |
+| **Nuxt Studio** | Writes the document in the form Nuxt Studio (1.8.2 or 1.8.0, see *Studio version* below) keeps unchanged when it saves the file, from its code editor and from its visual editor alike |
 | **Custom** | The Nuxt Studio style with your own choices for the options below |
 
 **What the Nuxt Studio style guarantees.** Studio saves a document in two ways: its code editor writes the text it was given
 (the *text path*), and its visual editor, or any save of a document Studio loaded from Nuxt Content, writes what Nuxt Content
 parsed (the *database path*). The Nuxt Studio style writes each block in the form both of them leave unchanged; where the two
 disagree on the markup, the code editor's form wins. The engine reproduces the text path byte for byte and emulates the
-database path where it can follow Nuxt Content's parser (both checked against the real nuxt-studio 1.8.0 code on 480 recorded
+database path where it can follow Nuxt Content's parser (both checked against the real nuxt-studio 1.8.0 and 1.8.2 code, each on 480 recorded
 documents, over 5,000 random ones and 4,800 database-path recordings): `-` bullets, `1.`
 items, `*em*`, `**strong**`, backtick fences, one blank line between blocks, components nested by two spaces, up to three props
 inline and more as a YAML block, props in the order Studio's database path gives them (most frequent names on that tag first),
@@ -154,8 +154,8 @@ the options; changing an option switches to Custom.
 | `ij_comark_sort_props` | `false`, `true` |
 | `ij_comark_front_matter` | `studio`, `redump`, `keep` |
 
-**Studio version.** The Nuxt Studio style reproduces a specific nuxt-studio release and the comark release it renders with;
-today that is nuxt-studio 1.8.0 with comark 0.7.0, and support for 1.8.2 (comark 0.9.2) is being ported. *Settings › Languages
+**Studio version.** The Nuxt Studio style reproduces a specific nuxt-studio release and the comark release it renders with:
+nuxt-studio 1.8.2 with comark 0.9.2, or nuxt-studio 1.8.0 with comark 0.7.0. *Settings › Languages
 & Frameworks › Comark › Nuxt Studio version* picks the release: **Automatic** (the default) follows the nuxt-studio version the
 package of the Comark file uses (read from `package.json` and the nearest `package-lock.json`, `npm-shrinkwrap.json`,
 `pnpm-lock.yaml`, `yarn.lock` or `bun.lock`), choosing the newest supported release not newer than it, and the newest supported
