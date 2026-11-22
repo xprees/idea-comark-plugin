@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.3.26] - 2026-11-22
+
 ### Added
 
 - *Settings › Languages & Frameworks › Comark › Nuxt Studio version* chooses the nuxt-studio release the Nuxt Studio style writes
@@ -188,7 +190,8 @@ Markdown plugin.
   comark heading ids and `{#id}` / `id` attributes resolve too
 - Components, props and slots render as labelled blocks in the built-in Markdown preview
 
-[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.21...HEAD
+[Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.26...HEAD
+[2026.3.26]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.21...2026.3.26
 [2026.3.21]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.18...2026.3.21
 [2026.3.18]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.17...2026.3.18
 [2026.3.17]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.15...2026.3.17
