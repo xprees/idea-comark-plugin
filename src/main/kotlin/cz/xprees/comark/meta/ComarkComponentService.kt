@@ -484,7 +484,9 @@ class ComarkComponentService(private val project: Project) : Disposable {
      */
     private fun affectsModules(path: String, name: String, isDirectory: Boolean): Boolean =
         (isDirectory || NuxtTypeModules.isTypeModule(name) || name in NuxtTypeModules.ROOT_MARKERS) &&
-            path.split('/').none { isSkippedDirectory(it) }
+            path.split('/').none { isSkippedDirectory(it) } ||
+            // tsconfig path mappings, including the ones Nuxt writes to .nuxt/
+            NuxtTypeModules.isTsConfig(name) && path.split('/').none { it == "node_modules" }
 
     private fun affectsStructure(path: String, name: String, isDirectory: Boolean): Boolean =
         isComponentFile(name) || isDirectory && (name == NUXT_BUILD_DIRECTORY || path.split('/').none { isSkippedDirectory(it) })
