@@ -65,7 +65,7 @@ class ComarkStudioNotificationsTest : BasePlatformTestCase() {
         val editor = FileEditorManager.getInstance(project).getSelectedEditor(file)!!
         val panel = ComarkStudioVersionNotificationProvider().collectNotificationData(project, file)!!.apply(editor) as EditorNotificationPanel
         assertEquals(
-            "The Nuxt Studio style matches nuxt-studio 1.8.0 (comark 0.7.0); this project uses nuxt-studio 1.9.2. Studio may save some files differently.",
+            "The Nuxt Studio style matches nuxt-studio 1.8.2 (comark 0.9.2); this project uses nuxt-studio 1.9.2. Studio may save some files differently.",
             panel.text,
         )
         // dismissed for this version, shown again for another one

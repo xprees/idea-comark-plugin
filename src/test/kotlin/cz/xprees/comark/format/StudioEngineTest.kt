@@ -54,7 +54,11 @@ class StudioEngineTest {
     @Test
     fun onlyAvailableReleasesAreOffered() {
         assertTrue(StudioEngine.supported.all { it.available })
-        assertTrue(StudioEngine.V1_8_0 in StudioEngine.supported)
+        assertEquals(listOf(StudioEngine.V1_8_0, StudioEngine.V1_8_2), StudioEngine.supported)
+        // with the real list: newest without nuxt-studio, 1.8.0 kept for projects on 1.8.0 or 1.8.1
+        assertEquals(StudioEngine.V1_8_2, StudioEngine.resolve(StudioEngine.AUTO, null))
+        assertEquals(StudioEngine.V1_8_0, StudioEngine.resolve(StudioEngine.AUTO, lock("1.8.1")))
+        assertEquals(StudioEngine.V1_8_2, StudioEngine.resolve(StudioEngine.AUTO, lock("1.8.3")))
     }
 
     @Test
