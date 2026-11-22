@@ -15,6 +15,11 @@ import java.util.IdentityHashMap
  * The emulation is exact on its domain and declines everything else: [emulateOutcome] says why. Outside the domain are
  * documents that are not T-normal, and constructs that Nuxt Content's parser (remark-mdc, micromark, remark-gfm, rehype-raw)
  * reads differently from comark in ways this port does not follow, such as raw HTML, comments or bare URLs.
+ *
+ * nuxt-studio 1.8.2 saves through the same conversion: its `legacy.js` only adds kebab-cased slot names to
+ * `normalizeLegacyBodyDifferences`, which `compare.js` uses and the save path does not. With that release the text path is
+ * comark 0.9's (domain, tree and renderer), and the body carries the heading ids Nuxt Content stores, which comark 0.9 writes
+ * as `{#id}` where they are not its own; a heading's explicit `{#id}` is declined (remark-mdc reads it as text).
  */
 object StudioDbPath {
     /** Why [emulateOutcome] declines a document. */
@@ -125,7 +130,19 @@ object StudioDbPath {
             throw UnsupportedException(Reason.TEXT_PATH_FAILS, e.message ?: "text path not followed")
         }
         val styles = IdentityHashMap<StudioElement, StudioRenderer.ComponentStyle>()
-        if (StudioPipeline.render(doc) { node, style -> styles[node] = style } != text) throw UnsupportedException(Reason.NOT_T_NORMAL, "T(y) != y")
+        val explicitIds = java.util.Collections.newSetFromMap(IdentityHashMap<StudioElement, Boolean>())
+        val observer = object : StudioRenderer.ComponentObserver {
+            override fun written(node: StudioElement, style: StudioRenderer.ComponentStyle) {
+                styles[node] = style
+            }
+
+            override fun explicitHeadingId(node: StudioElement) {
+                explicitIds += node
+            }
+        }
+        if (StudioPipeline.render(doc, observer) != text) throw UnsupportedException(Reason.NOT_T_NORMAL, "T(y) != y")
+        // comark 0.9 writes a heading's `{#id}`; remark-mdc reads it as heading text
+        if (explicitIds.isNotEmpty()) throw UnsupportedException(Reason.BLOCK_ATTRIBUTES, "an explicit heading id")
         val yaml = doc.frontmatterValue
         if (yaml !is Map<*, *>) throw UnsupportedException(Reason.NON_MAPPING_FRONT_MATTER, "front matter is not a mapping")
         checkYaml12(yaml)

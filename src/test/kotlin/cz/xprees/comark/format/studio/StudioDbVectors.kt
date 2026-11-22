@@ -83,6 +83,10 @@ internal object StudioDbVectors {
     val corpus: Corpus by lazy { load(File("src/test/testData/studio/db-vectors.json")) }
     val vectors: List<Vector> get() = corpus.vectors
 
+    /** The same recording from nuxt-studio 1.8.2 (`node record-release.mjs 1.8.2 record-db-vectors.mjs`). */
+    val corpus182: Corpus by lazy { load(File("src/test/testData/studio/1.8.2/db-vectors.json")) }
+    val vectors182: List<Vector> get() = corpus182.vectors
+
     private fun result(e: JsonElement?): Result? = when {
         e == null || e.isJsonNull -> null
         e.isJsonPrimitive -> Result.Text(e.asString)

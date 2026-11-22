@@ -9,7 +9,7 @@ import org.junit.Test
 
 /**
  * The release reaches every part of the engine that parses or renders: the formatter, the block-wise analysis
- * ([StudioSafety], [StudioFormatter.formatPreserving]) and the style ([StudioStyle]).
+ * ([StudioSafety], [StudioFormatter.formatPreserving]), the database path ([StudioDbPath]) and the style ([StudioStyle]).
  * Each check shows output only nuxt-studio 1.8.2 (comark 0.9.2) writes, next to 1.8.0's.
  */
 class Studio182EngineTest {
@@ -54,8 +54,39 @@ class Studio182EngineTest {
     }
 
     @Test
+    fun databasePathFollowsTheRelease() {
+        // Nuxt Content stores github-slugger ids; comark 0.9 writes them where they are not its own (no NFC, tabs dropped)
+        assertEquals("## Über {#über}\n", StudioDbPath.emulate("## Über\n", data, V1_8_2))
+        assertEquals("## a\tb {#ab}\n", StudioDbPath.emulate("## a\tb\n", data, V1_8_2))
+        assertEquals("# T\n\n## A\n\n## A\n", StudioDbPath.emulate("# T\n\n## A\n\n## A\n", data, V1_8_2))
+        // comark 0.7 never writes heading ids
+        assertEquals("## Über\n", StudioDbPath.emulate("## Über\n", data, V1_8_0))
+        // remark-mdc reads a heading's {#id} as text, which this port declines
+        val explicit = StudioDbPath.emulateOutcome("## Custom {#custom-anchor}\n", data, V1_8_2)
+        assertEquals(StudioDbPath.Reason.BLOCK_ATTRIBUTES, (explicit as StudioDbPath.Outcome.Unsupported).reason)
+    }
+
+    @Test
     fun styleFollowsTheRelease() {
         assertEquals("A [x](<>) link\n", style("A [x]() link\n", V1_8_2).text)
         assertEquals("A [x]() link\n", style("A [x]() link\n", V1_8_0).text)
+        // 1.8.2's database path adds an id to this heading, so the block is kept; 1.8.0 leaves it alone
+        val tab = "## a\tb\n"
+        assertEquals(listOf(setOf(StudioRewriteReason.DB_PATH_REWRITE)), style(tab, V1_8_2).keptBlocks.map { it.reasons })
+        assertTrue(style(tab, V1_8_0).keptBlocks.isEmpty())
+        assertEquals(tab, style(tab, V1_8_2).text)
+    }
+
+    @Test
+    fun githubSlugger() {
+        // the values github-slugger 2.0.0 gives in Node
+        assertEquals("hello-world", StudioGithubSlugger.slug("Hello World!"))
+        assertEquals("-smile", StudioGithubSlugger.slug("😄 Smile"))
+        assertEquals("über-straße", StudioGithubSlugger.slug("Über Straße"))
+        assertEquals("ab", StudioGithubSlugger.slug("a\tb"))
+        assertEquals("c--rust_lang", StudioGithubSlugger.slug("C++ & Rust_lang"))
+        assertEquals("𝔘nicode", StudioGithubSlugger.slug("𝔘nicode"))
+        val slugger = StudioGithubSlugger.Slugger()
+        assertEquals(listOf("a", "a-1", "a-2", "a-1-1"), listOf("a", "a", "a", "a-1").map { slugger.slug(it) })
     }
 }

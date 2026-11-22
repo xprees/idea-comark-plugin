@@ -59,6 +59,9 @@ object StudioRenderer {
     /** Called for every component [mdc] writes, with the element as it is in the rendered tree (the same instance). */
     fun interface ComponentObserver {
         fun written(node: StudioElement, style: ComponentStyle)
+
+        /** comark 0.9 wrote heading [node] with an explicit `{#id}` (its `id` is not the one comark would generate). */
+        fun explicitHeadingId(node: StudioElement) {}
     }
 
     /** `renderMarkdown(document, { blockAttributesStyle: 'frontmatter' })`. */
@@ -677,7 +680,9 @@ object StudioRenderer {
         if (state.ctx.comark09) {
             val id = if ("id" in node.attrs) node.attrs["id"] else JsUndefined
             val autoId = autoHeadingId(node, state, id)
-            val attrs = comarkAttributes(if (id == JsUndefined || id == autoId) without(node.attrs, "id") else node.attrs.idFirst())
+            val explicit = !(id == JsUndefined || id == autoId)
+            if (explicit) state.ctx.observer?.explicitHeadingId(node)
+            val attrs = comarkAttributes(if (explicit) node.attrs.idFirst() else without(node.attrs, "id"))
             val suffix = if (attrs.isNotEmpty()) " $attrs" else ""
             return "#".repeat(level) + " " + content + suffix + BLOCK_SEPARATOR
         }

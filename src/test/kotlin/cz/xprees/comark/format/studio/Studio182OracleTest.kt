@@ -83,6 +83,55 @@ class Studio182OracleTest {
         }
     }
 
+    /**
+     * [StudioDbPath] with release 1.8.2 against the database path recorded from it (`1.8.2/db-vectors.json`), as
+     * [StudioDbPathDifferentialTest] checks 1.8.0: no `MISMATCH` category, and the matches per configuration ratcheted.
+     */
+    @Test
+    fun databasePath() {
+        val counts = StudioDbPathDifferentialTest().categories(StudioDbVectors.vectors182, StudioEngine.V1_8_2, System.getenv("STUDIO_DB_REPORT_182"))
+        assertEquals(emptyMap<String, Int>(), counts.filterKeys { "MISMATCH" in it })
+        for ((config, floor) in DB_MATCH_FLOORS) {
+            val count = counts["$config: match"] ?: 0
+            assertTrue("1.8.2 database path [$config]: $count matches, below the floor of $floor", count >= floor)
+        }
+    }
+
+    /**
+     * Files nuxt-studio 1.8.2 wrote and leaves unchanged on both save paths (dual fixed points: the oracle's `db` where
+     * `textOfDb` and `db2` equal it, and the T(x) and D(y) of `1.8.2/db-vectors.json` that both paths keep) come out of the
+     * 1.8.2 Studio style unchanged, as `StudioStyleDifferentialTest.studioWrittenFilesAreUnchanged` checks for 1.8.0.
+     */
+    @Test
+    fun studioWrittenFilesAreUnchanged() {
+        val counts = sortedMapOf<String, Int>()
+        val failing = ArrayList<String>()
+        fun check(label: String, name: String, z: String, collection: StudioCollection) {
+            val r = StudioStyle.format(z, StudioStyleOptions(collection = collection, release = StudioEngine.V1_8_2))
+            val outcome = if (r?.text == z) "unchanged" else "CHANGED"
+            counts.merge("$label: $outcome", 1, Int::plus)
+            if (r?.text != z) failing += "$label $name\n" + StudioOracleCases.firstDifference(z, r?.text ?: "<null>")
+        }
+        for (c in cases) {
+            val db = c.text("db") ?: continue
+            if (c.text("textOfDb") != db || c["dbStable"]?.asBoolean != true) continue
+            val collection = if (c["collectionType"]?.asString == "data") StudioCollection.data(DOC_ID) else StudioCollection.page(DOC_ID)
+            check("oracle D(x)", c["name"].asString, db, collection)
+        }
+        for (v in StudioDbVectors.vectors182) {
+            for (config in StudioDbVectors.CONFIGS) {
+                val r = v.byConfig.getValue(config)
+                val collection = StudioDbVectors.collection(config, r.id)
+                if (v.yStable && r.dEqualsY) check("[$config] T(x)", v.source, v.y, collection)
+                val d = r.dText ?: continue
+                if (d != v.y && r.tOfD == StudioDbVectors.Result.Text(d) && r.dOfD == StudioDbVectors.Result.Text(d)) check("[$config] D(y)", v.source, d, collection)
+            }
+        }
+        println(counts.entries.joinToString("\n") { "${it.key}: ${it.value}" })
+        failing.take(20).forEach { println("  $it") }
+        assertEquals(emptyList<String>(), counts.keys.filter { "CHANGED" in it })
+    }
+
     private fun verdict(v: StudioOracleCases.Verdict): String? =
         if (v.outcome == Outcome.MATCH || v.outcome == Outcome.BOTH_FAIL) null else "${v.outcome} ${v.detail}"
 
@@ -117,6 +166,7 @@ class Studio182OracleTest {
         const val TEXT_FLOOR = 480
         const val VECTOR_TREE_FLOOR = 5021
         const val VECTOR_TEXT_FLOOR = 5021
+        val DB_MATCH_FLOORS = mapOf("pageDefault" to 2131, "pageSchema" to 2115, "data" to 2131)
         const val DOC_ID = "content/docs/page.md"
         const val BLOCKWISE_FLOOR = 4849
         const val PRESERVING_FLOOR = 5501

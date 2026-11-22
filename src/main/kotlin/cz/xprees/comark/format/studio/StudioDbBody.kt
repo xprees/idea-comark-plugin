@@ -104,7 +104,36 @@ internal object StudioDbBody {
         val converter = Converter(raw, counts, styles, listTightness, sortAttributes, release)
         val root = converter.children(nodes, normalize = false)
         if (converter.lists != listTightness.size) unsupported(Reason.LIST, "lists the text path's tokens do not match")
-        return Body(normalizeMdcChildren(root), root)
+        val body = normalizeMdcChildren(root)
+        // comark 0.7 never writes heading ids; comark 0.9 writes `{#id}` where the stored id is not the one it would generate
+        return Body(if (release >= StudioEngine.V1_8_2) withHeadingIds(body) else body, root)
+    }
+
+    /**
+     * [nodes] with the heading ids Nuxt Content stores: `@nuxtjs/mdc`'s `compileHast` gives every `h1`-`h6`, in document order,
+     * `String(id || slugs.slug(toString(node)))` with runs of `-` collapsed, `-` trimmed at both ends and `_` before a leading
+     * digit, one github-slugger ([StudioGithubSlugger]) per document. Legacy conversion keeps the id. Text-path ids are
+     * comark's, so they are replaced (an explicit `{#id}` is declined before: remark-mdc reads it as text).
+     */
+    private fun withHeadingIds(nodes: List<StudioNode>): List<StudioNode> {
+        val slugger = StudioGithubSlugger.Slugger()
+        fun text(n: StudioNode): String = when (n) {
+            is StudioText -> n.text
+            is StudioElement -> n.children.joinToString("") { text(it) }
+            is StudioComment -> ""
+        }
+        fun visit(n: StudioNode): StudioNode {
+            if (n !is StudioElement) return n
+            if (n.tag.length == 2 && n.tag[0] == 'h' && n.tag[1] in '1'..'6') {
+                val id = slugger.slug(text(n)).replace(Regex("-+"), "-").replace(Regex("^-|-$"), "").replace(Regex("^(\\d)"), "_$1")
+                val attrs = LinkedHashMap<String, Any?>()
+                attrs["id"] = id
+                for ((k, v) in n.attrs) if (k != "id") attrs[k] = v
+                return n.copy(attrs = attrs)
+            }
+            return n.copy(children = n.children.map { visit(it) })
+        }
+        return nodes.map { visit(it) }
     }
 
     /** remark-gfm's literal autolinks ([StudioDbAutolink]) in the own text of paragraphs, list items, headings and cells. */
