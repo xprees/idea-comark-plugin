@@ -25,8 +25,9 @@ const COUNT = Number(opt('--count', 3000))
 const MUTATIONS = Number(opt('--mutations', 4))
 const CHARS = Number(opt('--chars', 1000))
 const YAMLS = Number(opt('--yaml', 1000))
-const repo = path.resolve(here, '../../../..')
-const outFile = path.resolve(opt('--out', path.join(repo, 'src/test/testData/studio/text-vectors.json')))
+const repo = process.env.STUDIO_ORACLE_REPO ?? path.resolve(here, '../../../..')
+const studioData = process.env.STUDIO_ORACLE_DATA ?? path.join(repo, 'src/test/testData/studio')
+const outFile = path.resolve(opt('--out', path.join(studioData, 'text-vectors.json')))
 const studioRuntime = path.join(here, 'node_modules/nuxt-studio/dist/module/runtime')
 const studioUrl = (rel) => pathToFileURL(path.join(studioRuntime, rel)).href
 const generate = await import(studioUrl('utils/document/generate.js'))
@@ -49,7 +50,7 @@ const dropPositions = (node) => {
 const firstLine = (e) => String((e && e.message) || e).split('\n')[0]
 
 // ---- corpus lines ------------------------------------------------------------------------------------------------------
-const oracle = JSON.parse(fs.readFileSync(path.join(repo, 'src/test/testData/studio/oracle.json'), 'utf8'))
+const oracle = JSON.parse(fs.readFileSync(path.join(studioData, 'oracle.json'), 'utf8'))
 const docs = oracle.cases.map((c) => c.input.split('\n'))
 
 let seed = Number(opt('--seed', 20261112))

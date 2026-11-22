@@ -19,6 +19,25 @@ identical bytes.
 Options: `--out <file>` and `--repo <root>`. Recording stops if the installed nuxt-studio files do not match the published
 1.8.0 hashes, unless you pass `--allow-other-studio`.
 
+### Other nuxt-studio releases
+
+`releases/<release>/` holds another release's `package.json`, `package-lock.json` and `pins.json` (the sha256 of the Studio
+runtime files and of every comark and js-yaml file the renderer can load). `record-release.mjs` runs any recorder against it and
+writes to `src/test/testData/studio/<release>/`:
+
+```sh
+cd src/test/node/studio-oracle/releases/1.8.2 && npm ci && cd ../..
+node record-release.mjs 1.8.2 record.mjs          # writes ../../testData/studio/1.8.2/oracle.json
+```
+
+Or `./gradlew recordStudioRelease -PstudioRelease=1.8.2 [-PstudioRecorder=record.mjs]`. The recorders resolve packages from their
+own directory, so the runner copies them into `releases/<release>/stage/` next to a link to that release's `node_modules` and
+deletes the copy afterwards. `--write-pins` (before the recorder name) rewrites `pins.json` from the installed packages; use it
+only after deliberately installing new versions. The Studio save pipeline itself is the release's own code. Two parts are not: `lib/`'s
+stand-in for Nuxt Content's parser (its code is unchanged in @nuxt/content 3.17.0) and `record.mjs`'s parse without shiki, which
+follows 1.8.0's options and only feeds the `shikiTreeEffect` count. The plugin's
+`StudioEngine` lists the releases and marks each available once the engine's port passes that release's oracle.
+
 `record-vectors.mjs` (Gradle: `recordStudioVectors`) records three smaller files next to `oracle.json` for the Kotlin port of
 the renderer:
 

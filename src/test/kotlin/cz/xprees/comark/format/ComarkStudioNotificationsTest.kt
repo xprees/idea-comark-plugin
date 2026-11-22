@@ -47,7 +47,7 @@ class ComarkStudioNotificationsTest : BasePlatformTestCase() {
         assertEquals(listOf("1.9.2"), info.studioVersions)
         assertEquals(listOf("0.7.0"), info.comarkVersions)
         assertEquals("pnpm-lock.yaml", info.lockfile)
-        assertEquals(listOf("nuxt-studio 1.9.2"), info.mismatches)
+        assertEquals(listOf("nuxt-studio 1.9.2"), info.mismatches(StudioEngine.V1_8_0))
     }
 
     fun testNoNuxtStudioDependency() {

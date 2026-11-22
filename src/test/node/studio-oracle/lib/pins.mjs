@@ -66,22 +66,30 @@ export const EXPECTED_RENDERER_FILES = {
   'comark/dist/utils/index.js': '5e3e642fcad6f7a4d38959854df64a4ac23fe5dd00d7eff5e4a31e6d857927db',
   'js-yaml/dist/js-yaml.mjs': '213470960d9c2ff1d01f9164e5017749bfc383d8a6ebb8683f35c76e8c6d052b',
 }
+// A release recorded from versions/<release>/ (record-release.mjs) brings its own pins in pins.json and its own name.
+const releasePins = process.env.STUDIO_ORACLE_PINS ? JSON.parse(fs.readFileSync(process.env.STUDIO_ORACLE_PINS, 'utf8')) : null
+const studioName = process.env.STUDIO_ORACLE_STUDIO ?? '1.8.0'
+const rendererName = process.env.STUDIO_ORACLE_RENDERER ?? 'comark 0.7.0 / js-yaml 5.5.0'
+
 // Hashes the installed files and exits the process when they are not the pinned ones (unless allowed by `args`).
 // Returns { studioFiles, rendererFiles } describing what actually runs.
 export function checkPins(args) {
-  const studioFiles = Object.fromEntries(STUDIO_FILES.map((rel) => [
+  const expectedStudio = releasePins?.studioFiles ?? EXPECTED_STUDIO_FILES
+  const expectedRenderer = releasePins?.rendererFiles ?? EXPECTED_RENDERER_FILES
+  const files = Object.keys(expectedStudio)
+  const studioFiles = Object.fromEntries(files.map((rel) => [
     'nuxt-studio/dist/module/runtime/' + rel, sha256(fs.readFileSync(path.join(studioRuntime, rel))),
   ]))
-  const changed = STUDIO_FILES.filter((rel) => studioFiles['nuxt-studio/dist/module/runtime/' + rel] !== EXPECTED_STUDIO_FILES[rel])
+  const changed = files.filter((rel) => studioFiles['nuxt-studio/dist/module/runtime/' + rel] !== expectedStudio[rel])
   if (changed.length && !args.includes('--allow-other-studio')) {
-    console.error(`nuxt-studio files differ from 1.8.0: ${changed.join(', ')} (run npm ci, or pass --allow-other-studio)`)
+    console.error(`nuxt-studio files differ from ${studioName}: ${changed.join(', ')} (run npm ci, or pass --allow-other-studio)`)
     process.exit(2)
   }
-  const rendererFiles = Object.fromEntries(Object.keys(EXPECTED_RENDERER_FILES)
+  const rendererFiles = Object.fromEntries(Object.keys(expectedRenderer)
     .map((rel) => [rel, sha256(fs.readFileSync(path.join(here, 'node_modules', rel)))]))
-  const changedRenderer = Object.keys(rendererFiles).filter((rel) => rendererFiles[rel] !== EXPECTED_RENDERER_FILES[rel])
+  const changedRenderer = Object.keys(rendererFiles).filter((rel) => rendererFiles[rel] !== expectedRenderer[rel])
   if (changedRenderer.length && !args.includes('--allow-other-renderer')) {
-    console.error(`comark/js-yaml files differ from comark 0.7.0 / js-yaml 5.5.0: ${changedRenderer.join(', ')} (run npm ci, or pass --allow-other-renderer)`)
+    console.error(`comark/js-yaml files differ from ${rendererName}: ${changedRenderer.join(', ')} (run npm ci, or pass --allow-other-renderer)`)
     process.exit(2)
   }
   return { studioFiles, rendererFiles }

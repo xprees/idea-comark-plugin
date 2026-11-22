@@ -154,10 +154,15 @@ the options; changing an option switches to Custom.
 | `ij_comark_sort_props` | `false`, `true` |
 | `ij_comark_front_matter` | `studio`, `redump`, `keep` |
 
-**Version pin.** The Nuxt Studio style reproduces nuxt-studio 1.8.0 with comark 0.7.0. When the package of a Comark file depends
-on another nuxt-studio release (read from `package.json` and the nearest `package-lock.json`, `npm-shrinkwrap.json`,
-`pnpm-lock.yaml`, `yarn.lock` or `bun.lock`), or resolves comark only in other versions, files in the Studio styles show a banner
-naming the versions found. *Dismiss* hides it for those versions; it comes back when the project moves to yet another version.
+**Studio version.** The Nuxt Studio style reproduces a specific nuxt-studio release and the comark release it renders with;
+today that is nuxt-studio 1.8.0 with comark 0.7.0, and support for 1.8.2 (comark 0.9.2) is being ported. *Settings › Languages
+& Frameworks › Comark › Nuxt Studio version* picks the release: **Automatic** (the default) follows the nuxt-studio version the
+package of the Comark file uses (read from `package.json` and the nearest `package-lock.json`, `npm-shrinkwrap.json`,
+`pnpm-lock.yaml`, `yarn.lock` or `bun.lock`), choosing the newest supported release not newer than it, and the newest supported
+release when the package has no nuxt-studio dependency; or choose a supported release yourself. When the package depends on
+another nuxt-studio release than the one used, or resolves comark only in other versions, files in the Studio styles show a
+banner naming the versions found. *Dismiss* hides it for those versions; it comes back when the project moves to yet another
+version.
 
 ## Images
 

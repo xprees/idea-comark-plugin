@@ -152,13 +152,13 @@ class StudioVersionParserTest {
 
     @Test
     fun mismatches() {
-        assertEquals(emptyList<String>(), StudioDependencies("^1.8.0", listOf("1.8.0"), null, listOf("0.7.0"), "pnpm-lock.yaml").mismatches)
-        assertEquals(listOf("nuxt-studio 1.9.2"), StudioDependencies("^1.8.0", listOf("1.9.2"), null, emptyList(), "yarn.lock").mismatches)
-        assertEquals(listOf("comark 0.8.1"), StudioDependencies("^1.8.0", listOf("1.8.0"), null, listOf("0.8.1"), "bun.lock").mismatches)
+        assertEquals(emptyList<String>(), StudioDependencies("^1.8.0", listOf("1.8.0"), null, listOf("0.7.0"), "pnpm-lock.yaml").mismatches(StudioEngine.V1_8_0))
+        assertEquals(listOf("nuxt-studio 1.9.2"), StudioDependencies("^1.8.0", listOf("1.9.2"), null, emptyList(), "yarn.lock").mismatches(StudioEngine.V1_8_0))
+        assertEquals(listOf("comark 0.8.1"), StudioDependencies("^1.8.0", listOf("1.8.0"), null, listOf("0.8.1"), "bun.lock").mismatches(StudioEngine.V1_8_0))
         // one of several resolved comark versions is the pinned one (nuxt-studio's own copy)
-        assertEquals(emptyList<String>(), StudioDependencies("1.8.0", listOf("1.8.0"), null, listOf("0.8.1", "0.7.0"), "package-lock.json").mismatches)
+        assertEquals(emptyList<String>(), StudioDependencies("1.8.0", listOf("1.8.0"), null, listOf("0.8.1", "0.7.0"), "package-lock.json").mismatches(StudioEngine.V1_8_0))
         // without a lockfile the package.json range decides; unknown ranges don't warn
-        assertEquals(listOf("nuxt-studio ^2.0.0"), StudioDependencies("^2.0.0", emptyList(), null, emptyList(), null).mismatches)
-        assertEquals(emptyList<String>(), StudioDependencies("latest", emptyList(), null, emptyList(), null).mismatches)
+        assertEquals(listOf("nuxt-studio ^2.0.0"), StudioDependencies("^2.0.0", emptyList(), null, emptyList(), null).mismatches(StudioEngine.V1_8_0))
+        assertEquals(emptyList<String>(), StudioDependencies("latest", emptyList(), null, emptyList(), null).mismatches(StudioEngine.V1_8_0))
     }
 }

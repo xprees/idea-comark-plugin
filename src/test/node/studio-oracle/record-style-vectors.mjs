@@ -67,9 +67,10 @@ if (!isMainThread) {
   // ---- main: inputs, the worker with its time limit, output -----------------------------------------------------------
   const args = process.argv.slice(2)
   const opt = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : def }
-  const repo = path.resolve(here, '../../../..')
+  const repo = process.env.STUDIO_ORACLE_REPO ?? path.resolve(here, '../../../..')
+  const studioData = process.env.STUDIO_ORACLE_DATA ?? path.join(repo, 'src/test/testData/studio')
   const inFile = path.resolve(process.cwd(), opt('--in', path.join(repo, 'build/studio-style-inputs.json')))
-  const outFile = path.resolve(process.cwd(), opt('--out', path.join(repo, 'src/test/testData/studio/style-vectors.json')))
+  const outFile = path.resolve(process.cwd(), opt('--out', path.join(studioData, 'style-vectors.json')))
   const TIMEOUT = Number(opt('--timeout', 20000))
   const PROGRESS = args.includes('--progress')
 
