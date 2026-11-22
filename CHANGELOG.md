@@ -4,6 +4,9 @@
 
 ### Added
 
+- Nuxt Studio style: collection schemas imported by name from the project's own files (`import { pageSchema } from './schemas'`
+  in `content.config.ts`, also through further imports) are read, so their fields and defaults get Studio's front matter rules;
+  editing the imported file takes effect without touching the configuration
 - Imported prop types resolve through the `paths` of the project's `tsconfig.json` too (`import type { Props } from
   '#shared/types/alert'`), following the configurations it `extends` and, for Nuxt 4's solution-style setup, the ones it
   `references`, so the aliases Nuxt writes to `.nuxt/` (`#shared`, custom `alias` entries) work once `nuxi prepare` has run
