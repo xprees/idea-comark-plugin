@@ -5,11 +5,12 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
+import cz.xprees.comark.settings.ComarkSettings
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * The nuxt-studio and comark versions a package uses, read textually from its `package.json` and the nearest lockfile, compared
- * with the versions the Nuxt Studio style reproduces ([StudioStyleAdapter.STUDIO_VERSION], [StudioStyleAdapter.COMARK_VERSION]).
+ * The nuxt-studio and comark versions a package uses, read textually from its `package.json` and the nearest lockfile: they pick
+ * the release the Nuxt Studio style reproduces ([engineFor], [StudioEngine.resolve]) and are compared with it (the version banner).
  *
  * The package is the nearest directory, from a content file up, whose `package.json` depends on `nuxt-studio`. Its lockfile is
  * the first of `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock` (classic and Berry) and `bun.lock`
@@ -38,6 +39,9 @@ class ComarkStudioVersions {
         }
         return null
     }
+
+    /** The release the Nuxt Studio style reproduces for [file]: the setting's, or the one its package's nuxt-studio calls for. */
+    fun engineFor(file: VirtualFile): StudioEngine = StudioEngine.resolve(ComarkSettings.getInstance().studioVersion, dependenciesFor(file))
 
     private fun dependencies(directory: VirtualFile, manifest: VirtualFile, manifestText: String, range: String): StudioDependencies {
         val lockfile = lockfileFrom(directory)
@@ -93,23 +97,22 @@ data class StudioDependencies(
     val lockfile: String?,
 ) {
     /**
-     * The packages whose version differs from the pinned one, as `name version` (e.g. `nuxt-studio 1.9.2`), empty when they match
-     * or cannot be told. nuxt-studio differs when no resolved version (or, without a lockfile, its range) is on the 1.8 line;
-     * comark when versions are known and none is on the 0.7 line.
+     * The packages whose version differs from the one [engine] reproduces, as `name version` (e.g. `nuxt-studio 1.9.2`), empty
+     * when they match or cannot be told. nuxt-studio differs when no resolved version (or, without a lockfile, its range) is on the
+     * engine's release line (1.8); comark when versions are known and none is on the engine's comark line (0.7).
      */
-    val mismatches: List<String>
-        get() {
-            val result = ArrayList<String>()
-            val studio = if (studioVersions.isNotEmpty()) studioVersions else listOf(studioRange)
-            if (studio.none { StudioVersionParser.matches(it, StudioStyleAdapter.STUDIO_VERSION) != false }) {
-                result += "${ComarkStudioVersions.STUDIO} ${studio.joinToString(", ")}"
-            }
-            val comark = comarkVersions.ifEmpty { listOfNotNull(comarkRange) }
-            if (comark.isNotEmpty() && comark.none { StudioVersionParser.matches(it, StudioStyleAdapter.COMARK_VERSION) != false }) {
-                result += "${ComarkStudioVersions.COMARK} ${comark.joinToString(", ")}"
-            }
-            return result
+    fun mismatches(engine: StudioEngine): List<String> {
+        val result = ArrayList<String>()
+        val studio = if (studioVersions.isNotEmpty()) studioVersions else listOf(studioRange)
+        if (studio.none { StudioVersionParser.matches(it, engine.studio) != false }) {
+            result += "${ComarkStudioVersions.STUDIO} ${studio.joinToString(", ")}"
         }
+        val comark = comarkVersions.ifEmpty { listOfNotNull(comarkRange) }
+        if (comark.isNotEmpty() && comark.none { StudioVersionParser.matches(it, engine.comark) != false }) {
+            result += "${ComarkStudioVersions.COMARK} ${comark.joinToString(", ")}"
+        }
+        return result
+    }
 }
 
 /** Textual readers of `package.json` and lockfiles. Pure functions, unit tested on their own. */
@@ -188,6 +191,29 @@ object StudioVersionParser {
             else -> null
         }
     }
+
+    /**
+     * Whether [version] (`1.8.2`) satisfies the range [spec] at patch level: exact versions, `^` (same major, or for 0.x the same
+     * minor, and not older), `~` (same minor, not older), `>=`. False for anything it cannot read.
+     */
+    fun satisfies(spec: String, version: String): Boolean {
+        val target = StudioEngine.version(version) ?: return false
+        val s = spec.trim().removePrefix("npm:").trim()
+        val operator = OPERATOR.find(s)?.groupValues?.get(1).orEmpty()
+        val base = StudioEngine.version(s.removePrefix(operator).trim()) ?: return false
+        return when (operator) {
+            "^" -> target >= base && target.major == base.major && (base.major != 0 || target.minor == base.minor)
+            "~" -> target >= base && target.major == base.major && target.minor == base.minor
+            ">=" -> target >= base
+            else -> target == base
+        }
+    }
+
+    /** The version a range [spec] starts from (`^1.8.0` -> `1.8.0`), or null. */
+    fun baseVersion(spec: String): String? =
+        StudioEngine.version(spec.trim().removePrefix("npm:"))?.let { "${it.major}.${it.minor}.${it.patch}" }
+
+    private val OPERATOR = Regex("^(\\^|~|>=|=|v|)\\s*")
 
     private fun majorMinor(version: String): Pair<Int, Int>? =
         Regex("""^(\d+)\.(\d+)""").find(version)?.let { it.groupValues[1].toInt() to it.groupValues[2].toInt() }

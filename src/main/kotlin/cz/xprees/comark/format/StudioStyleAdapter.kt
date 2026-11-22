@@ -170,11 +170,11 @@ object StudioStyleAdapter {
 
     // ---- pinned versions --------------------------------------------------------------------------------------------------
 
-    /** The nuxt-studio release the engine reproduces. */
-    const val STUDIO_VERSION = "1.8.0"
+    /** The nuxt-studio release the engine's port follows today ([StudioEngine] lists the releases and which are available). */
+    val STUDIO_VERSION: String get() = StudioEngine.V1_8_0.studio
 
     /** The comark release that nuxt-studio [STUDIO_VERSION] renders with. */
-    const val COMARK_VERSION = "0.7.0"
+    val COMARK_VERSION: String get() = StudioEngine.V1_8_0.comark
 
     // ---- conversions ------------------------------------------------------------------------------------------------------
 

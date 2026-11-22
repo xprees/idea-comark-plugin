@@ -1,5 +1,7 @@
 package cz.xprees.comark.settings
 
+import cz.xprees.comark.format.StudioEngine
+
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
@@ -50,6 +52,7 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         var translationsEnabled: Boolean = true
         var translationLocales: String = ""
         var translationKeys: String = DEFAULT_TRANSLATION_KEYS
+        var studioVersion: String = StudioEngine.AUTO
     }
 
     private var state = State()
@@ -141,6 +144,16 @@ class ComarkSettings : PersistentStateComponent<ComarkSettings.State> {
         get() = state.previewImagesFromCdn
         set(value) {
             state.previewImagesFromCdn = value
+        }
+
+    /**
+     * The nuxt-studio release the Nuxt Studio style reproduces: [StudioEngine.AUTO] (the release the project uses, else the newest
+     * the plugin supports, see [StudioEngine.resolve]) or a supported nuxt-studio version.
+     */
+    var studioVersion: String
+        get() = state.studioVersion
+        set(value) {
+            state.studioVersion = value
         }
 
     /** The translation switcher (floating editor button) is shown for localized content pages. */

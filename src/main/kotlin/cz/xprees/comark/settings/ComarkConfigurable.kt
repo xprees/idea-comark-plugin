@@ -12,6 +12,8 @@ import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.bind
 import com.intellij.ui.dsl.builder.bindIntValue
+import com.intellij.ui.dsl.builder.bindItem
+import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.Cell
@@ -19,11 +21,13 @@ import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.builder.selected
 import javax.swing.JRadioButton
 import com.intellij.ui.components.JBCheckBox
+import com.intellij.ui.EditorNotifications
 import com.intellij.util.concurrency.AppExecutorUtil
 import cz.xprees.comark.ComarkBundle
 import cz.xprees.comark.images.NuxtImageDirectories
 import cz.xprees.comark.lang.ComarkExclusions
 import cz.xprees.comark.lang.ComarkProjectDetector
+import cz.xprees.comark.format.StudioEngine
 import cz.xprees.comark.translations.ComarkTranslations
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import java.net.URI
@@ -83,6 +87,14 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
                 checkBox(ComarkBundle.message("settings.formatter.enabled"))
                     .bindSelected(settings::formatterEnabled)
                     .comment(ComarkBundle.message("settings.formatter.enabled.comment"))
+            }
+            row(ComarkBundle.message("settings.studio.version")) {
+                val choices = listOf(StudioEngine.AUTO) + StudioEngine.supported.sortedByDescending { it.ordinal }.map { it.studio }
+                comboBox(choices, textListCellRenderer { choice ->
+                    if (choice == StudioEngine.AUTO) ComarkBundle.message("settings.studio.version.auto")
+                    else StudioEngine.of(choice!!)?.let { ComarkBundle.message("settings.studio.version.release", it.studio, it.comark) }
+                }).bindItem({ settings.studioVersion.takeIf { it in choices } ?: StudioEngine.AUTO }, { settings.studioVersion = it ?: StudioEngine.AUTO })
+                    .comment(ComarkBundle.message("settings.studio.version.comment"))
             }
         }
         group(ComarkBundle.message("settings.group.components")) {
@@ -186,7 +198,12 @@ class ComarkConfigurable : BoundSearchableConfigurable(ComarkBundle.message("set
         val dialectBefore = settings.dialect
         val imagesBefore = imageSettings()
         val translationsBefore = translationSettings()
+        val studioVersionBefore = settings.studioVersion
         super.apply()
+        if (settings.studioVersion != studioVersionBefore) {
+            // the Studio release the style writes for changed: re-check the version banners
+            EditorNotifications.updateAll()
+        }
         if (translationSettings() != translationsBefore) {
             // locales or counterpart keys changed: recompute translations and the missing-translation warnings
             for (project in ProjectManager.getInstance().openProjects) {

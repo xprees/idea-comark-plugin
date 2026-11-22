@@ -230,6 +230,22 @@ tasks.register<Exec>("recordStudioDbVectors") {
     commandLine("node", "record-db-vectors.mjs")
 }
 
+// Records with another nuxt-studio release than the pinned 1.8.0: ./gradlew recordStudioRelease -PstudioRelease=1.8.2 [-PstudioRecorder=record.mjs]
+val studioRelease = providers.gradleProperty("studioRelease").orElse("1.8.2")
+val installStudioRelease = tasks.register<Exec>("installStudioRelease") {
+    group = "verification"
+    description = "Installs the pinned Node packages of src/test/node/studio-oracle/releases/<release>/ (npm ci)."
+    workingDir = studioOracleDir.dir(studioRelease.map { "releases/$it" }.get()).asFile
+    commandLine(if (isWindows) listOf("cmd", "/c", "npm", "ci") else listOf("npm", "ci"))
+}
+tasks.register<Exec>("recordStudioRelease") {
+    group = "verification"
+    description = "Records src/test/testData/studio/<release>/ with the nuxt-studio release in src/test/node/studio-oracle/releases/<release>/."
+    dependsOn(installStudioRelease)
+    workingDir = studioOracleDir.asFile
+    commandLine("node", "record-release.mjs", studioRelease.get(), providers.gradleProperty("studioRecorder").orElse("record.mjs").get())
+}
+
 tasks.register<Exec>("recordStudioStyleVectors") {
     group = "verification"
     description = "Records src/test/testData/studio/style-vectors.json: the real Nuxt Studio save paths on the Studio style's output, under Node."

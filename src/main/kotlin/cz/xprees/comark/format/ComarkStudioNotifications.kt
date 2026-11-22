@@ -32,15 +32,17 @@ import javax.swing.JComponent
 
 /**
  * A banner on Comark files formatted in a Studio based style when the package uses another nuxt-studio (or comark) release than
- * the one the style reproduces ([ComarkStudioVersions]). *Dismiss* hides it for that version in this project; a project that
+ * the one the style reproduces for it ([ComarkStudioVersions.engineFor]: the closest supported release, or the one chosen in the
+ * settings). *Dismiss* hides it for that version in this project; a project that
  * moves to yet another version sees it again.
  */
 class ComarkStudioVersionNotificationProvider : EditorNotificationProvider, DumbAware {
     override fun collectNotificationData(project: Project, file: VirtualFile): Function<in FileEditor, out JComponent?>? {
         val mismatch = mismatch(project, file) ?: return null
+        val engine = ComarkStudioVersions.getInstance(project).engineFor(file)
         return Function { editor ->
             EditorNotificationPanel(editor, EditorNotificationPanel.Status.Warning).apply {
-                text = ComarkBundle.message("studio.version.banner", StudioStyleAdapter.STUDIO_VERSION, StudioStyleAdapter.COMARK_VERSION, mismatch)
+                text = ComarkBundle.message("studio.version.banner", engine.studio, engine.comark, mismatch)
                 createActionLabel(ComarkBundle.message("studio.version.banner.dismiss")) {
                     dismiss(project, mismatch)
                     EditorNotifications.getInstance(project).updateAllNotifications()
@@ -63,7 +65,8 @@ class ComarkStudioVersionNotificationProvider : EditorNotificationProvider, Dumb
                 psi is ComarkFile && ComarkStyle.of(psi).usesStudio
             }
             if (!usesStudio) return null
-            val mismatches = ComarkStudioVersions.getInstance(project).dependenciesFor(file)?.mismatches.orEmpty()
+            val versions = ComarkStudioVersions.getInstance(project)
+            val mismatches = versions.dependenciesFor(file)?.mismatches(versions.engineFor(file)).orEmpty()
             if (mismatches.isEmpty()) return null
             val text = mismatches.joinToString(", ")
             return text.takeUnless { it in PropertiesComponent.getInstance(project).getList(DISMISSED).orEmpty() }

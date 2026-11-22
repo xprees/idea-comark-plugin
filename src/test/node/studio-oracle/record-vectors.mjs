@@ -20,7 +20,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const outDir = path.resolve(here, '../../testData/studio')
+const outDir = process.env.STUDIO_ORACLE_DATA ?? path.resolve(here, '../../testData/studio')
 const { dump } = await import('js-yaml')
 const { stringifyYaml } = await import(pathToFileURL(path.join(here, 'node_modules/comark/dist/internal/yaml.js')).href)
 const { renderMarkdown } = await import('comark/render')

@@ -19,8 +19,9 @@ register('./lib/hooks.mjs', import.meta.url)
 const here = path.dirname(fileURLToPath(import.meta.url))
 const args = process.argv.slice(2)
 const opt = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : def }
-const repo = path.resolve(here, '../../../..')
-const outFile = path.resolve(here, opt('--out', path.join(repo, 'src/test/testData/studio/db-vectors.json')))
+const repo = process.env.STUDIO_ORACLE_REPO ?? path.resolve(here, '../../../..')
+const studioData = process.env.STUDIO_ORACLE_DATA ?? path.join(repo, 'src/test/testData/studio')
+const outFile = path.resolve(here, opt('--out', path.join(studioData, 'db-vectors.json')))
 const LIMIT = Number(opt('--limit', Infinity))
 
 const { checkPins } = await import('./lib/pins.mjs')
@@ -119,8 +120,8 @@ const safe = async (fn) => { try { return await fn() } catch (e) { return { erro
 const isStr = (v) => typeof v === 'string'
 
 // ---- inputs ------------------------------------------------------------------------------------------------------------
-const oracle = JSON.parse(fs.readFileSync(path.join(repo, 'src/test/testData/studio/oracle.json'), 'utf8'))
-const textVectors = JSON.parse(fs.readFileSync(path.join(repo, 'src/test/testData/studio/text-vectors.json'), 'utf8')).vectors
+const oracle = JSON.parse(fs.readFileSync(path.join(studioData, 'oracle.json'), 'utf8'))
+const textVectors = JSON.parse(fs.readFileSync(path.join(studioData, 'text-vectors.json'), 'utf8')).vectors
 const inputs = []
 for (const c of oracle.cases) if (isStr(c.text)) inputs.push({ source: 'oracle:' + c.name, x: c.input, text: c.text })
 textVectors.forEach((v, i) => { if (isStr(v.text)) inputs.push({ source: 'text-vectors:' + i, x: v.input, text: v.text }) })
