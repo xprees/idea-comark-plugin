@@ -4,6 +4,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.stream.JsonReader
+import cz.xprees.comark.format.StudioEngine
 import org.junit.Assert.assertEquals
 import java.io.File
 
@@ -66,9 +67,9 @@ internal object StudioOracleCases {
     private fun recordedFrontmatter(doc: StudioDocument): Any? = if (StudioJs.truthy(doc.frontmatterValue)) doc.frontmatterValue else emptyMap<String, Any?>()
 
     /** Compares [StudioTreeBuilder.build] of [input] with Studio's recorded tree (`null` when Studio threw). */
-    fun compareTree(input: String, tree: JsonElement?, frontmatter: JsonElement?): Verdict {
+    fun compareTree(input: String, tree: JsonElement?, frontmatter: JsonElement?, release: StudioEngine = StudioEngine.V1_8_0): Verdict {
         val actual = try {
-            StudioTreeBuilder.build(input)
+            StudioTreeBuilder.build(input, release)
         } catch (e: StudioTextPathException) {
             return if (tree == null || !tree.isJsonObject) Verdict(Outcome.BOTH_FAIL) else Verdict(Outcome.UNEXPECTED_FAILURE, e.message ?: "")
         } catch (e: StudioUnsupportedException) {
@@ -85,10 +86,10 @@ internal object StudioOracleCases {
     }
 
     /** Compares [StudioFormatter.format] of [input] with Studio's recorded output (a string, or `{"error": ...}`). */
-    fun compareText(input: String, text: JsonElement?): Verdict {
+    fun compareText(input: String, text: JsonElement?, release: StudioEngine = StudioEngine.V1_8_0): Verdict {
         val expected = text?.takeIf { it.isJsonPrimitive }?.asString
         val actual = try {
-            StudioPipeline.render(StudioTreeBuilder.build(input))
+            StudioPipeline.render(StudioTreeBuilder.build(input, release))
         } catch (e: StudioTextPathException) {
             return if (expected == null) Verdict(Outcome.BOTH_FAIL) else Verdict(Outcome.UNEXPECTED_FAILURE, e.message ?: "")
         } catch (e: StudioUnsupportedException) {
@@ -96,7 +97,7 @@ internal object StudioOracleCases {
         } catch (e: Exception) {
             return Verdict(Outcome.CRASH, "$e at ${e.stackTrace.take(3).joinToString(" < ")}")
         }
-        check(StudioFormatter.format(input) == actual)
+        check(StudioFormatter.format(input, release) == actual)
         if (expected == null) return Verdict(Outcome.MISSED_FAILURE, text.toString())
         return if (expected == actual) Verdict(Outcome.MATCH) else Verdict(Outcome.TEXT_MISMATCH, firstDifference(expected, actual))
     }

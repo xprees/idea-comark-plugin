@@ -1,6 +1,7 @@
 package cz.xprees.comark.format.studio
 
 import cz.xprees.comark.format.JsText
+import cz.xprees.comark.format.StudioEngine
 
 /**
  * The Nuxt Studio text-path formatter T(x): what Nuxt Studio 1.8.0 writes when a document is saved from its code editor
@@ -9,8 +10,8 @@ import cz.xprees.comark.format.JsText
  */
 object StudioFormatter {
     /** T([text]), or `null` when Studio's text path would throw (invalid YAML, for example) or this port cannot follow it. */
-    fun format(text: String): String? = try {
-        StudioPipeline.render(StudioTreeBuilder.build(text))
+    fun format(text: String, release: StudioEngine = StudioEngine.V1_8_0): String? = try {
+        StudioPipeline.render(StudioTreeBuilder.build(text, release))
     } catch (_: StudioTextPathException) {
         null
     } catch (_: StudioUnsupportedException) {

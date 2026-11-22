@@ -29,10 +29,10 @@ class Studio182OracleTest {
     @Test
     fun textPath() {
         ratchet("1.8.2 tree builder", TREE_FLOOR, cases) {
-            verdict(StudioOracleCases.compareTree(it["input"].asString, it["comarkTree"], it["frontmatter"]))
+            verdict(StudioOracleCases.compareTree(it["input"].asString, it["comarkTree"], it["frontmatter"], StudioEngine.V1_8_2))
         }
         ratchet("1.8.2 text path", TEXT_FLOOR, cases) {
-            verdict(StudioOracleCases.compareText(it["input"].asString, it["text"]))
+            verdict(StudioOracleCases.compareText(it["input"].asString, it["text"], StudioEngine.V1_8_2))
         }
     }
 
@@ -66,7 +66,7 @@ class Studio182OracleTest {
     private companion object {
         const val RENDER_TEXT_FLOOR = 446
         const val RENDER_DB_FLOOR = 480
-        const val TREE_FLOOR = 424
-        const val TEXT_FLOOR = 390
+        const val TREE_FLOOR = 480
+        const val TEXT_FLOOR = 480
     }
 }

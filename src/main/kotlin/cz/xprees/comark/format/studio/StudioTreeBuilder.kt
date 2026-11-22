@@ -1,5 +1,7 @@
 package cz.xprees.comark.format.studio
 
+import cz.xprees.comark.format.StudioEngine
+
 /** Studio's text path cannot produce a document: comark, js-yaml or Studio itself would throw on this input. */
 class StudioTextPathException(message: String) : RuntimeException(message)
 
@@ -19,10 +21,15 @@ class StudioUnsupportedException(message: String) : RuntimeException(message)
  * continuation, emphasis, HTML blocks and list tightness.
  */
 object StudioTreeBuilder {
-    /** The tree for [text]; throws [StudioTextPathException] where Studio's text path throws. */
-    fun build(text: String): StudioDocument {
+    /**
+     * The tree for [text] as the [release]'s Studio builds it (the document carries the release, so that rendering follows it
+     * too); throws [StudioTextPathException] where Studio's text path throws.
+     */
+    fun build(text: String, release: StudioEngine = StudioEngine.V1_8_0): StudioDocument {
         try {
-            return withDeepStack { buildChecked(text) }
+            return withDeepStack {
+                if (release >= StudioEngine.V1_8_2) StudioParseRelease.with(true) { buildChecked09(text) }.copy(release = release) else buildChecked(text)
+            }
         } catch (e: StudioYamlException) {
             throw StudioTextPathException("YAML: ${e.message}")
         } catch (e: StudioParseException) {
@@ -58,6 +65,15 @@ object StudioTreeBuilder {
         val tokens = StudioMarkdownIt.parse(content)
         val nodes = postProcess(TokenProcessor().document(tokens))
         if (treeDepth(nodes) > MAX_TREE_DEPTH) throw StudioUnsupportedException("nesting too deep for this port")
+        val frontmatter = documentFrontmatter(data)
+        return StudioDocument(frontmatter = frontmatter, nodes = nodes, frontmatterValue = data)
+    }
+
+    /** nuxt-studio 1.8.2: comark 0.9.2's parse (see [StudioTreeBuilder09]), the shiki plugin and Studio's unbinding. */
+    private fun buildChecked09(text: String): StudioDocument {
+        val (content, data) = parseFrontmatter(text)
+        val tokens = StudioMarkdownIt.parse(content)
+        val nodes = shiki(StudioTreeBuilder09.nodes(tokens)).map { unbind(it) }
         val frontmatter = documentFrontmatter(data)
         return StudioDocument(frontmatter = frontmatter, nodes = nodes, frontmatterValue = data)
     }
@@ -799,7 +815,7 @@ object StudioTreeBuilder {
      * another one. Nodes are handled as JavaScript-like arrays here (`[tag, attrs, ...children]`, strings for text).
      */
     @Suppress("UNCHECKED_CAST")
-    private fun shiki(nodes: List<StudioNode>): List<StudioNode> {
+    internal fun shiki(nodes: List<StudioNode>): List<StudioNode> {
         fun toJs(n: StudioNode): Any = when (n) {
             is StudioText -> n.text
             is StudioElement -> ArrayList<Any?>(n.children.size + 2).also { a -> a += n.tag; a += n.attrs; n.children.forEach { a += toJs(it) } }
@@ -876,7 +892,7 @@ object StudioTreeBuilder {
 
     // ---- Studio unbindComarkTree (utils/document/legacy.js) --------------------------------------------------------------
 
-    private fun unbind(node: StudioNode): StudioNode {
+    internal fun unbind(node: StudioNode): StudioNode {
         if (node !is StudioElement) return node
         val next = LinkedHashMap<String, Any?>()
         @Suppress("UNCHECKED_CAST")
@@ -911,11 +927,15 @@ internal object StudioMarkdownIt {
             val state = MdStateBlock(src, env, tokens)
             StudioMdBlock.tokenize(state, state.line, state.lineMax)
         }
+        val comark09 = StudioParseRelease.comark09
+        // markdown-exit 2's `strip_references` core rule
+        if (comark09) tokens.removeAll { it.type == "reference_definition" }
         taskListsPre(tokens)
         for (t in tokens) if (t.type == "inline") StudioMdInline.parse(t.content, env, t.children!!)
         taskListsPost(tokens)
         textJoin(tokens)
         inlinePropsHook(tokens)
+        if (comark09) StudioTreeBuilder09.htmlBlocksToParagraphs(tokens)
         return tokens
     }
 
