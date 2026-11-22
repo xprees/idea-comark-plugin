@@ -1,6 +1,7 @@
 package cz.xprees.comark.format.studio
 
 import cz.xprees.comark.format.JsText
+import cz.xprees.comark.format.StudioEngine
 
 /**
  * The Nuxt Studio text-path formatter T(x): what Nuxt Studio 1.8.0 writes when a document is saved from its code editor
@@ -9,8 +10,8 @@ import cz.xprees.comark.format.JsText
  */
 object StudioFormatter {
     /** T([text]), or `null` when Studio's text path would throw (invalid YAML, for example) or this port cannot follow it. */
-    fun format(text: String): String? = try {
-        StudioPipeline.render(StudioTreeBuilder.build(text))
+    fun format(text: String, release: StudioEngine = StudioEngine.V1_8_0): String? = try {
+        StudioPipeline.render(StudioTreeBuilder.build(text, release))
     } catch (_: StudioTextPathException) {
         null
     } catch (_: StudioUnsupportedException) {
@@ -40,15 +41,15 @@ object StudioFormatter {
      * Where nothing is kept, the text is exactly [format]'s. Invalid YAML in the front matter or in a component's props
      * keeps that block instead of failing; `null` only when the document cannot be parsed at all.
      */
-    fun formatPreserving(text: String): PreservingResult? = try {
-        formatPreservingChecked(text)
+    fun formatPreserving(text: String, release: StudioEngine = StudioEngine.V1_8_0): PreservingResult? = try {
+        formatPreservingChecked(text, release)
     } catch (_: StackOverflowError) {
         // a backstop: blocks deeper than StudioTreeBuilder.MAX_TREE_DEPTH are kept without rendering them
         null
     }
 
-    private fun formatPreservingChecked(text: String): PreservingResult? {
-        val state = preservingState(text) ?: return null
+    private fun formatPreservingChecked(text: String, release: StudioEngine): PreservingResult? {
+        val state = preservingState(text, release) ?: return null
         return PreservingResult(state.assembled.text, state.blocks.map { it.block })
     }
 
@@ -56,17 +57,24 @@ object StudioFormatter {
     internal class PreservingState(val blocks: List<StudioSafety.AnalyzedBlock>, val assembled: Assembled)
 
     /** [formatPreserving] with the analyzed blocks it settled on, for [StudioStyle]; `null` when [text] cannot be parsed. */
-    internal fun preservingState(text: String, cache: StudioSafety.Cache? = null, forcedLines: Set<Int> = emptySet()): PreservingState? {
-        val analysis = StudioSafety.analyze(text, cache) ?: return null
+    internal fun preservingState(
+        text: String,
+        release: StudioEngine,
+        cache: StudioSafety.Cache? = null,
+        forcedLines: Set<Int> = emptySet(),
+    ): PreservingState? {
+        val analysis = StudioSafety.analyze(text, release, cache) ?: return null
         var blocks = force(analysis.blocks, forcedLines)
         for (round in 0 until MAX_REPAIRS) {
-            blocks = keepLeadingBreak(blocks)
-            val assembled = assemble(blocks)
+            blocks = keepLeadingBreak(blocks, release)
+            val assembled = assemble(blocks, release)
             // analyze is deterministic: when nothing changed, the next pass is this one
             val again = if (round == 0 && assembled.text == text) {
                 text
             } else {
-                StudioSafety.analyze(assembled.text, cache)?.let { assemble(keepLeadingBreak(force(it.blocks, forcedLines(blocks, assembled)))).text }
+                StudioSafety.analyze(assembled.text, release, cache)?.let {
+                    assemble(keepLeadingBreak(force(it.blocks, forcedLines(blocks, assembled)), release), release).text
+                }
             }
             if (again == assembled.text) return PreservingState(blocks, assembled)
             val culprit = culprit(blocks, assembled, firstDifferentLine(assembled.text, again ?: "")) ?: break
@@ -74,7 +82,7 @@ object StudioFormatter {
         }
         // no fixed point found by single repairs: keep every block Studio would change
         blocks = blocks.map { b -> if (!b.block.kept && b.block.studioOutput != b.block.source) notIdempotent(b) else b }
-        return PreservingState(blocks, assemble(blocks))
+        return PreservingState(blocks, assemble(blocks, release))
     }
 
     /** [blocks] with every block that holds one of [lines] kept with [StudioRewriteReason.FORMATTER_OFF]. */
@@ -105,10 +113,10 @@ object StudioFormatter {
      * [blocks] with a leading thematic break kept ([StudioRewriteReason.LEADING_THEMATIC_BREAK]) where their assembly would
      * otherwise start with a `---` line that a later `---` line closes, which the next save reads as front matter.
      */
-    internal fun keepLeadingBreak(blocks: List<StudioSafety.AnalyzedBlock>): List<StudioSafety.AnalyzedBlock> {
+    internal fun keepLeadingBreak(blocks: List<StudioSafety.AnalyzedBlock>, release: StudioEngine): List<StudioSafety.AnalyzedBlock> {
         var result = blocks
         repeat(3) {
-            val culprit = frontMatterCulprit(result, assemble(result)) ?: return result
+            val culprit = frontMatterCulprit(result, assemble(result, release)) ?: return result
             result = result.mapIndexed { i, b ->
                 if (i != culprit) b else StudioSafety.AnalyzedBlock(b.block.copy(reasons = b.block.reasons + StudioRewriteReason.LEADING_THEMATIC_BREAK), b.rendered)
             }
@@ -156,14 +164,14 @@ object StudioFormatter {
 
     private const val MAX_REPAIRS = 16
 
-    private val separations = java.util.concurrent.ConcurrentHashMap<Pair<String, String>, Boolean>()
+    private val separations = java.util.concurrent.ConcurrentHashMap<Triple<StudioEngine, String, String>, Boolean>()
 
-    /** Whether [a] and [b], two top-level blocks, stay those two blocks with one blank line between them. */
-    private fun staySeparate(a: String, b: String): Boolean {
+    /** Whether [a] and [b], two top-level blocks, stay those two blocks with one blank line between them in [release]'s parse. */
+    private fun staySeparate(a: String, b: String, release: StudioEngine): Boolean {
         if (separations.size > 4096) separations.clear()
-        return separations.getOrPut(a to b) {
+        return separations.getOrPut(Triple(release, a, b)) {
             try {
-                val segments = StudioTreeBuilder.buildSegmented(a + "\n\n" + b + "\n").let { if (it.frontmatter != null) null else it.segments }
+                val segments = StudioTreeBuilder.buildSegmented(a + "\n\n" + b + "\n", release).let { if (it.frontmatter != null) null else it.segments }
                 segments != null && segments.size == 2 && segments[0].source == a && segments[1].source == b
             } catch (_: StudioTextPathException) {
                 false
@@ -177,12 +185,12 @@ object StudioFormatter {
      * Every block rendered as Studio renders it, none kept, assembled the way [formatPreserving] assembles blocks. Equal to
      * [format] wherever Studio's text path succeeds; the tests use it to show that block-wise rendering is Studio's.
      */
-    internal fun formatBlockwise(text: String): String? {
-        val analysis = StudioSafety.analyze(text) ?: return null
+    internal fun formatBlockwise(text: String, release: StudioEngine = StudioEngine.V1_8_0): String? {
+        val analysis = StudioSafety.analyze(text, release) ?: return null
         if (analysis.blocks.any { it.block.kind == StudioBlockKind.FRONTMATTER && it.block.studioOutput == null }) return null
         if (StudioRewriteReason.INVALID_YAML in analysis.blocks.flatMap { it.block.reasons }) return null
         val blocks = analysis.blocks.map { StudioSafety.AnalyzedBlock(it.block.copy(reasons = emptySet()), it.rendered) }
-        return assemble(blocks).text
+        return assemble(blocks, release).text
     }
 
     private fun firstDifferentLine(a: String, b: String): Int {
@@ -200,7 +208,7 @@ object StudioFormatter {
      * Joins [blocks] as [formatPreserving] does: the front matter's [StudioBlock.studioOutput] (or its source when kept),
      * then the body blocks' renderings (or their sources when kept).
      */
-    internal fun assemble(blocks: List<StudioSafety.AnalyzedBlock>): Assembled {
+    internal fun assemble(blocks: List<StudioSafety.AnalyzedBlock>, release: StudioEngine): Assembled {
         // the body: rendered blocks concatenated as comark concatenates its top-level output, kept blocks in between
         val body = StringBuilder()
         val owners = ArrayList<Pair<IntRange, Int>>() // character ranges of the body and the block that wrote them
@@ -219,7 +227,7 @@ object StudioFormatter {
                     body.setLength(body.length - 2)
                     val gap = maxOf(b.block.startLine - before.endLine, 0)
                     val bothOff = StudioRewriteReason.FORMATTER_OFF in before.reasons && StudioRewriteReason.FORMATTER_OFF in b.block.reasons
-                    val blankLines = if (gap > 1 && !bothOff && staySeparate(before.source, b.block.source)) 1 else gap
+                    val blankLines = if (gap > 1 && !bothOff && staySeparate(before.source, b.block.source, release)) 1 else gap
                     repeat(blankLines + 1) { body.append('\n') }
                 } else if (body.isNotEmpty()) {
                     while (!body.endsWith("\n\n")) body.append('\n')

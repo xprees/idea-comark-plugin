@@ -1,5 +1,6 @@
 package cz.xprees.comark.format.studio
 
+import cz.xprees.comark.format.StudioEngine
 import java.util.IdentityHashMap
 
 /**
@@ -14,6 +15,11 @@ import java.util.IdentityHashMap
  * The emulation is exact on its domain and declines everything else: [emulateOutcome] says why. Outside the domain are
  * documents that are not T-normal, and constructs that Nuxt Content's parser (remark-mdc, micromark, remark-gfm, rehype-raw)
  * reads differently from comark in ways this port does not follow, such as raw HTML, comments or bare URLs.
+ *
+ * nuxt-studio 1.8.2 saves through the same conversion: its `legacy.js` only adds kebab-cased slot names to
+ * `normalizeLegacyBodyDifferences`, which `compare.js` uses and the save path does not. With that release the text path is
+ * comark 0.9's (domain, tree and renderer), and the body carries the heading ids Nuxt Content stores, which comark 0.9 writes
+ * as `{#id}` where they are not its own; a heading's explicit `{#id}` is declined (remark-mdc reads it as text).
  */
 object StudioDbPath {
     /** Why [emulateOutcome] declines a document. */
@@ -95,17 +101,18 @@ object StudioDbPath {
     }
 
     /** D([text]) for a T-normal document in [collection], or `null` where Studio has no document or [text] is outside the domain. */
-    fun emulate(text: String, collection: StudioCollection = StudioCollection.DEFAULTS): String? =
-        (emulateOutcome(text, collection) as? Outcome.Written)?.text
+    fun emulate(text: String, collection: StudioCollection = StudioCollection.DEFAULTS, release: StudioEngine = StudioEngine.V1_8_0): String? =
+        (emulateOutcome(text, collection, release) as? Outcome.Written)?.text
 
-    fun emulateOutcome(text: String, collection: StudioCollection = StudioCollection.DEFAULTS): Outcome = emulateOutcome(text, collection, true)
+    fun emulateOutcome(text: String, collection: StudioCollection = StudioCollection.DEFAULTS, release: StudioEngine = StudioEngine.V1_8_0): Outcome =
+        emulateOutcome(text, collection, true, release)
 
     /**
      * [emulateOutcome]; with [sortAttributes] `false`, attributes keep the text path's order instead of rehype-sort-attributes'
      * frequency order (not what Studio writes: the Custom style's "keep prop order").
      */
-    internal fun emulateOutcome(text: String, collection: StudioCollection, sortAttributes: Boolean): Outcome = try {
-        Outcome.Written(emulateChecked(text, collection, sortAttributes))
+    internal fun emulateOutcome(text: String, collection: StudioCollection, sortAttributes: Boolean, release: StudioEngine): Outcome = try {
+        Outcome.Written(emulateChecked(text, collection, sortAttributes, release))
     } catch (e: UnsupportedException) {
         Outcome.Unsupported(e.reason, e.message ?: "")
     } catch (e: StudioDbFrontMatter.NoDocument) {
@@ -114,16 +121,28 @@ object StudioDbPath {
         Outcome.Unsupported(Reason.TEXT_PATH_FAILS, "nesting too deep")
     }
 
-    private fun emulateChecked(text: String, collection: StudioCollection, sortAttributes: Boolean): String {
+    private fun emulateChecked(text: String, collection: StudioCollection, sortAttributes: Boolean, release: StudioEngine): String {
         val doc = try {
-            StudioTreeBuilder.build(text)
+            StudioTreeBuilder.build(text, release)
         } catch (e: StudioTextPathException) {
             throw UnsupportedException(Reason.TEXT_PATH_FAILS, e.message ?: "text path fails")
         } catch (e: StudioUnsupportedException) {
             throw UnsupportedException(Reason.TEXT_PATH_FAILS, e.message ?: "text path not followed")
         }
         val styles = IdentityHashMap<StudioElement, StudioRenderer.ComponentStyle>()
-        if (StudioPipeline.render(doc) { node, style -> styles[node] = style } != text) throw UnsupportedException(Reason.NOT_T_NORMAL, "T(y) != y")
+        val explicitIds = java.util.Collections.newSetFromMap(IdentityHashMap<StudioElement, Boolean>())
+        val observer = object : StudioRenderer.ComponentObserver {
+            override fun written(node: StudioElement, style: StudioRenderer.ComponentStyle) {
+                styles[node] = style
+            }
+
+            override fun explicitHeadingId(node: StudioElement) {
+                explicitIds += node
+            }
+        }
+        if (StudioPipeline.render(doc, observer) != text) throw UnsupportedException(Reason.NOT_T_NORMAL, "T(y) != y")
+        // comark 0.9 writes a heading's `{#id}`; remark-mdc reads it as heading text
+        if (explicitIds.isNotEmpty()) throw UnsupportedException(Reason.BLOCK_ATTRIBUTES, "an explicit heading id")
         val yaml = doc.frontmatterValue
         if (yaml !is Map<*, *>) throw UnsupportedException(Reason.NON_MAPPING_FRONT_MATTER, "front matter is not a mapping")
         checkYaml12(yaml)
@@ -135,13 +154,13 @@ object StudioDbPath {
             throw UnsupportedException(Reason.INLINE_SYNTAX, "a run of three emphasis delimiters between punctuation")
         }
         if ("[^" in text) throw UnsupportedException(Reason.INLINE_SYNTAX, "footnote syntax (remark-gfm)")
-        val body = StudioDbBody.transform(doc.nodes, styles, StudioTreeBuilder.listTightness(text), sortAttributes)
+        val body = StudioDbBody.transform(doc.nodes, styles, StudioTreeBuilder.listTightness(text, release), sortAttributes, release)
         val nodes = body.nodes
         // contentHeading reads the compiled body, before Studio's mdcToComark wraps inline runs at the root in paragraphs
         val heading = if (collection.type == StudioCollection.Type.PAGE) contentHeading(body.compiledRoot) else null
         @Suppress("UNCHECKED_CAST")
         val frontmatter = StudioDbFrontMatter.frontMatter(yaml as Map<String, Any?>, collection, heading)
-        return StudioPipeline.render(StudioDocument(frontmatter = frontmatter, nodes = nodes))
+        return StudioPipeline.render(StudioDocument(frontmatter = frontmatter, nodes = nodes, release = release))
     }
 
     /**

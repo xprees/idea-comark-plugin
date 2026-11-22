@@ -1,5 +1,6 @@
 package cz.xprees.comark.format.studio
 
+import cz.xprees.comark.format.StudioEngine
 import cz.xprees.comark.format.studio.StudioDbPath.Outcome
 import cz.xprees.comark.format.studio.StudioDbVectors.Result
 import org.junit.Assert.assertEquals
@@ -30,14 +31,21 @@ class StudioDbPathDifferentialTest {
 
     @Test
     fun emulatesTheDatabasePath() {
+        val counts = categories(StudioDbVectors.vectors, StudioEngine.V1_8_0, System.getenv("STUDIO_DB_REPORT"))
+        assertEquals(emptyMap<String, Int>(), counts.filterKeys { "MISMATCH" in it })
+        assertEquals(EXPECTED.toSortedMap(), counts)
+    }
+
+    /** Every (vector, configuration) pair of [vectors] by category, with [release]'s emulation; a report of mismatches to [reportFile]. */
+    internal fun categories(vectors: List<StudioDbVectors.Vector>, release: StudioEngine, reportFile: String?): Map<String, Int> {
         val counts = sortedMapOf<String, Int>()
         val report = StringBuilder()
         // coverage on the documents the IDE produces (T-stable y), data configuration: (written or no document, declined)
         val coverage = sortedMapOf<String, IntArray>()
-        for (v in StudioDbVectors.vectors) {
+        for (v in vectors) {
             for (config in StudioDbVectors.CONFIGS) {
                 val c = v.byConfig.getValue(config)
-                val outcome = StudioDbPath.emulateOutcome(v.y, collection(config, c.id))
+                val outcome = StudioDbPath.emulateOutcome(v.y, collection(config, c.id), release)
                 val cat = category(c.d, outcome)
                 val key = "$config: $cat"
                 counts[key] = (counts[key] ?: 0) + 1
@@ -53,11 +61,11 @@ class StudioDbPathDifferentialTest {
                 }
             }
         }
-        System.getenv("STUDIO_DB_REPORT")?.let { File(it).writeText(counts.entries.joinToString("\n") { "${it.key}: ${it.value}" } + "\n\n" + report) }
+        reportFile?.let { File(it).writeText(counts.entries.joinToString("\n") { "${it.key}: ${it.value}" } + "\n\n" + report) }
+        println("nuxt-studio ${release.studio}:")
         println(counts.entries.joinToString("\n") { "${it.key}: ${it.value}" })
         println("T-stable y (data): " + coverage.entries.joinToString { "${it.key} ${it.value[0]} emulated, ${it.value[1]} declined" })
-        assertEquals(emptyMap<String, Int>(), counts.filterKeys { "MISMATCH" in it })
-        assertEquals(EXPECTED.toSortedMap(), counts)
+        return counts
     }
 
     private companion object {

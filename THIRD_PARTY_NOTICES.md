@@ -94,14 +94,14 @@ SOFTWARE.
 
 ## Nuxt Studio formatting style
 
-`cz.xprees.comark.format.studio` reproduces what [Nuxt Studio](https://github.com/nuxt-content/nuxt-studio) 1.8.0 writes when
-it saves a document. It contains Kotlin ports of parts of these projects (all MIT-licensed unless noted):
+`cz.xprees.comark.format.studio` reproduces what [Nuxt Studio](https://github.com/nuxt-content/nuxt-studio) 1.8.0 and 1.8.2
+write when they save a document. It contains Kotlin ports of parts of these projects (all MIT-licensed unless noted):
 
-- Nuxt Studio 1.8.0 (`utils/document/legacy.js`, `generate.js`): Copyright (c) 2025 Vercel, Inc.
-- Comark 0.7.0 (parser plugins, token processing, `renderMarkdown`, emoji table): Copyright (c) 2026 Comark team and
-  contributors.
-- markdown-exit 1.1.0-beta.2, a fork of markdown-it (block and inline parser): Copyright (c) 2014 Vitaly Puzrin, Alex
-  Kocharin; Copyright (c) 2025 SerKo.
+- Nuxt Studio 1.8.0 and 1.8.2 (`utils/document/legacy.js`, `generate.js`): Copyright (c) 2025 Vercel, Inc.
+- Comark 0.7.0 and 0.9.2 (parser plugins, token processing and tree building, heading ids, `renderMarkdown`, emoji table):
+  Copyright (c) 2026 Comark team and contributors.
+- markdown-exit 1.1.0-beta.2 and 2.1.3, a fork of markdown-it (block and inline parser): Copyright (c) 2014 Vitaly Puzrin,
+  Alex Kocharin; Copyright (c) 2025 SerKo.
 - mdurl 2 (URL parse, format, encode, decode): Copyright (c) 2015 Vitaly Puzrin, Alex Kocharin.
 - js-yaml 5.5.0 (loader and dumper): Copyright (C) 2011-2015 by Vitaly Puzrin.
 - htmlparser2 12 (tokenizer and parser): Copyright 2010, 2011, Chris Winberry.
@@ -119,6 +119,7 @@ The database-path emulation (`StudioDbPath`, `StudioDbBody`, `StudioDbFrontMatte
 - @nuxtjs/mdc 0.23.3 (`contentHeading`, `compileHast`, `validateProps`, the code handler's `parseThematicBlock`):
   Copyright (c) NuxtLabs.
 - remark-mdc 3.11.1 (attribute names, `bindData`, label and span rules): Copyright (c) NuxtLabs.
+- github-slugger 2.0.0 (the heading ids Nuxt Content stores, for 1.8.2), ISC: Copyright (c) 2015, Dan Flettre.
 - flat 6.0.1 (`unflatten`, `flatten`), BSD-3-Clause: Copyright (c) 2014, Hugh Kennedy.
 - scule 1.3.0 (`splitByCase`, `pascalCase`, `kebabCase`): Copyright (c) Pooya Parsa.
 - property-information 7.2.0 (the HTML attribute table), rehype-sort-attributes 5 (attribute order),
@@ -170,6 +171,20 @@ COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
 (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
 INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+The github-slugger license (ISC):
+
+```
+Copyright (c) 2015, Dan Flettre <fletd01@yahoo.com>
+
+Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted,
+provided that the above copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR
+CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
+NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
 ## Test tooling (not shipped)

@@ -1,5 +1,6 @@
 package cz.xprees.comark.format.studio
 
+import cz.xprees.comark.format.StudioEngine
 import cz.xprees.comark.format.studio.StudioDbPath.Reason
 import cz.xprees.comark.format.studio.StudioDbPath.UnsupportedException
 import cz.xprees.comark.format.studio.StudioRenderer.ComponentStyle
@@ -82,6 +83,7 @@ internal object StudioDbBody {
         textStyles: Map<StudioElement, ComponentStyle>,
         listTightness: List<Boolean?>,
         sortAttributes: Boolean = true,
+        release: StudioEngine = StudioEngine.V1_8_0,
     ): Body {
         Checker(textStyles).children(input, null, false)
         val styles = IdentityHashMap(textStyles)
@@ -99,10 +101,39 @@ internal object StudioDbBody {
             n.children.forEach { collect(it) }
         }
         nodes.forEach { collect(it) }
-        val converter = Converter(raw, counts, styles, listTightness, sortAttributes)
+        val converter = Converter(raw, counts, styles, listTightness, sortAttributes, release)
         val root = converter.children(nodes, normalize = false)
         if (converter.lists != listTightness.size) unsupported(Reason.LIST, "lists the text path's tokens do not match")
-        return Body(normalizeMdcChildren(root), root)
+        val body = normalizeMdcChildren(root)
+        // comark 0.7 never writes heading ids; comark 0.9 writes `{#id}` where the stored id is not the one it would generate
+        return Body(if (release >= StudioEngine.V1_8_2) withHeadingIds(body) else body, root)
+    }
+
+    /**
+     * [nodes] with the heading ids Nuxt Content stores: `@nuxtjs/mdc`'s `compileHast` gives every `h1`-`h6`, in document order,
+     * `String(id || slugs.slug(toString(node)))` with runs of `-` collapsed, `-` trimmed at both ends and `_` before a leading
+     * digit, one github-slugger ([StudioGithubSlugger]) per document. Legacy conversion keeps the id. Text-path ids are
+     * comark's, so they are replaced (an explicit `{#id}` is declined before: remark-mdc reads it as text).
+     */
+    private fun withHeadingIds(nodes: List<StudioNode>): List<StudioNode> {
+        val slugger = StudioGithubSlugger.Slugger()
+        fun text(n: StudioNode): String = when (n) {
+            is StudioText -> n.text
+            is StudioElement -> n.children.joinToString("") { text(it) }
+            is StudioComment -> ""
+        }
+        fun visit(n: StudioNode): StudioNode {
+            if (n !is StudioElement) return n
+            if (n.tag.length == 2 && n.tag[0] == 'h' && n.tag[1] in '1'..'6') {
+                val id = slugger.slug(text(n)).replace(Regex("-+"), "-").replace(Regex("^-|-$"), "").replace(Regex("^(\\d)"), "_$1")
+                val attrs = LinkedHashMap<String, Any?>()
+                attrs["id"] = id
+                for ((k, v) in n.attrs) if (k != "id") attrs[k] = v
+                return n.copy(attrs = attrs)
+            }
+            return n.copy(children = n.children.map { visit(it) })
+        }
+        return nodes.map { visit(it) }
     }
 
     /** remark-gfm's literal autolinks ([StudioDbAutolink]) in the own text of paragraphs, list items, headings and cells. */
@@ -572,6 +603,8 @@ internal object StudioDbBody {
         val styles: Map<StudioElement, ComponentStyle>,
         val tightness: List<Boolean?>,
         val sortAttributes: Boolean,
+        /** The release whose text path wrote the document (its code blocks' info strings). */
+        val release: StudioEngine,
     ) {
         /** Lists converted so far, in document order (the order of [tightness]). */
         var lists = 0
@@ -603,7 +636,7 @@ internal object StudioDbBody {
             if (node !is StudioElement) return node
             val tag = node.tag
             return when {
-                tag == "pre" -> pre(node)
+                tag == "pre" -> pre(node, release)
                 tag == "code" -> node
                 tag == "ul" || tag == "ol" -> list(node)
                 tag == "th" || tag == "td" -> StudioElement(tag, emptyMap(), children(node.children))
@@ -856,7 +889,7 @@ internal object StudioDbBody {
     // ---- code blocks ----------------------------------------------------------------------------------------------------
 
     /** A text-path `pre` as the database path gives it to the renderer. */
-    private fun pre(el: StudioElement): StudioNode {
+    private fun pre(el: StudioElement, release: StudioEngine): StudioNode {
         val a = el.attrs
         val codeEl = el.children.singleOrNull() as? StudioElement
         val code = (codeEl?.children?.singleOrNull() as? StudioText)?.text ?: if (codeEl != null && codeEl.children.isEmpty()) "" else null
@@ -866,7 +899,7 @@ internal object StudioDbBody {
         }
         if (code.isEmpty()) unsupported(Reason.CODE_BLOCK, "empty code block")
         // the info string as the renderer wrote it, read the way micromark and the code handler do
-        val rendered = StudioRenderer.renderNodes(listOf(el))
+        val rendered = StudioRenderer.renderNodes(listOf(el), null, StudioRenderer.Style.STUDIO, release)
         val firstLine = rendered.substringBefore('\n')
         val info = firstLine.trimStart(firstLine.firstOrNull() ?: '`')
         if ('\\' in info || '&' in info) unsupported(Reason.CODE_BLOCK, "info string with escapes or references")

@@ -4,12 +4,19 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.stream.JsonReader
+import cz.xprees.comark.format.StudioEngine
 import org.junit.Assert.assertEquals
 import java.io.File
 
 /** The Studio oracle's cases (`src/test/testData/studio/oracle.json`) and what the text-path differential tests share. */
 internal object StudioOracleCases {
     val cases: List<JsonObject> by lazy { load("oracle.json", "cases") }
+
+    /** The oracle recorded from nuxt-studio 1.8.2 / comark 0.9.2 (`node record-release.mjs 1.8.2 record.mjs`). */
+    val cases182: List<JsonObject> by lazy { load("1.8.2/oracle.json", "cases") }
+
+    /** The same seeded random documents recorded from nuxt-studio 1.8.2 (`node record-release.mjs 1.8.2 record-text-vectors.mjs`). */
+    val textVectors182: List<JsonObject> by lazy { load("1.8.2/text-vectors.json", "vectors") }
 
     /** `text-vectors.json`: seeded random documents built from the corpus (`record-text-vectors.mjs`). */
     val textVectors: List<JsonObject> by lazy { load("text-vectors.json", "vectors") }
@@ -63,9 +70,9 @@ internal object StudioOracleCases {
     private fun recordedFrontmatter(doc: StudioDocument): Any? = if (StudioJs.truthy(doc.frontmatterValue)) doc.frontmatterValue else emptyMap<String, Any?>()
 
     /** Compares [StudioTreeBuilder.build] of [input] with Studio's recorded tree (`null` when Studio threw). */
-    fun compareTree(input: String, tree: JsonElement?, frontmatter: JsonElement?): Verdict {
+    fun compareTree(input: String, tree: JsonElement?, frontmatter: JsonElement?, release: StudioEngine = StudioEngine.V1_8_0): Verdict {
         val actual = try {
-            StudioTreeBuilder.build(input)
+            StudioTreeBuilder.build(input, release)
         } catch (e: StudioTextPathException) {
             return if (tree == null || !tree.isJsonObject) Verdict(Outcome.BOTH_FAIL) else Verdict(Outcome.UNEXPECTED_FAILURE, e.message ?: "")
         } catch (e: StudioUnsupportedException) {
@@ -82,10 +89,10 @@ internal object StudioOracleCases {
     }
 
     /** Compares [StudioFormatter.format] of [input] with Studio's recorded output (a string, or `{"error": ...}`). */
-    fun compareText(input: String, text: JsonElement?): Verdict {
+    fun compareText(input: String, text: JsonElement?, release: StudioEngine = StudioEngine.V1_8_0): Verdict {
         val expected = text?.takeIf { it.isJsonPrimitive }?.asString
         val actual = try {
-            StudioPipeline.render(StudioTreeBuilder.build(input))
+            StudioPipeline.render(StudioTreeBuilder.build(input, release))
         } catch (e: StudioTextPathException) {
             return if (expected == null) Verdict(Outcome.BOTH_FAIL) else Verdict(Outcome.UNEXPECTED_FAILURE, e.message ?: "")
         } catch (e: StudioUnsupportedException) {
@@ -93,7 +100,7 @@ internal object StudioOracleCases {
         } catch (e: Exception) {
             return Verdict(Outcome.CRASH, "$e at ${e.stackTrace.take(3).joinToString(" < ")}")
         }
-        check(StudioFormatter.format(input) == actual)
+        check(StudioFormatter.format(input, release) == actual)
         if (expected == null) return Verdict(Outcome.MISSED_FAILURE, text.toString())
         return if (expected == actual) Verdict(Outcome.MATCH) else Verdict(Outcome.TEXT_MISMATCH, firstDifference(expected, actual))
     }

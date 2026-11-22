@@ -20,6 +20,12 @@ internal class MdStateInline(val src: String, val env: MdEnv, val tokens: Mutabl
     var backticksScanned = false
     var linkLevel = 0
 
+    /** markdown-exit 2: an HTML comment, processing instruction, declaration or CDATA section was left unterminated. */
+    var skipHtmlSpecial = false
+
+    /** comark 0.9 `attributes` plugin's `rejectedUntil` for this state: props text up to here was already rejected. */
+    var propsRejectedUntil = -1
+
     fun ch(i: Int): Int = if (i >= 0 && i < src.length) src[i].code else -1
 
     fun slice(a: Int, b: Int): String {
@@ -131,7 +137,12 @@ internal object StudioMdHelpers {
             if (code == 32) break
             if (code < 32 || code == 127) break
             if (code == 92 && pos + 1 < max) {
-                if (c(pos + 1) == 32) break
+                if (c(pos + 1) == 32) {
+                    // markdown-exit 2 keeps the backslash in the destination; the space then ends it
+                    if (!StudioParseRelease.comark09) break
+                    pos++
+                    continue
+                }
                 pos += 2
                 continue
             }
@@ -231,8 +242,19 @@ internal object StudioMdInline {
 
     private val RULES = R.values()
 
+    /**
+     * comark 0.9 drops its own `html_inline` rule (the first one in 0.7): markdown-exit 2's own `html_inline` runs in its
+     * place after autolink.
+     */
+    private val RULES_09 = arrayOf(
+        R.TEXT, R.NEWLINE, R.ESCAPE, R.BACKTICKS, R.STRIKETHROUGH, R.EMOJI, R.EMPHASIS, R.SPAN, R.LINK, R.IMAGE, R.AUTOLINK, R.HTML,
+        R.ENTITY, R.PROPS, R.COMPONENT,
+    )
+
+    private val rules: Array<R> get() = if (StudioParseRelease.comark09) RULES_09 else RULES
+
     private fun rule(r: R, s: MdStateInline, silent: Boolean): Boolean = when (r) {
-        R.HTML -> htmlInline(s, silent)
+        R.HTML -> if (StudioParseRelease.comark09) htmlInline09(s, silent) else htmlInline(s, silent)
         R.TEXT -> text(s, silent)
         R.NEWLINE -> newline(s, silent)
         R.ESCAPE -> escape(s, silent)
@@ -255,6 +277,7 @@ internal object StudioMdInline {
         linkPairs(state)
         strikethroughPostProcess(state)
         emphasisPostProcess(state)
+        if (StudioParseRelease.comark09) comarkInlinePropsUnpaired(state)
         fragmentsJoin(state)
     }
 
@@ -267,7 +290,7 @@ internal object StudioMdInline {
         }
         var ok = false
         if (state.level < MAX_NESTING) {
-            for (r in RULES) {
+            for (r in rules) {
                 state.level++
                 ok = rule(r, state, true)
                 state.level--
@@ -289,7 +312,7 @@ internal object StudioMdInline {
             val prevPos = state.pos
             var ok = false
             if (state.level < MAX_NESTING) {
-                for (r in RULES) {
+                for (r in rules) {
                     ok = rule(r, state, false)
                     if (ok) {
                         if (prevPos >= state.pos) throw StudioParseException("inline rule didn't increment state.pos")
@@ -368,6 +391,17 @@ internal object StudioMdInline {
             state.pos = pos
             return true
         }
+        if (ch1 == 32 && StudioParseRelease.comark09) {
+            // markdown-exit 2: a backslash before a space is literal and the space is left to the next rule
+            if (!silent) {
+                val token = state.push("text_special", "", 0)
+                token.content = "\\"
+                token.markup = "\\"
+                token.info = "escape"
+            }
+            state.pos = pos
+            return true
+        }
         var escapedStr = state.src[pos].toString()
         if (ch1 in 0xD800..0xDBFF && pos + 1 < max) {
             val ch2 = state.ch(pos + 1)
@@ -390,6 +424,7 @@ internal object StudioMdInline {
     private val BACKTICK_TRIM = Regex("^ ([^\\n\\r\\u2028\\u2029]+) \\z")
 
     private fun backtick(state: MdStateInline, silent: Boolean): Boolean {
+        if (StudioParseRelease.comark09) return backtick09(state, silent)
         var pos = state.pos
         val src = state.src
         if (state.ch(pos) != 96) return false
@@ -426,6 +461,55 @@ internal object StudioMdInline {
         state.backticksScanned = true
         if (!silent) state.pending.append(marker)
         state.pos += openerLength
+        return true
+    }
+
+    /** markdown-exit 2's `backticks`: the last run of each length is found up front, and a run never reaches past `posMax`. */
+    private fun backtick09(state: MdStateInline, silent: Boolean): Boolean {
+        val start = state.pos
+        val src = state.src
+        if (state.ch(start) != 96) return false
+        val max = state.posMax
+        var pos = start + 1
+        while (pos < max && state.ch(pos) == 96) pos++
+        val marker = state.slice(start, pos)
+        val openerLength = marker.length
+        if (!state.backticksScanned) {
+            state.backticks.clear()
+            var p = 0
+            while (true) {
+                p = src.indexOf('`', p)
+                if (p == -1) break
+                val runStart = p
+                p++
+                while (state.ch(p) == 96) p++
+                state.backticks[p - runStart] = runStart
+            }
+            state.backticksScanned = true
+        }
+        if ((state.backticks[openerLength] ?: -1) >= pos) {
+            var matchEnd = pos
+            while (true) {
+                val matchStart = src.indexOf('`', matchEnd)
+                if (matchStart == -1 || matchStart >= max) break
+                matchEnd = matchStart + 1
+                while (state.ch(matchEnd) == 96) matchEnd++
+                if (matchEnd > max) break
+                if (matchEnd - matchStart == openerLength) {
+                    if (!silent) {
+                        val token = state.push("code_inline", "code", 0)
+                        token.markup = marker
+                        var content = state.slice(pos, matchStart).replace('\n', ' ')
+                        if (content.startsWith(" ") && content.endsWith(" ") && content.any { it != ' ' }) content = content.substring(1, content.length - 1)
+                        token.content = content
+                    }
+                    state.pos = matchEnd
+                    return true
+                }
+            }
+        }
+        if (!silent) state.pending.append(marker)
+        state.pos = pos
         return true
     }
 
@@ -634,7 +718,7 @@ internal object StudioMdInline {
         } else {
             val m = NAMED_RE.find(rest)
             if (m != null) {
-                val decoded = StudioEntities.decodeHtmlStrict(m.value)
+                val decoded = if (StudioParseRelease.comark09) StudioEntities.named[m.groupValues[1]] ?: m.value else StudioEntities.decodeHtmlStrict(m.value)
                 if (decoded != m.value) {
                     if (!silent) {
                         val token = state.push("text_special", "", 0)
@@ -918,6 +1002,66 @@ internal object StudioMdInline {
         return true
     }
 
+    private val OPEN_CLOSE_AT = java.util.regex.Pattern.compile("(?:$OPEN_TAG|$CLOSE_TAG)")
+
+    /** markdown-exit 2's `scanSpecial`: the end of the comment, processing instruction, declaration or CDATA at [pos], or -1. */
+    private fun scanSpecial(state: MdStateInline, pos: Int): Int {
+        val src = state.src
+        val start: Int
+        val terminator: String
+        if (src.startsWith("<!--", pos)) {
+            if (src.startsWith(">", pos + 4)) return pos + 5
+            if (src.startsWith("->", pos + 4)) return pos + 6
+            start = pos + 4
+            terminator = "-->"
+        } else if (src.startsWith("<![CDATA[", pos)) {
+            start = pos + 9
+            terminator = "]]>"
+        } else if (state.ch(pos + 1) == 63) {
+            start = pos + 2
+            terminator = "?>"
+        } else if ((state.ch(pos + 2) or 0x20) in 0x61..0x7a) {
+            start = pos + 3
+            terminator = ">"
+        } else {
+            return -1
+        }
+        if (state.skipHtmlSpecial) return -1
+        val end = if (start > src.length) -1 else src.indexOf(terminator, start)
+        if (end < 0) {
+            state.skipHtmlSpecial = true
+            return -1
+        }
+        return end + terminator.length
+    }
+
+    /** markdown-exit 2's `html_inline` (comark 0.9 keeps markdown-it's own rule) */
+    private fun htmlInline09(state: MdStateInline, silent: Boolean): Boolean {
+        val max = state.posMax
+        val pos = state.pos
+        if (state.ch(pos) != 0x3c || pos + 2 >= max) return false
+        val ch = state.ch(pos + 1)
+        val end: Int
+        if (ch == 0x21 || ch == 0x3f) {
+            end = scanSpecial(state, pos)
+        } else if (ch == 0x2f || (ch or 0x20) in 0x61..0x7a) {
+            val m = OPEN_CLOSE_AT.matcher(state.src)
+            m.region(pos, state.src.length)
+            end = if (m.lookingAt()) m.end() else -1
+        } else {
+            return false
+        }
+        if (end < 0) return false
+        if (!silent) {
+            val token = state.push("html_inline", "", 0)
+            token.content = state.src.substring(pos, end)
+            if (LINK_OPEN.containsMatchIn(token.content)) state.linkLevel++
+            if (LINK_CLOSE.containsMatchIn(token.content)) state.linkLevel--
+        }
+        state.pos = end
+        return true
+    }
+
     // ---- comark ---------------------------------------------------------------------------------------------------------
 
     private val emojiMap: Map<String, String> by lazy {
@@ -970,7 +1114,8 @@ internal object StudioMdInline {
         if (nextChar == 0x28 || nextChar == 0x5b) return false
         if (state.linkLevel > 0 && nextChar != 0x7b) return false
         if (silent) return false
-        state.push("mdc_inline_span", "span", 1)
+        val comark09 = StudioParseRelease.comark09
+        state.push(if (comark09) "mdc_inline_span_open" else "mdc_inline_span", "span", 1)
         val oldPos = state.pos
         val oldPosMax = state.posMax
         state.pos = start + 1
@@ -978,12 +1123,13 @@ internal object StudioMdInline {
         tokenize(state)
         state.pos = oldPos
         state.posMax = oldPosMax
-        state.push("mdc_inline_span", "span", -1)
+        state.push(if (comark09) "mdc_inline_span_close" else "mdc_inline_span", "span", -1)
         state.pos = index + 1
         return true
     }
 
     private val ALLOWED_PREV_CHARS = setOf(' ', '\t', '\n', '*', '_', '[')
+    private val ALLOWED_PREV_CHARS_09 = setOf(' ', '\t', '\n', '*', '_', '[', ']', '}', ')', '>')
 
     private fun isNameChar(c: Char) = c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c == '_' || c == '$' || c == '-'
 
@@ -991,7 +1137,8 @@ internal object StudioMdInline {
     private fun comarkInlineComponent(state: MdStateInline, silent: Boolean): Boolean {
         val start = state.pos
         if (state.ch(start) != 0x3a) return false
-        if (start > 0 && state.src[start - 1] !in ALLOWED_PREV_CHARS) return false
+        val comark09 = StudioParseRelease.comark09
+        if (start > 0 && state.src[start - 1] !in (if (comark09) ALLOWED_PREV_CHARS_09 else ALLOWED_PREV_CHARS)) return false
         var index = start + 1
         var nameEnd = -1
         var contentStart = -1
@@ -1018,7 +1165,7 @@ internal object StudioMdInline {
         state.pos = index
         if (silent) return true
         if (contentStart != -1) {
-            state.push("mdc_inline_component", name, 1)
+            state.push(if (comark09) "mdc_inline_component_open" else "mdc_inline_component", name, 1)
             val oldPos = state.pos
             val oldPosMax = state.posMax
             state.pos = contentStart
@@ -1026,15 +1173,87 @@ internal object StudioMdInline {
             tokenize(state)
             state.pos = oldPos
             state.posMax = oldPosMax
-            state.push("mdc_inline_component", name, -1)
+            state.push(if (comark09) "mdc_inline_component_close" else "mdc_inline_component", name, -1)
         } else {
             state.push("mdc_inline_component", name, 0)
         }
         return true
     }
 
+    private val TEXT_TOKENS = setOf("text", "text_special", "softbreak", "hardbreak")
+
+    /**
+     * comark 0.9's `comark_inline_props`: after text (not right after a closing delimiter), props only apply at the end of a
+     * line; elsewhere the `{...}` stays text.
+     */
+    private fun comarkInlineProps09(state: MdStateInline, silent: Boolean): Boolean {
+        val start = state.pos
+        if (state.ch(start) != 0x7b) return false
+        if (state.ch(start + 1) == 0x7b || state.ch(start - 1) == 0x7b || state.ch(start - 1) == 0x24) return false
+        val last = state.tokens.lastOrNull()
+        val afterText = state.pending.isNotEmpty() || last == null || last.type in TEXT_TOKENS
+        val lastDelimiter = state.delimiters.lastOrNull()
+        val restoring = state.env.propsRestoring
+        val afterCloser = !restoring && state.pending.isEmpty() && lastDelimiter?.close == true && lastDelimiter.token == state.tokens.size - 1
+        if (afterText && !afterCloser && start < state.propsRejectedUntil) return false
+        val search = StudioComarkSyntax.searchProps(state.src, start, comark09 = true) ?: return false
+        val end = search.end
+        if (end == start) return false
+        if (afterText && !afterCloser) {
+            var searchEnd = end
+            while (state.ch(searchEnd) == 0x20 || state.ch(searchEnd) == 0x09) searchEnd++
+            if (restoring || (state.ch(searchEnd) != 0x0a && searchEnd < state.src.length)) {
+                state.propsRejectedUntil = end
+                return false
+            }
+        }
+        state.pos = end
+        if (silent) return true
+        val token = state.push("mdc_inline_props", "span", 0)
+        token.attrs = search.props.map { MdAttr(it.first, it.second) }.toMutableList()
+        token.hidden = true
+        token.unclosedProps = !search.closed
+        token.malformedProps = search.malformed
+        if (afterText && afterCloser) {
+            token.content = state.slice(start, end)
+            token.afterDelimiter = true
+        }
+        return true
+    }
+
+    /** comark 0.9's `comark_inline_props_unpaired` (before `fragments_join`): props after a closer that still follows text are text. */
+    private fun comarkInlinePropsUnpaired(state: MdStateInline) {
+        val tokens = state.tokens
+        var i = 1
+        while (i < tokens.size) {
+            val token = tokens[i]
+            if (token.type != "mdc_inline_props" || !token.afterDelimiter) {
+                i++
+                continue
+            }
+            val prev = tokens[i - 1]
+            if (prev.type != "text" || prev.content.isEmpty()) {
+                i++
+                continue
+            }
+            val children = ArrayList<MdToken>()
+            val wasRestoring = state.env.propsRestoring
+            state.env.propsRestoring = true
+            try {
+                parse(token.content, state.env, children)
+            } finally {
+                state.env.propsRestoring = wasRestoring
+            }
+            tokens.removeAt(i)
+            tokens.addAll(i, children)
+            i += children.size - 1
+            i++
+        }
+    }
+
     /** comark `comark_inline_props` (`plugins/attributes.js`) */
     private fun comarkInlineProps(state: MdStateInline, silent: Boolean): Boolean {
+        if (StudioParseRelease.comark09) return comarkInlineProps09(state, silent)
         val start = state.pos
         if (state.ch(start) != 0x7b) return false
         if (state.ch(start + 1) == 0x7b || state.ch(start - 1) == 0x7b || state.ch(start - 1) == 0x24) return false

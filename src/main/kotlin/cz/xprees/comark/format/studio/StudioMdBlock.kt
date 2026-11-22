@@ -29,6 +29,9 @@ internal class MdToken(var type: String, var tag: String, var nesting: Int) {
     /** For a token with Comark props: the props text lost characters when it was read ([StudioComarkSyntax.PropsSearch.malformed]). */
     var malformedProps = false
 
+    /** comark 0.9: an `mdc_inline_props` token right after a closing emphasis delimiter, which `token.meta.afterDelimiter` marks. */
+    var afterDelimiter = false
+
     fun attrIndex(name: String): Int = attrs?.indexOfFirst { it.name == name } ?: -1
 
     fun attrPush(attr: MdAttr) {
@@ -69,6 +72,15 @@ internal class MdEnv {
 
     /** Not comark: with [lenientPropsYaml], the lines of the opening `---` of props blocks whose YAML has a comment. */
     val propsYamlComments = ArrayList<Int>()
+
+    /**
+     * Not comark: the `reference_definition` tokens markdown-exit 2 strips after the block parse, so that
+     * [StudioTreeBuilder.buildSegmented] can tell which lines a definition took.
+     */
+    val strippedReferenceDefinitions = ArrayList<MdToken>()
+
+    /** comark 0.9 `attributes` plugin's `restoring`: an unpaired props text is being parsed again as plain inline content. */
+    var propsRestoring = false
 }
 
 /** Thrown where comark (or markdown-exit) itself throws during the parse; Studio's text path then fails. */
@@ -229,6 +241,10 @@ internal object StudioMdBlock {
     private val TERM_LIST = listOf(R.COMARK_BLOCK, R.FENCE, R.BLOCKQUOTE, R.HR)
     private val TERM_REFERENCE = TERM_PARAGRAPH
 
+    /** comark 0.9 lets a slot (`#name`) interrupt a paragraph (`alt: ['paragraph']`). */
+    private val TERM_PARAGRAPH_09 = listOf(R.TABLE, R.SLOTS, R.COMARK_BLOCK, R.FENCE, R.BLOCKQUOTE, R.HR, R.LIST, R.HTML_BLOCK, R.HEADING)
+    private val termParagraph: List<R> get() = if (StudioParseRelease.comark09) TERM_PARAGRAPH_09 else TERM_PARAGRAPH
+
     private fun rule(r: R, s: MdStateBlock, start: Int, end: Int, silent: Boolean): Boolean = when (r) {
         R.TABLE -> table(s, start, end, silent)
         R.CODE -> code(s, start, end)
@@ -240,8 +256,8 @@ internal object StudioMdBlock {
         R.BLOCKQUOTE -> blockquote(s, start, end, silent)
         R.HR -> hr(s, start, silent)
         R.LIST -> list(s, start, end, silent)
-        R.REFERENCE -> reference(s, start, silent)
-        R.HTML_BLOCK -> htmlBlock(s, start, end, silent)
+        R.REFERENCE -> if (StudioParseRelease.comark09) reference09(s, start, silent) else reference(s, start, silent)
+        R.HTML_BLOCK -> if (StudioParseRelease.comark09) htmlBlock09(s, start, end, silent) else htmlBlock(s, start, end, silent)
         R.HEADING -> heading(s, start, silent)
         R.LHEADING -> lheading(s, start, end)
         R.PARAGRAPH -> paragraph(s, start, end)
@@ -531,19 +547,51 @@ internal object StudioMdBlock {
         HtmlSequence(Regex("^(?:$OPEN_TAG|$CLOSE_TAG)$JS_S*\\z"), Regex("^\\z"), false),
     )
 
+    /** markdown-exit 2's own `html_block` sequences (a declaration may start with a lower-case letter). */
+    private val HTML_SEQUENCES_09 = HTML_SEQUENCES.mapIndexed { i, seq ->
+        if (i == 3) HtmlSequence(Regex("^<![a-z]", RegexOption.IGNORE_CASE), seq.close, seq.canTerminate) else seq
+    }
+
+    private val RAW_HTML_TAGS = setOf("style", "pre", "script", "textarea")
+
+    /** comark 0.9 `plugins/html.js` `isRawTagBlock`: an opening `<style`, `<pre`, `<script` or `<textarea` tag at [pos]. */
+    private fun isRawTagBlock(src: String, pos: Int): Boolean {
+        if (pos >= src.length || src[pos] != '<') return false
+        var i = pos + 1
+        if (i < src.length && src[i] == '/') return false
+        val start = i
+        while (i < src.length && (src[i] in 'a'..'z' || src[i] in 'A'..'Z')) i++
+        if (i == start) return false
+        if (src.substring(start, i).lowercase(java.util.Locale.ROOT) !in RAW_HTML_TAGS) return false
+        return i >= src.length || src[i] == '>' || src[i] == '/' || src[i].code <= 0x20
+    }
+
+    /**
+     * comark 0.9's wrapped `html_block`: markdown-exit 2's rule, but only for raw-text tags, and for comments when not merely
+     * checking whether a paragraph ends there; other HTML is inline content of a paragraph.
+     */
+    private fun htmlBlock09(state: MdStateBlock, startLine: Int, endLine: Int, silent: Boolean): Boolean {
+        val pos = state.bMarks[startLine] + state.tShift[startLine]
+        if (isRawTagBlock(state.src, pos)) return htmlBlock(state, startLine, endLine, silent, HTML_SEQUENCES_09)
+        if (!silent && state.src.startsWith("<!--", pos)) return htmlBlock(state, startLine, endLine, silent, HTML_SEQUENCES_09)
+        return false
+    }
+
     /** comark `html_block` (`internal/parse/html/html_block_rule.js`) */
-    private fun htmlBlock(state: MdStateBlock, startLine: Int, endLine: Int, silent: Boolean): Boolean {
+    private fun htmlBlock(state: MdStateBlock, startLine: Int, endLine: Int, silent: Boolean, sequences: List<HtmlSequence> = HTML_SEQUENCES): Boolean {
         var pos = state.bMarks[startLine] + state.tShift[startLine]
         var max = state.eMarks[startLine]
         if (state.sCount[startLine] - state.blkIndent >= 4) return false
         if (state.ch(pos) != 0x3c) return false
         var lineText = state.slice(pos, max)
-        val seq = HTML_SEQUENCES.firstOrNull { it.open.containsMatchIn(lineText) } ?: return false
+        val seq = sequences.firstOrNull { it.open.containsMatchIn(lineText) } ?: return false
         if (silent) return seq.canTerminate
         var nextLine = startLine + 1
+        // markdown-exit 2: a blank line indented less than the block does not end a block that ends on its closing marker
+        val endsOnBlankLine = sequences === HTML_SEQUENCES || seq.close.containsMatchIn("")
         if (!seq.close.containsMatchIn(lineText)) {
             while (nextLine < endLine) {
-                if (state.sCount[nextLine] < state.blkIndent) break
+                if (state.sCount[nextLine] < state.blkIndent && (endsOnBlankLine || !state.isEmpty(nextLine))) break
                 pos = state.bMarks[nextLine] + state.tShift[nextLine]
                 max = state.eMarks[nextLine]
                 lineText = state.slice(pos, max)
@@ -592,7 +640,7 @@ internal object StudioMdBlock {
                 nextLine++
                 continue
             }
-            if (terminates(TERM_PARAGRAPH, state, nextLine, endLine)) break
+            if (terminates(termParagraph, state, nextLine, endLine)) break
             nextLine++
         }
         if (level == 0 || marker == -1) {
@@ -792,7 +840,7 @@ internal object StudioMdBlock {
                 nextLine++
                 continue
             }
-            if (terminates(TERM_PARAGRAPH, state, nextLine, endLine)) break
+            if (terminates(termParagraph, state, nextLine, endLine)) break
             nextLine++
         }
         val content = StudioMdUtil.asciiTrim(state.getLines(startLine, nextLine, state.blkIndent, false))
@@ -951,6 +999,146 @@ internal object StudioMdBlock {
         return true
     }
 
+    private const val MAX_LABEL_LENGTH = 999
+
+    private fun countCodePoints(str: String): Int = str.codePointCount(0, str.length)
+
+    private fun lineEnd(state: MdStateBlock, line: Int): Int = minOf(state.eMarks[line] + 1, state.src.length)
+
+    private fun getNextLinePos(state: MdStateBlock, nextLine: Int): Int {
+        val endLine = state.lineMax
+        if (nextLine >= endLine || state.isEmpty(nextLine)) return -1
+        var isContinuation = false
+        if (state.sCount[nextLine] - state.blkIndent > 3) isContinuation = true
+        if (state.sCount[nextLine] < 0) isContinuation = true
+        if (!isContinuation) {
+            val oldParentType = state.parentType
+            state.parentType = "reference"
+            val terminate = terminates(TERM_REFERENCE, state, nextLine, endLine)
+            state.parentType = oldParentType
+            if (terminate) return -1
+        }
+        return state.bMarks[nextLine] + state.tShift[nextLine]
+    }
+
+    /** markdown-exit 2's `reference`: scans the source in place, bounds the label, and pushes a hidden `reference_definition`. */
+    private fun reference09(state: MdStateBlock, startLine: Int, silent: Boolean): Boolean {
+        val src = state.src
+        var pos = state.bMarks[startLine] + state.tShift[startLine]
+        var nextLine = startLine + 1
+        if (state.sCount[startLine] - state.blkIndent >= 4) return false
+        if (state.ch(pos) != 91) return false
+        var max = lineEnd(state, startLine)
+        val rawLabel = StringBuilder()
+        var labelEnd = -1
+        var segmentStart = ++pos
+        while (pos < max) {
+            if (rawLabel.length + pos - segmentStart > MAX_LABEL_LENGTH * 2) return false
+            var ch = state.ch(pos)
+            if (ch == 91) return false
+            if (ch == 93) {
+                labelEnd = pos
+                break
+            }
+            if (ch == 92) ch = state.ch(++pos)
+            if (ch == 10 && pos < max) {
+                val nextPos = getNextLinePos(state, nextLine)
+                if (nextPos < 0) return false
+                rawLabel.append(state.slice(segmentStart, max))
+                pos = nextPos
+                segmentStart = nextPos
+                max = lineEnd(state, nextLine++)
+                continue
+            }
+            pos++
+        }
+        if (labelEnd < 0 || state.ch(labelEnd + 1) != 58) return false
+        rawLabel.append(state.slice(segmentStart, labelEnd))
+        if (rawLabel.length > MAX_LABEL_LENGTH && countCodePoints(rawLabel.toString()) > MAX_LABEL_LENGTH) return false
+        pos = labelEnd + 2
+        while (pos < max) {
+            val ch = state.ch(pos)
+            if (ch == 10) {
+                val nextPos = getNextLinePos(state, nextLine)
+                if (nextPos < 0) break
+                pos = nextPos
+                max = lineEnd(state, nextLine++)
+            } else if (isSpace(ch)) {
+                pos++
+            } else {
+                break
+            }
+        }
+        val destRes = StudioMdHelpers.parseLinkDestination(src, pos, max)
+        if (!destRes.ok) return false
+        val href = StudioMdUtil.normalizeLink(destRes.str)
+        if (!StudioMdUtil.validateLink(href)) return false
+        pos = destRes.pos
+        val destEndPos = pos
+        val destEndMax = max
+        val destEndLineNo = nextLine
+        while (pos < max) {
+            val ch = state.ch(pos)
+            if (ch == 10) {
+                val nextPos = getNextLinePos(state, nextLine)
+                if (nextPos < 0) break
+                pos = nextPos
+                max = lineEnd(state, nextLine++)
+            } else if (isSpace(ch)) {
+                pos++
+            } else {
+                break
+            }
+        }
+        val titleStart = pos
+        var titleRes = StudioMdHelpers.parseLinkTitle(src, pos, max, null)
+        while (titleRes.canContinue) {
+            val nextPos = getNextLinePos(state, nextLine)
+            if (nextPos < 0) break
+            pos = nextPos
+            max = lineEnd(state, nextLine++)
+            titleRes = StudioMdHelpers.parseLinkTitle(src, pos, max, titleRes)
+        }
+        var title: String
+        if (titleStart != destEndPos && titleRes.ok) {
+            title = titleRes.str
+            pos = titleRes.pos
+        } else {
+            title = ""
+            pos = destEndPos
+            max = destEndMax
+            nextLine = destEndLineNo
+        }
+        while (pos < max) {
+            if (!isSpace(state.ch(pos))) break
+            pos++
+        }
+        if (pos < max && state.ch(pos) != 10) {
+            if (title.isNotEmpty()) {
+                title = ""
+                pos = destEndPos
+                max = destEndMax
+                nextLine = destEndLineNo
+                while (pos < max) {
+                    if (!isSpace(state.ch(pos))) break
+                    pos++
+                }
+            }
+        }
+        if (pos < max && state.ch(pos) != 10) return false
+        val label = StudioMdUtil.normalizeReference(rawLabel.toString())
+        if (label.isEmpty()) return false
+        if (silent) return true
+        val refs = state.env.references ?: HashMap<String, MdReference>().also { state.env.references = it }
+        if (!refs.containsKey(label)) refs[label] = MdReference(href, title)
+        state.line = nextLine
+        val token = state.push("reference_definition", "", 0)
+        token.map = intArrayOf(startLine, state.line)
+        token.hidden = true
+        token.info = label
+        return true
+    }
+
     private fun tableLine(state: MdStateBlock, line: Int): String = state.slice(state.bMarks[line] + state.tShift[line], state.eMarks[line])
 
     private fun escapedSplit(str: String): MutableList<String> {
@@ -1105,15 +1293,16 @@ internal object StudioMdBlock {
         if (line.isEmpty() || line[0] != ':' || !isValidComponentName(line.substring(1))) return false
         val params = StudioComarkSyntax.parseBlockParams(line.substring(1))
         if (params.remaining != null) return false
+        val comark09 = StudioParseRelease.comark09
         if (!silent) {
             if (params.content != null) {
-                val open = state.push("mdc_block_shorthand", params.name, 1)
+                val open = state.push(if (comark09) "mdc_block_shorthand_open" else "mdc_block_shorthand", params.name, 1)
                 applyProps(open, params)
                 open.map = intArrayOf(startLine, startLine + 1)
                 val inline = state.push("inline", "", 0)
                 inline.content = params.content
                 inline.children = ArrayList()
-                state.push("mdc_block_shorthand", params.name, -1).map = intArrayOf(startLine, startLine + 1)
+                state.push(if (comark09) "mdc_block_shorthand_close" else "mdc_block_shorthand", params.name, -1).map = intArrayOf(startLine, startLine + 1)
             } else {
                 val token = state.push("mdc_block_shorthand", params.name, 0)
                 token.map = intArrayOf(startLine, startLine + 1)
@@ -1360,7 +1549,13 @@ internal object StudioMdBlock {
         val start = state.bMarks[startLine] + state.tShift[startLine]
         if (!(state.ch(start) == 35 && state.ch(start + 1) != 32 && state.ch(start + 1) != 35)) return false
         val line = state.slice(start, state.eMarks[startLine])
+        val comark09 = StudioParseRelease.comark09
+        if (comark09 && !isValidComponentName(StudioJs.trimStart(line.substring(1)))) return false
         val params = StudioComarkSyntax.parseBlockParams(line.substring(1))
+        if (comark09) {
+            if (params.remaining != null) return false
+            if (silent) return true
+        }
         var lineEnd = startLine + 1
         var inCodeFence = false
         var codeFenceChar = ' '
@@ -1396,13 +1591,13 @@ internal object StudioMdBlock {
             return true
         }
         val oldLineMax = state.lineMax
-        val slot = state.push("mdc_block_slot", "template", 1)
-        slot.attrSet("#${params.name}", "")
+        val slot = state.push(if (comark09) "mdc_block_slot_open" else "mdc_block_slot", "template", 1)
+        if (comark09) slot.attrSet("name", params.name) else slot.attrSet("#${params.name}", "")
         applyProps(slot, params)
         state.line = startLine + 1
         state.lineMax = lineEnd
         tokenize(state, startLine + 1, lineEnd)
-        state.push("mdc_block_slot", "template", -1)
+        state.push(if (comark09) "mdc_block_slot_close" else "mdc_block_slot", "template", -1)
         state.line = lineEnd
         state.lineMax = oldLineMax
         return true

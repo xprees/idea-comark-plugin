@@ -54,6 +54,8 @@ internal object StudioMdUtil {
             if (isValidEntityCode(code)) return fromCodePoint(code.toInt())
             return match
         }
+        // markdown-exit 2 looks the name up in character-entities; 1 decoded the match with entities' legacy decoder
+        if (StudioParseRelease.comark09) return StudioEntities.named[name] ?: match
         val decoded = StudioEntities.decodeHtml(match)
         return if (decoded != match) decoded else match
     }
@@ -114,6 +116,15 @@ internal object StudioMdUtil {
                 } catch (_: Exception) {
                 }
             }
+        }
+        if (StudioParseRelease.comark09) {
+            // markdown-exit 2: each part is encoded on its own
+            if (!parsed.auth.isNullOrEmpty()) parsed.auth = encode(parsed.auth!!)
+            if (!parsed.hostname.isNullOrEmpty()) parsed.hostname = encode(parsed.hostname!!)
+            if (!parsed.pathname.isNullOrEmpty()) parsed.pathname = encode(parsed.pathname!!)
+            if (!parsed.search.isNullOrEmpty()) parsed.search = encode(parsed.search!!)
+            if (!parsed.hash.isNullOrEmpty()) parsed.hash = encode(parsed.hash!!)
+            return parsed.format()
         }
         return encode(parsed.format())
     }
@@ -505,6 +516,27 @@ internal object StudioMdUtil {
 
         fun toUnicode(domain: String): String = mapDomain(domain) { s ->
             if (s.startsWith("xn--")) decode(s.substring(4).lowercase(java.util.Locale.ROOT)) else s
+        }
+    }
+}
+
+/**
+ * The comark release the current parse reproduces: comark 0.7 (nuxt-studio 1.8.0) or, when [comark09] is set, comark 0.9
+ * with markdown-exit 2 (nuxt-studio 1.8.2). A thread-local because the markdown-it rules and helpers it changes are
+ * reached from everywhere without a parse state; [StudioTreeBuilder] sets it for the duration of one parse.
+ */
+internal object StudioParseRelease {
+    private val current: ThreadLocal<Boolean> = ThreadLocal.withInitial { false }
+
+    val comark09: Boolean get() = current.get()
+
+    fun <T> with(comark09: Boolean, block: () -> T): T {
+        val previous = current.get()
+        current.set(comark09)
+        try {
+            return block()
+        } finally {
+            current.set(previous)
         }
     }
 }

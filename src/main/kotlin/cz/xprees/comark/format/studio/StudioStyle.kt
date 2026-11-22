@@ -1,6 +1,7 @@
 package cz.xprees.comark.format.studio
 
 import cz.xprees.comark.format.JsText
+import cz.xprees.comark.format.StudioEngine
 import cz.xprees.comark.format.studio.StudioSafety.AnalyzedBlock
 
 /** What [StudioStyle] does with the front matter. */
@@ -45,6 +46,8 @@ enum class StudioFrontMatterMode {
  * @property sortProps whether props are written in the order Studio's database path gives them (rehype-sort-attributes:
  *   by how often each name occurs on the same tag in the document). `false` keeps the order of the source.
  * @property frontMatter the front matter handling (Studio: [StudioFrontMatterMode.STUDIO_RULES])
+ * @property release the nuxt-studio release whose save paths the style reproduces: its comark parses and renders every
+ *   document, block and probe the formatter looks at
  */
 data class StudioStyleOptions(
     val collection: StudioCollection? = null,
@@ -57,6 +60,7 @@ data class StudioStyleOptions(
     val propsBlockThreshold: Int = STUDIO_PROPS_BLOCK_THRESHOLD,
     val sortProps: Boolean = true,
     val frontMatter: StudioFrontMatterMode = StudioFrontMatterMode.STUDIO_RULES,
+    val release: StudioEngine = StudioEngine.V1_8_0,
 ) {
     init {
         require(indentSize in 0..8) { "indentSize must be 0..8: $indentSize" }
@@ -310,7 +314,7 @@ object StudioStyle {
         if (crlf) input = input.replace(Regex("\r\n?"), "\n")
         val collection = options.effectiveCollection
 
-        val cache = Memo()
+        val cache = Memo(options.release)
         val passes = ArrayList<Pass>()
         var current = pass(input, options, collection, cache, keepLines) ?: return null
         passes += current
@@ -348,20 +352,24 @@ object StudioStyle {
         val text: String get() = assembled.text
     }
 
-    /** What one [format] call computes more than once: its passes see the same blocks and documents again. */
-    private class Memo {
+    /**
+     * What one [format] call computes more than once: its passes see the same blocks and documents again. One call formats
+     * for one [release], so the memo is keyed by text alone.
+     */
+    private class Memo(val release: StudioEngine) {
         val safety = StudioSafety.Cache()
         private val emulations = HashMap<Triple<String, StudioCollection, Boolean>, StudioDbPath.Outcome>()
         private val segmentations = HashMap<String, StudioSegmentedDocument?>()
 
         fun emulate(text: String, collection: StudioCollection, sortProps: Boolean): StudioDbPath.Outcome =
-            emulations.getOrPut(Triple(text, collection, sortProps)) { StudioDbPath.emulateOutcome(text, collection, sortProps) }
+            emulations.getOrPut(Triple(text, collection, sortProps)) { StudioDbPath.emulateOutcome(text, collection, sortProps, release) }
 
-        fun segmented(text: String): StudioSegmentedDocument? = segmentations.getOrPut(text) { StudioStyle.segmented(text) }
+        fun segmented(text: String): StudioSegmentedDocument? = segmentations.getOrPut(text) { StudioStyle.segmented(text, release) }
     }
 
     private fun pass(text: String, options: StudioStyleOptions, collection: StudioCollection, cache: Memo, keepLines: Set<Int>): Pass? {
-        val state = StudioFormatter.preservingState(text, cache.safety, keepLines) ?: return null
+        val release = options.release
+        val state = StudioFormatter.preservingState(text, release, cache.safety, keepLines) ?: return null
         val blocks = state.blocks.toMutableList()
         val fmIndex = blocks.indexOfFirst { it.block.kind == StudioBlockKind.FRONTMATTER }
         val fm = blocks.getOrNull(fmIndex)
@@ -370,7 +378,7 @@ object StudioStyle {
         // `{{ expr }}` is text to comark and a binding component to Nuxt Content: the database path writes :binding{value="expr"}
         for (i in blocks.indices) {
             val b = blocks[i]
-            if (b.block.kind != StudioBlockKind.BLOCK || b.block.kept || b.rendered == null || !hasBinding(b.rendered)) continue
+            if (b.block.kind != StudioBlockKind.BLOCK || b.block.kept || b.rendered == null || !hasBinding(b.rendered, release)) continue
             blocks[i] = AnalyzedBlock(b.block.copy(reasons = b.block.reasons + StudioRewriteReason.DB_PATH_REWRITE), b.rendered)
             dbRewrites[i] = StudioDbRewrite.TEXT
         }
@@ -399,6 +407,11 @@ object StudioStyle {
                         cache.segmented(it.text)?.segments?.takeIf { s -> s.size == db.used.size }
                     }
                 }
+                // D's blocks as T writes them, rendered together (comark 0.9's heading ids count earlier blocks)
+                val dWritten by lazy {
+                    StudioRenderer.renderEach(dSegments.map { it.nodes }, null, StudioRenderer.Style.STUDIO, release)
+                        .map { StudioPostProcess.padBlankLinesInComponents(StudioJs.trim(it!!)) }
+                }
                 for ((i, candidate) in db.used.withIndex()) {
                     val index = candidates[candidate]
                     val s = sSegments[i]
@@ -416,7 +429,7 @@ object StudioStyle {
                         unverified += index
                         continue
                     }
-                    val textPathKeeps = StudioPostProcess.padBlankLinesInComponents(StudioJs.trim(StudioRenderer.renderNodes(d.nodes))) == d.source
+                    val textPathKeeps = dWritten[i] == d.source
                     val dbPathKeeps = again?.let { it[i].source == d.source } ?: isolatedDbFixedPoint(d.source, options.sortProps, cache)
                     if (textPathKeeps && dbPathKeeps) {
                         blocks[index] = AnalyzedBlock(block.block.copy(studioOutput = d.source), d.source + "\n\n")
@@ -451,13 +464,13 @@ object StudioStyle {
                         null
                     } else {
                         val probe = blocks.toMutableList<AnalyzedBlock>()
-                        var probeText = StudioFormatter.assemble(probe)
+                        var probeText = StudioFormatter.assemble(probe, release)
                         repeat(3) {
                             val culprit = StudioFormatter.frontMatterCulprit(probe, probeText) ?: return@repeat
                             probe[culprit] = AnalyzedBlock(probe[culprit].block.copy(reasons = probe[culprit].block.reasons + StudioRewriteReason.LEADING_THEMATIC_BREAK), probe[culprit].rendered)
-                            probeText = StudioFormatter.assemble(probe)
+                            probeText = StudioFormatter.assemble(probe, release)
                         }
-                        approximateFrontMatter(probeText.text, collection)
+                        approximateFrontMatter(probeText.text, collection, release)
                     }
                     val (data, status) = when {
                         dbResult.noDocument -> null to StudioFrontMatterStatus.NO_STUDIO_DOCUMENT
@@ -493,14 +506,14 @@ object StudioStyle {
                 }
             }
         }
-        var assembled = StudioFormatter.assemble(all)
+        var assembled = StudioFormatter.assemble(all, release)
         repeat(3) {
             val culprit = StudioFormatter.frontMatterCulprit(all, assembled) ?: return@repeat
             val b = all[culprit]
             all[culprit] = AnalyzedBlock(b.block.copy(reasons = b.block.reasons + StudioRewriteReason.LEADING_THEMATIC_BREAK), b.rendered)
             unverified -= culprit - shift
             unstable -= culprit - shift
-            assembled = StudioFormatter.assemble(all)
+            assembled = StudioFormatter.assemble(all, release)
         }
         val unverifiedAll = unverified.map { it + shift }.toMutableSet()
         if (fmUnverified) all.indexOfFirst { it.block.kind == StudioBlockKind.FRONTMATTER }.takeIf { it >= 0 }?.let { unverifiedAll += it }
@@ -513,9 +526,9 @@ object StudioStyle {
     private val BINDING = Regex("\\{\\{[\\s\\S]*?}}")
 
     /** [rendered] (a block as Studio's text path writes it) has `{{ ... }}` in its text, outside code. */
-    private fun hasBinding(rendered: String): Boolean {
+    private fun hasBinding(rendered: String, release: StudioEngine): Boolean {
         if ("{{" !in rendered) return false
-        val nodes = nodes(StudioJs.trim(rendered) + "\n") ?: return true
+        val nodes = nodes(StudioJs.trim(rendered) + "\n", release) ?: return true
         fun visit(n: StudioNode): Boolean = when (n) {
             is StudioText -> BINDING.containsMatchIn(n.text)
             is StudioElement -> n.tag != "pre" && n.tag != "code" && n.children.any { visit(it) }
@@ -561,7 +574,7 @@ object StudioStyle {
         var noDocument = false
         fun attempt(withFm: Boolean, used: List<Int>): DbRun? {
             val blocks = (if (withFm && fm != null) listOf(fm) else emptyList()) + used.map { rendered[it] }
-            val input = StudioFormatter.assemble(blocks).text
+            val input = StudioFormatter.assemble(blocks, cache.release).text
             return when (val outcome = cache.emulate(input, collection, sortProps)) {
                 is StudioDbPath.Outcome.Written -> {
                     val inDoc = cache.segmented(input) ?: return null
@@ -586,8 +599,8 @@ object StudioStyle {
         return DbResult(run, noDocument)
     }
 
-    private fun segmented(text: String): StudioSegmentedDocument? = try {
-        StudioTreeBuilder.buildSegmented(text)
+    private fun segmented(text: String, release: StudioEngine): StudioSegmentedDocument? = try {
+        StudioTreeBuilder.buildSegmented(text, release)
     } catch (_: StudioTextPathException) {
         null
     } catch (_: StudioUnsupportedException) {
@@ -605,14 +618,14 @@ object StudioStyle {
      * Studio's front matter rules with the heading read from the text path's tree of [text]; where the text path fails on the
      * whole document (a block kept for invalid props YAML, say), from the trees of its top-level blocks.
      */
-    private fun approximateFrontMatter(text: String, collection: StudioCollection): Approximation {
+    private fun approximateFrontMatter(text: String, collection: StudioCollection, release: StudioEngine): Approximation {
         val (yaml, nodes) = try {
-            StudioTreeBuilder.build(text).let { it.frontmatterValue to it.nodes }
+            StudioTreeBuilder.build(text, release).let { it.frontmatterValue to it.nodes }
         } catch (_: StudioTextPathException) {
             null
         } catch (_: StudioUnsupportedException) {
             null
-        } ?: segmented(text)?.let { doc ->
+        } ?: segmented(text, release)?.let { doc ->
             val fm = doc.frontmatter
             if (fm != null && fm.error != null) return Approximation(null, null)
             (fm?.data ?: LinkedHashMap<String, Any?>()) to doc.segments.flatMap { it.nodes }
@@ -788,13 +801,13 @@ object StudioStyle {
         kept.forEach { reported += it.outputLines }
         unstable.forEach { reported += it.outputLines }
         unverified.forEach { reported += it.outputLines }
-        var affected = affectedBlocks(last.text, mapping, reported)
+        var affected = affectedBlocks(last.text, mapping, reported, options.release)
         var text = last.text
         var restyled = 0
         var unverifiedOut = unverified
         var mappingOut: List<StudioBlockMapping> = mapping
         if (!options.rendersLikeStudio) {
-            val r = restyle(text, kept.map { it.outputLines }, options.rendererStyle)
+            val r = restyle(text, kept.map { it.outputLines }, options.rendererStyle, options.release)
             text = r.text
             restyled = r.restyled
             kept = ArrayList(kept.map { it.copy(outputLines = r.map(it.outputLines)) })
@@ -829,8 +842,8 @@ object StudioStyle {
      * line, marks the block that holds it (or the next one). The port of the text path is exact, so these are the blocks the
      * code editor will change on save because a damaged block before them runs into them.
      */
-    private fun affectedBlocks(text: String, mapping: List<StudioBlockMapping>, reported: Set<Int>): List<StudioAffectedBlock> {
-        val written = StudioFormatter.format(text) ?: return emptyList()
+    private fun affectedBlocks(text: String, mapping: List<StudioBlockMapping>, reported: Set<Int>, release: StudioEngine): List<StudioAffectedBlock> {
+        val written = StudioFormatter.format(text, release) ?: return emptyList()
         if (written == text) return emptyList()
         val lines = text.split("\n")
         val touched = sortedSetOf<Int>()
@@ -932,8 +945,8 @@ object StudioStyle {
      * The top-level blocks of [text] outside [kept] written again with [style], each only where its new form parses to the
      * same tree as the Studio form.
      */
-    private fun restyle(text: String, kept: List<IntRange>, style: StudioRenderer.Style): Restyled {
-        val doc = segmented(text) ?: return Restyled(text, 0, emptyList())
+    private fun restyle(text: String, kept: List<IntRange>, style: StudioRenderer.Style, release: StudioEngine): Restyled {
+        val doc = segmented(text, release) ?: return Restyled(text, 0, emptyList())
         val lines = text.split("\n")
         val replacements = ArrayList<Pair<IntRange, String>>()
         for (segment in doc.segments) {
@@ -942,10 +955,10 @@ object StudioStyle {
             val range = start until start + sourceLines.size
             if (kept.any { it.first <= range.last && range.first <= it.last }) continue
             if (range.last >= lines.size || lines.subList(range.first, range.last + 1) != sourceLines) continue
-            val original = nodes(segment.source + "\n")
+            val original = nodes(segment.source + "\n", release)
             fun render(with: StudioRenderer.Style): String? {
-                val piece = StudioPostProcess.padBlankLinesInComponents(StudioJs.trim(StudioRenderer.renderNodes(segment.nodes, null, with)))
-                return piece.takeIf { original != null && nodes(it + "\n") == original }
+                val piece = StudioPostProcess.padBlankLinesInComponents(StudioJs.trim(StudioRenderer.renderNodes(segment.nodes, null, with, release)))
+                return piece.takeIf { original != null && nodes(it + "\n", release) == original }
             }
             // a wider indent can push nested components to four spaces, where they read as code: the block then keeps Studio's
             // two-space nesting, but still gets the other options (props layout, markers, ...)
@@ -965,14 +978,14 @@ object StudioStyle {
         }
         if (replacements.isEmpty()) return Restyled(text, 0, emptyList())
         // each block was checked on its own; the blocks around it can still change how it parses
-        val expected = nodes(text) ?: return Restyled(text, 0, emptyList())
+        val expected = nodes(text, release) ?: return Restyled(text, 0, emptyList())
         val all = apply(replacements)
-        if (nodes(all.text) == expected) return all
-        return apply(replacements.filter { nodes(apply(listOf(it)).text) == expected })
+        if (nodes(all.text, release) == expected) return all
+        return apply(replacements.filter { nodes(apply(listOf(it)).text, release) == expected })
     }
 
-    private fun nodes(text: String): List<StudioNode>? = try {
-        StudioTreeBuilder.build(text).nodes
+    private fun nodes(text: String, release: StudioEngine): List<StudioNode>? = try {
+        StudioTreeBuilder.build(text, release).nodes
     } catch (_: StudioTextPathException) {
         null
     } catch (_: StudioUnsupportedException) {
