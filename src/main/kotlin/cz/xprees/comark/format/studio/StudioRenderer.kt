@@ -210,8 +210,8 @@ object StudioRenderer {
             "table" -> if (state.ctx.comark09 && node.children.none { tagOf(it) in TABLE_SECTIONS }) mdc(node, state, parent) else table(node, state)
             "thead", "tbody", "tr", "th", "td" -> ""
             "comment" -> if (state.ctx.comark09) mdc(node, state, parent) else ""
-            "math" -> math(node, parent)
-            "mermaid" -> mermaid(node, state.ctx.style.fenceChar)
+            "math" -> if (state.ctx.comark09) math09(node, state, parent) else math(node, parent)
+            "mermaid" -> if (state.ctx.comark09 && node.attrs["content"] !is String) mdc(node, state, parent) else mermaid(node, state.ctx.style.fenceChar)
             else -> mdc(node, state, parent)
         }
     }
@@ -1123,6 +1123,24 @@ object StudioRenderer {
         val hasInlineSiblings = parent?.children?.any { it is StudioText } ?: false
         val isInline = "inline" in classes || ("block" !in classes && hasInlineSiblings)
         if (isInline) return "$$content$"
+        return "$$\n$content\n$$$BLOCK_SEPARATOR"
+    }
+
+    /** comark 0.9's `math`: an element that is neither of class `math` nor has string `content` is a component; `\\(` / `\\[` markup is kept. */
+    private fun math09(node: StudioElement, state: State, parent: StudioElement?): String {
+        val className = node.attrs["class"]
+        val classes = if (className is String) className.split(" ") else emptyList()
+        if ("math" !in classes && node.attrs["content"] !is String) return mdc(node, state, parent)
+        val content = textContent(node)
+        val hasInlineSiblings = parent?.children?.any { it is StudioText } ?: false
+        val isInline = "inline" in classes || ("block" !in classes && hasInlineSiblings)
+        val markup = (node.attrs["\$"] as? Map<*, *>)?.get("markup")
+        if (isInline) {
+            if (markup == "\\(") return "\\($content\\)"
+            if (markup == "\\[") return "\\[$content\\]"
+            return "$$content$"
+        }
+        if (markup == "\\[") return "\\[\n$content\n\\]$BLOCK_SEPARATOR"
         return "$$\n$content\n$$$BLOCK_SEPARATOR"
     }
 

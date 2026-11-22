@@ -9,7 +9,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Progress of the nuxt-studio 1.8.2 / comark 0.9.2 port against its oracle (`src/test/testData/studio/1.8.2/oracle.json`).
+ * Progress of the nuxt-studio 1.8.2 / comark 0.9.2 port against its oracle (`src/test/testData/studio/1.8.2/oracle.json`) and
+ * the seeded random documents recorded from the same release (`1.8.2/text-vectors.json`).
  * Each check is a ratchet: it fails when fewer cases match than the floor, so a change can only keep or raise the count. Once
  * every case matches, `StudioEngine.V1_8_2` becomes available and these become exact like the 1.8.0 tests.
  */
@@ -36,6 +37,17 @@ class Studio182OracleTest {
         }
     }
 
+    @Test
+    fun textPathRandomDocuments() {
+        val vectors = StudioOracleCases.textVectors182
+        ratchet("1.8.2 tree builder, random documents", VECTOR_TREE_FLOOR, vectors) {
+            verdict(StudioOracleCases.compareTree(it["input"].asString, it["tree"], it["frontmatter"], StudioEngine.V1_8_2))
+        }
+        ratchet("1.8.2 text path, random documents", VECTOR_TEXT_FLOOR, vectors) {
+            verdict(StudioOracleCases.compareText(it["input"].asString, it["text"], StudioEngine.V1_8_2))
+        }
+    }
+
     private fun verdict(v: StudioOracleCases.Verdict): String? =
         if (v.outcome == Outcome.MATCH || v.outcome == Outcome.BOTH_FAIL) null else "${v.outcome} ${v.detail}"
 
@@ -56,7 +68,7 @@ class Studio182OracleTest {
 
     /** [mismatch] gives null for a matching case, else what differs. */
     private fun ratchet(label: String, floor: Int, cases: List<JsonObject>, mismatch: (JsonObject) -> String?) {
-        val failing = cases.mapNotNull { case -> mismatch(case)?.let { "${case["name"].asString}: $it" } }
+        val failing = cases.mapIndexedNotNull { i, case -> mismatch(case)?.let { "${case["name"]?.asString ?: "vector #$i"}: $it" } }
         val count = cases.size - failing.size
         println("$label: $count of ${cases.size} match (floor $floor)")
         failing.forEach { println("  $it") }
@@ -68,5 +80,7 @@ class Studio182OracleTest {
         const val RENDER_DB_FLOOR = 480
         const val TREE_FLOOR = 480
         const val TEXT_FLOOR = 480
+        const val VECTOR_TREE_FLOOR = 5021
+        const val VECTOR_TEXT_FLOOR = 5021
     }
 }
