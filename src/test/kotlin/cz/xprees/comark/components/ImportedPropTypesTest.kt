@@ -112,6 +112,69 @@ class ImportedPropTypesTest : ComponentsTestBase() {
         assertEquals(setOf("title", "type"), propNames("alert"))
     }
 
+    // ---- tsconfig paths ---------------------------------------------------------------------------------------------
+
+    fun testTsconfigPathsWithBaseUrl() {
+        myFixture.addFileToProject(
+            "tsconfig.json",
+            """
+            // comments and trailing commas are allowed
+            {
+              "compilerOptions": {
+                "baseUrl": ".", /* targets are relative to it */
+                "paths": { "#types/*": ["./shared/types/*"], "@ui": ["./ui/index.ts"], },
+              },
+            }
+            """.trimIndent(),
+        )
+        myFixture.addFileToProject("ui/index.ts", "export interface Base { id?: string }")
+        addAlert("import type { Props } from '#types/alert'\nimport type { Base } from '@ui'", "shared/types/alert.ts")
+        myFixture.addFileToProject(
+            "components/Notice.vue",
+            "<script setup lang=\"ts\">\nimport type { Props } from '#types/alert'\nimport type { Base } from '@ui'\ndefineProps<Props & Base>()\n</script>",
+        )
+        assertEquals(setOf("title", "type"), propNames("alert"))
+        assertEquals(setOf("title", "type", "id"), propNames("notice"))
+    }
+
+    fun testNuxtGeneratedPathsThroughExtends() {
+        // Nuxt writes the project's aliases to .nuxt/tsconfig.json, relative to .nuxt/ (no baseUrl)
+        myFixture.addFileToProject("tsconfig.json", """{ "extends": "./.nuxt/tsconfig.json" }""")
+        myFixture.addFileToProject(".nuxt/tsconfig.json", """{ "compilerOptions": { "paths": { "#shared": ["../shared"], "#shared/*": ["../shared/*"] } } }""")
+        addAlert("import type { Props } from '#shared/types/alert'", "shared/types/alert.ts")
+        assertEquals(setOf("title", "type"), propNames("alert"))
+    }
+
+    fun testNuxt4SolutionStyleReferences() {
+        myFixture.addFileToProject("tsconfig.json", """{ "files": [], "references": [{ "path": "./.nuxt/tsconfig.server.json" }, { "path": "./.nuxt/tsconfig.app.json" }] }""")
+        myFixture.addFileToProject(".nuxt/tsconfig.server.json", """{ "compilerOptions": { "paths": { "#server/*": ["../server/*"] } } }""")
+        myFixture.addFileToProject(".nuxt/tsconfig.app.json", """{ "compilerOptions": { "paths": { "#custom/*": ["../lib/*"] } } }""")
+        addAlert("import type { Props } from '#custom/alert'", "lib/alert.ts")
+        assertEquals(setOf("title", "type"), propNames("alert"))
+    }
+
+    fun testLongestPrefixWins() {
+        myFixture.addFileToProject("tsconfig.json", """{ "compilerOptions": { "paths": { "#a/*": ["./wrong/*"], "#a/b/*": ["./right/*"] } } }""")
+        myFixture.addFileToProject("wrong/alert.ts", "export interface Props { wrong: string }")
+        addAlert("import type { Props } from '#a/b/alert'", "right/alert.ts")
+        assertEquals(setOf("title", "type"), propNames("alert"))
+    }
+
+    fun testEditingTsconfigReResolves() {
+        myFixture.addFileToProject("tsconfig.json", """{ "compilerOptions": { "paths": { "#types/*": ["./old/*"] } } }""")
+        addAlert("import type { Props } from '#types/alert'", "new/alert.ts")
+        assertTrue(propNames("alert").isEmpty())
+        val config = myFixture.findFileInTempDir("tsconfig.json")
+        WriteCommandAction.runWriteCommandAction(project) {
+            VfsUtil.saveText(config, """{ "compilerOptions": { "paths": { "#types/*": ["./new/*"] } } }""")
+        }
+        assertEquals(setOf("title", "type"), propNames("alert"))
+    }
+
+    fun testStripJsonc() {
+        assertEquals("""{ "a": "x // not a comment", "b": [1, 2]   }""", cz.xprees.comark.meta.stripJsonc("""{ "a": "x // not a comment", "b": [1, 2,] /* c */ }"""))
+    }
+
     companion object {
         private val TYPES = """
             /** Props of the alert. */
