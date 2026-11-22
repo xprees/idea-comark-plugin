@@ -62,7 +62,7 @@ class ComarkStudioFormattingServiceTest : BasePlatformTestCase() {
         myFixture.configureFromExistingVirtualFile(myFixture.addFileToProject("content/page.mdc", "# A\n").virtualFile)
         val context = ComarkStudioFormatting.context(myFixture.file, ComarkStyle.of(myFixture.file))
         assertEquals(ComarkStudioVersions.getInstance(project).engineFor(myFixture.file.virtualFile), context.engine)
-        assertEquals(StudioEngine.V1_8_0, context.engine)
+        assertEquals(StudioEngine.V1_8_2, context.engine)
         // a file without a virtual file gets the newest available release
         val inMemory = com.intellij.psi.PsiFileFactory.getInstance(project).createFileFromText("memory.mdc", myFixture.file.fileType, "# A\n")
         assertEquals(StudioEngine.newest, ComarkStudioFormatting.engineFor(inMemory))

@@ -40,7 +40,8 @@ class StudioStyleAdapterTest {
     @Test
     fun releaseFromTheContext() {
         assertEquals(StudioEngine.newest, StudioStyleContext("page.md").engine)
-        assertEquals("A [x]() link\n", StudioStyleAdapter.format("A [x]() link\n", StudioStyleContext("page.md", data))!!.text)
+        assertEquals(StudioEngine.V1_8_2, StudioEngine.newest)
+        assertEquals("A [x]() link\n", StudioStyleAdapter.format("A [x]() link\n", StudioStyleContext("page.md", data, engine = StudioEngine.V1_8_0))!!.text)
         assertEquals("A [x](<>) link\n", StudioStyleAdapter.format("A [x]() link\n", StudioStyleContext("page.md", data, engine = StudioEngine.V1_8_2))!!.text)
         // blank lines between blocks are read with the release's parse too
         val custom = StudioStyleOptions(maxBlankLines = 2)

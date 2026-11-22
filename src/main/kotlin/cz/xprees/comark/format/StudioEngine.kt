@@ -8,8 +8,8 @@ package cz.xprees.comark.format
 enum class StudioEngine(val studio: String, val comark: String, val available: Boolean) {
     V1_8_0("1.8.0", "0.7.0", true),
 
-    /** comark 0.9.2; the port is in progress (`src/test/testData/studio/1.8.2`). */
-    V1_8_2("1.8.2", "0.9.2", false),
+    /** comark 0.9.2 (oracle and vectors in `src/test/testData/studio/1.8.2`). */
+    V1_8_2("1.8.2", "0.9.2", true),
     ;
 
     companion object {
