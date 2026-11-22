@@ -1,9 +1,12 @@
 package cz.xprees.comark.format.studio
 
+import cz.xprees.comark.format.StudioEngine
+
 import java.util.Locale
 
 /**
- * A byte-exact port of comark 0.7.0 `renderMarkdown(document, { blockAttributesStyle: 'frontmatter' })`: `render.js`,
+ * A byte-exact port of comark 0.7.0 (and, for a document whose [StudioDocument.release] is nuxt-studio 1.8.2, comark 0.9.2)
+ * `renderMarkdown(document, { blockAttributesStyle: 'frontmatter' })`: `render.js`,
  * `internal/stringify/state.js`, `attributes.js`, `fence.js`, `internal/frontmatter.js` and every handler in
  * `internal/stringify/handlers/`, with no user components, `maxInlineAttributes` 3 and block separator `\n\n`.
  *
@@ -66,17 +69,32 @@ object StudioRenderer {
 
     /** `render(document, ...)`: the body, trimmed and ending with one `\n`. */
     fun render(document: StudioDocument, observer: ComponentObserver? = null): String =
-        StudioJs.trim(renderNodes(document.nodes, observer)) + "\n"
+        StudioJs.trim(renderNodes(document.nodes, observer, Style.STUDIO, document.release)) + "\n"
 
     /** The concatenated output of top-level [nodes], before `render` trims the whole body. */
     fun renderNodes(nodes: List<StudioNode>, observer: ComponentObserver? = null): String = renderNodes(nodes, observer, Style.STUDIO)
 
-    internal fun renderNodes(nodes: List<StudioNode>, observer: ComponentObserver?, style: Style): String {
-        val state = State(Context(observer, style), 0)
-        val sb = StringBuilder()
-        for (child in nodes) sb.append(one(child, state, null))
-        return sb.toString()
+    internal fun renderNodes(nodes: List<StudioNode>, observer: ComponentObserver?, style: Style, release: StudioEngine = StudioEngine.V1_8_0): String {
+        val previous = currentRelease.get()
+        currentRelease.set(release)
+        try {
+            val state = State(Context(observer, style), 0)
+            val sb = StringBuilder()
+            for (child in nodes) sb.append(one(child, state, null))
+            return sb.toString()
+        } finally {
+            currentRelease.set(previous)
+        }
     }
+
+    /**
+     * The release being rendered. A thread-local rather than a [Context] field because the attribute helpers
+     * ([comarkAttributes], [userBlockAttrs]) are called from everywhere without a state, as in comark.
+     */
+    private val currentRelease: ThreadLocal<StudioEngine> = ThreadLocal.withInitial { StudioEngine.V1_8_0 }
+
+    /** comark 0.9 (nuxt-studio 1.8.2) and later. */
+    private val comark09: Boolean get() = currentRelease.get() >= StudioEngine.V1_8_2
 
     /** `renderFrontmatter(data, content)` (`internal/frontmatter.js`). */
     fun renderFrontmatter(data: Any?, content: String): String {
@@ -100,7 +118,16 @@ object StudioRenderer {
     // ---- state ----------------------------------------------------------------------------------------------------------
 
     /** The mutable `state.context` keys handlers set through `applyContext`. `order` 0 stands for `false`/`undefined`. */
+    /** comark 0.9's heading id tracker (`createHeadingIdTracker`), one per render. */
+    private class HeadingIds {
+        val slugCounts = HashMap<String, Int>()
+        val usedIds = HashSet<String>()
+    }
+
     private class Context(val observer: ComponentObserver? = null, val style: Style = Style.STUDIO) {
+        val headingIds by lazy { HeadingIds() }
+        val comark09: Boolean get() = StudioRenderer.comark09
+
         var inline: Boolean? = null
         var list: Boolean? = null
         var order: Double = 0.0
@@ -147,24 +174,28 @@ object StudioRenderer {
 
     private fun one(node: StudioNode, state: State, parent: StudioElement?, atLineStart: Boolean = false): String = when (node) {
         is StudioText -> if (parent != null && isOne(dollar(parent.attrs, "html")) && isOne(dollar(parent.attrs, "block"))) {
-            node.text
+            if (comark09) escapeRawHtmlText(node.text, parent.tag) else node.text
         } else {
             escapeTextNode(node.text, atLineStart)
         }
-        is StudioComment -> "<!--${node.text ?: "undefined"}-->" + BLOCK_SEPARATOR
+        is StudioComment -> "<!--${node.text ?: "undefined"}-->" + if (state.ctx.comark09 && commentIsInline(state, parent)) "" else BLOCK_SEPARATOR
         is StudioElement -> element(node, state, parent)
     }
+
+    /** comark 0.9 `comment`: no block separator after a comment inside a paragraph or among text. */
+    private fun commentIsInline(state: State, parent: StudioElement?): Boolean =
+        state.ctx.inline == true || parent?.tag == "p" || parent?.children?.any { it is StudioText } == true
 
     private fun element(node: StudioElement, state: State, parent: StudioElement?): String {
         if (isOne(dollar(node.attrs, "html"))) return html(node, state, parent)
         return when (node.tag) {
-            "code" -> code(node)
-            "pre" -> pre(node, state.ctx.style.fenceChar)
+            "code" -> code(node, state)
+            "pre" -> pre(node, state)
             "hr" -> if (parent?.tag == "p") ":hr" else "---$BLOCK_SEPARATOR"
-            "br" -> "  \n"
+            "br" -> if (state.ctx.comark09) br(node, parent) else "  \n"
             "h1", "h2", "h3", "h4", "h5", "h6" -> heading(node, state)
             "p" -> p(node, state, parent)
-            "a" -> a(node, state)
+            "a" -> a(node, state, parent)
             "ul" -> ul(node, state)
             "ol" -> ol(node, state)
             "li" -> li(node, state)
@@ -173,11 +204,12 @@ object StudioRenderer {
             "em" -> wrapInline(node, state, state.ctx.style.emphasisChar.toString())
             "del" -> wrapInline(node, state, "~~")
             "blockquote" -> blockquote(node, state)
-            "img" -> img(node)
+            "img" -> img(node, state)
             "mdc" -> mdc(node, state, parent)
             "template" -> template(node, state, parent)
-            "table" -> table(node, state)
-            "thead", "tbody", "tr", "th", "td", "comment" -> ""
+            "table" -> if (state.ctx.comark09 && node.children.none { tagOf(it) in TABLE_SECTIONS }) mdc(node, state, parent) else table(node, state)
+            "thead", "tbody", "tr", "th", "td" -> ""
+            "comment" -> if (state.ctx.comark09) mdc(node, state, parent) else ""
             "math" -> math(node, parent)
             "mermaid" -> mermaid(node, state.ctx.style.fenceChar)
             else -> mdc(node, state, parent)
@@ -197,6 +229,40 @@ object StudioRenderer {
         if (!atLineStart && '\n' !in escaped) return escaped
         return escaped.split("\n").mapIndexed { index, line -> if (index > 0 || atLineStart) escapeLeadingBlock(line) else line }
             .joinToString("\n")
+    }
+
+    private val OPEN_TAG_START = Regex("</?[a-zA-Z][a-zA-Z0-9-]*[\\s/]")
+
+    private val TEXT_ONLY_TAGS = mapOf("script" to "<\\/", "style" to "<\\/", "textarea" to "&lt;/")
+
+    /** comark 0.9 `escapeRawHtmlText`: text inside a raw HTML block can't open a tag (or close a `script`, `style`, `textarea`). */
+    private fun escapeRawHtmlText(text: String, tag: String): String {
+        if ('<' !in text) return text
+        val lowerTag = tag.lowercase(Locale.ROOT)
+        val closerEscape = TEXT_ONLY_TAGS[lowerTag]
+        val sb = StringBuilder()
+        var last = 0
+        if (closerEscape != null) {
+            val lower = text.lowercase(Locale.ROOT)
+            val closer = "</$lowerTag"
+            var index = lower.indexOf(closer)
+            while (index != -1) {
+                sb.append(text, last, index).append(closerEscape)
+                last = index + 2
+                index = lower.indexOf(closer, last)
+            }
+            return sb.append(text, last, text.length).toString()
+        }
+        var index = text.indexOf('<')
+        while (index != -1) {
+            val next = text.getOrNull(index + 1)
+            if (next != null && (next in 'A'..'Z' || next in 'a'..'z' || next == '!' || next == '/' || next == '?')) {
+                sb.append(text, last, index).append("&lt;")
+                last = index + 1
+            }
+            index = text.indexOf('<', index + 1)
+        }
+        return sb.append(text, last, text.length).toString()
     }
 
     private fun isAsciiAlphaNumeric(c: Char?) = c != null && (c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9')
@@ -219,12 +285,13 @@ object StudioRenderer {
                         true
                     } else {
                         if (nextGt == -2) nextGt = source.lastIndexOf('>')
-                        nextGt < offset + 1
+                        // comark 0.9 also escapes an unclosed tag start such as `<div ` or `</p/`
+                        nextGt < offset + 1 && !(comark09 && OPEN_TAG_START.matchesAt(source, offset))
                     }
                 }
                 '&' -> !entityAt(source, offset)
                 ':' -> {
-                    val prevAllowed = prev == null || prev in " \t\n*_["
+                    val prevAllowed = prev == null || prev in (if (comark09) " \t\n*_[]})>" else " \t\n*_[")
                     !(prevAllowed && next != null && (next in 'a'..'z' || next in 'A'..'Z' || next == '$'))
                 }
                 '{' -> if (prev == '{' || prev == '$') true else !attributeBraceAt(source, offset)
@@ -336,7 +403,7 @@ object StudioRenderer {
 
     /** `comarkAttributes(attributes)` */
     private fun comarkAttributes(attributes: Map<String, Any?>): String {
-        val attrs = StudioJs.entries(attributes).joinToString(" ") { (key, value) ->
+        val attrs = StudioJs.entries(attributes).filter { !comark09 || it.first != "\$" }.joinToString(" ") { (key, value) ->
             when {
                 key.startsWith(":") && value == "true" -> key.substring(1)
                 key == "id" -> "#" + StudioJs.str(value)
@@ -360,15 +427,32 @@ object StudioRenderer {
 
     private val SAFE_ATTR_NAME = Regex("[a-zA-Z_:][a-zA-Z0-9_:.-]*")
 
-    /** `htmlAttributes(attributes)` */
-    private fun htmlAttributes(attributes: Map<String, Any?>): String {
+    private val CODE_BLOCK_PROPS = setOf("language", "filename", "highlights", "meta")
+
+    /** comark 0.9 `toNativeAttributes`: a Markdown code block written as HTML moves its fence props to `data-*`. */
+    private fun toNativeAttributes(tag: String, node: StudioElement, attributes: Map<String, Any?>): Map<String, Any?> {
+        if (tag != "pre" || isOne(dollar(node.attrs, "html"))) return attributes
+        if (StudioJs.keys(attributes).none { it in CODE_BLOCK_PROPS }) return attributes
+        val result = LinkedHashMap<String, Any?>()
+        for ((key, value) in StudioJs.entries(attributes)) {
+            if (key in CODE_BLOCK_PROPS) {
+                result["data-$key"] = if (value != null && StudioJs.isObject(value)) StudioJs.jsonStringify(value) ?: JsUndefined else value
+            } else {
+                result[key] = value
+            }
+        }
+        return result
+    }
+
+    /** `htmlAttributes(attributes, { verbatim })` (comark 0.9 keeps `:name` and `"true"` as written in raw HTML). */
+    private fun htmlAttributes(attributes: Map<String, Any?>, verbatim: Boolean = false): String {
         val parts = ArrayList<String>()
         for ((rawKey, value) in StudioJs.entries(attributes)) {
-            val key = if (rawKey.startsWith(":")) rawKey.substring(1) else rawKey
+            val key = if (rawKey.startsWith(":") && !verbatim) rawKey.substring(1) else rawKey
             if (!SAFE_ATTR_NAME.matches(key)) continue
             if (rawKey.startsWith(":")) {
                 when {
-                    value == "true" -> parts += key
+                    if (verbatim) value == true else value == "true" -> parts += key
                     value is Map<*, *> || value is List<*> || value is JsDate ->
                         parts += "$key=\"" + escapeHtml(StudioJs.jsonStringify(value) ?: "undefined") + "\""
                     else -> parts += "$key=\"" + escapeHtml(StudioJs.str(value)) + "\""
@@ -376,7 +460,7 @@ object StudioRenderer {
                 continue
             }
             when {
-                value == true || value == "true" -> parts += key
+                value == true || !verbatim && value == "true" -> parts += key
                 value == false || value == null || value == JsUndefined -> {}
                 StudioJs.isObject(value) -> parts += "$key=\"" + escapeHtml(StudioJs.jsonStringify(value) ?: "undefined") + "\""
                 else -> parts += "$key=\"" + escapeHtml(StudioJs.str(value)) + "\""
@@ -414,7 +498,8 @@ object StudioRenderer {
 
     /** `userBlockAttrs(tag, attributes)` */
     private fun userBlockAttrs(tag: String, attributes: Map<String, Any?>): Map<String, Any?> {
-        val rule = IMPLICIT_ATTRS[tag] ?: return attributes
+        val highlighted = tag == "pre" || comark09 && tag == "code"
+        val rule = IMPLICIT_ATTRS[tag] ?: if (highlighted) ImplicitRule() else return attributes
         val result = LinkedHashMap<String, Any?>()
         for ((key, value) in StudioJs.entries(attributes)) {
             if (key in rule.drop) continue
@@ -423,7 +508,7 @@ object StudioRenderer {
                 if (remaining.isNotEmpty()) result[key] = remaining
                 continue
             }
-            if (key == "class" && tag == "pre" && value is String && (value.startsWith("shiki") || value.startsWith("shj"))) {
+            if (key == "class" && highlighted && value is String && (value.startsWith("shiki") || value.startsWith("shj"))) {
                 val tokens = StudioJs.splitWhitespace(value)
                 val cutoff = tokens.indexOf(".")
                 val userClass = if (cutoff >= 0) tokens.subList(cutoff + 1, tokens.size).joinToString(" ") else ""
@@ -463,14 +548,26 @@ object StudioRenderer {
 
     // ---- handlers -------------------------------------------------------------------------------------------------------
 
-    private fun code(node: StudioElement): String {
+    private fun code(node: StudioElement, state: State): String {
+        if (state.ctx.comark09) {
+            val attrs = userBlockAttrs("code", node.attrs)
+            val attrsString = if (attrs.isNotEmpty()) comarkAttributes(attrs) else ""
+            val content = textContent(node)
+            val longest = Regex("`+").findAll(content).maxOfOrNull { it.value.length } ?: 0
+            val fence = "`".repeat(longest + 1)
+            val edgeBacktick = content.startsWith("`") || content.endsWith("`")
+            val edgeSpaces = content.startsWith(" ") && content.endsWith(" ") && content.any { it != ' ' }
+            val pad = if (edgeBacktick || edgeSpaces) " " else ""
+            return "$fence$pad$content$pad$fence$attrsString"
+        }
         val attrsString = if (node.attrs.isNotEmpty()) comarkAttributes(node.attrs) else ""
         val content = textContent(node)
         val fence = if ('`' in content) "``" else "`"
         return "$fence$content$fence$attrsString"
     }
 
-    private fun pre(node: StudioElement, fenceChar: Char): String {
+    private fun pre(node: StudioElement, state: State): String {
+        val fenceChar = state.ctx.style.fenceChar
         val attributes = node.attrs
         val first = node.children.firstOrNull()
         val codeClasses = when (first) {
@@ -486,7 +583,8 @@ object StudioRenderer {
         val highlights = attributes["highlights"].takeIf { StudioJs.truthy(it) }?.let { " {" + formatHighlights(it) + "}" } ?: ""
         val meta = attributes["meta"].takeIf { StudioJs.truthy(it) }?.let { " " + StudioJs.str(it) } ?: ""
         val codeAttr = attributes["code"]
-        val code = StudioJs.trimEnd(if (StudioJs.truthy(codeAttr)) StudioJs.str(codeAttr) else textContent(node))
+        val rawCode = if (StudioJs.truthy(codeAttr)) StudioJs.str(codeAttr) else textContent(node)
+        val code = if (state.ctx.comark09) rawCode else StudioJs.trimEnd(rawCode)
         val fence = pickFence(code, fenceChar)
         val fenceBlock = fence + language + filename + highlights + meta + "\n" + code + "\n" + fence
         val attrs = comarkAttributes(userBlockAttrs("pre", attributes))
@@ -564,9 +662,62 @@ object StudioRenderer {
     private fun heading(node: StudioElement, state: State): String {
         val level = node.tag.substring(1).toInt()
         val content = flow(node, state)
+        if (state.ctx.comark09) {
+            val id = if ("id" in node.attrs) node.attrs["id"] else JsUndefined
+            val autoId = autoHeadingId(node, state, id)
+            val attrs = comarkAttributes(if (id == JsUndefined || id == autoId) without(node.attrs, "id") else node.attrs.idFirst())
+            val suffix = if (attrs.isNotEmpty()) " $attrs" else ""
+            return "#".repeat(level) + " " + content + suffix + BLOCK_SEPARATOR
+        }
         val attrs = comarkAttributes(without(node.attrs, "id"))
         val suffix = if (attrs.isNotEmpty()) " $attrs" else ""
         return "#".repeat(level) + " " + content + suffix + BLOCK_SEPARATOR
+    }
+
+    /** `{ id, ...rest }`: the attributes with `id` first. */
+    private fun Map<String, Any?>.idFirst(): Map<String, Any?> = LinkedHashMap<String, Any?>().also { m ->
+        m["id"] = this["id"]
+        for ((k, v) in StudioJs.entries(this)) if (k != "id") m[k] = v
+    }
+
+    /**
+     * comark 0.9 `autoHeadingId` (`heading.js`, `internal/heading-id.js` with `headingIds` unset, so not nested): the id comark
+     * would generate for this heading, counting earlier headings of the same render; the explicit [id] is reserved afterwards.
+     */
+    private fun autoHeadingId(node: StudioElement, state: State, id: Any?): String? {
+        val tracker = state.ctx.headingIds
+        val text = node.children
+            .filterNot { it is StudioElement && dollar(it.attrs, "permalink") == "separate" }
+            .joinToString("") { textContent(it) }
+        val slug = headingSlug(text)
+        var autoId: String? = null
+        if (slug.isNotEmpty()) {
+            var count = tracker.slugCounts[slug] ?: 0
+            var candidate = if (count == 0) slug else "$slug-$count"
+            while (candidate in tracker.usedIds) {
+                count++
+                candidate = "$slug-$count"
+            }
+            tracker.slugCounts[slug] = count + 1
+            tracker.usedIds += candidate
+            autoId = candidate
+        }
+        if (id is String && id.isNotEmpty()) tracker.usedIds += id
+        return autoId
+    }
+
+    private const val JS_SPACE = "\\t\\n\\u000B\\f\\r \\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF"
+    private val SLUG_SPACES = Regex("[$JS_SPACE]+")
+    private val SLUG_DROP = Regex("[^\\p{L}\\p{M}\\p{Nd}\\p{Nl}_-]+")
+    private val SLUG_DASHES = Regex("-{2,}")
+    private val SLUG_EDGES = Regex("^(?:\\p{M}+|-+)+|-+$")
+
+    /** `slugify(text)` of comark 0.9 `internal/heading-id.js`. */
+    internal fun headingSlug(text: String): String {
+        var slug = StudioJs.trim(java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFC).lowercase(Locale.ROOT))
+        slug = slug.replace(SLUG_SPACES, "-").replace(SLUG_DROP, "").replace(SLUG_DASHES, "-").replace(SLUG_EDGES, "")
+        if (slug.isNotEmpty() && slug[0] in '0'..'9') slug = "_$slug"
+        return slug
     }
 
     private fun stripTrailingSpaceTab(s: String): String {
@@ -585,13 +736,67 @@ object StudioRenderer {
         return result + BLOCK_SEPARATOR
     }
 
-    private fun a(node: StudioElement, state: State): String {
+    private fun a(node: StudioElement, state: State, parent: StudioElement?): String {
+        if (state.ctx.comark09) {
+            when (dollar(node.attrs, "permalink")) {
+                "separate" -> return ""
+                "wrap" -> return flow(node, state)
+            }
+            val href = node.attrs["href"] ?: if ("href" in node.attrs) null else JsUndefined
+            val rest = without(node.attrs, "href")
+            val attrsString = if (rest.isNotEmpty()) comarkAttributes(rest) else ""
+            val content = flow(node, state)
+            if (href is String && content == href && attrsString.isEmpty() && AUTOLINK_SAFE.matches(href)) return "<$href>"
+            return "[$content](${linkDestination(href)})$attrsString"
+        }
         val href = node.attrs["href"] ?: if ("href" in node.attrs) null else JsUndefined
         val rest = without(node.attrs, "href")
         val attrsString = if (rest.isNotEmpty()) comarkAttributes(rest) else ""
         val content = flow(node, state)
         if (href is String && content == href && attrsString.isEmpty()) return "<$href>"
         return "[$content](${StudioJs.str(href)})$attrsString"
+    }
+
+    private val AUTOLINK_SAFE = Regex("[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^\\s<>\\\\]*")
+    private val SPECIAL_SCHEME_PREFIX = Regex("^(?i:https?|wss?|ftp|file):")
+    private val ENTITY_START = Regex("^&#?[a-zA-Z0-9]+;")
+
+    private fun isBalanced(value: String, open: Char, close: Char, escapes: Boolean): Boolean {
+        var depth = 0
+        var i = 0
+        while (i < value.length) {
+            val c = value[i]
+            if (escapes && c == '\\') i++
+            else if (c == open) depth++
+            else if (c == close && --depth < 0) return false
+            i++
+        }
+        return depth == 0
+    }
+
+    /** comark 0.9 `linkDestination(url)` (`internal/stringify/link.js`). */
+    internal fun linkDestination(url: Any?): String {
+        if (url == null || url == JsUndefined || url == "") return "<>"
+        val value = StudioJs.str(url)
+        // comark first normalizes a special-scheme URL containing a backslash through `new URL(value).href`; there is no WHATWG
+        // URL parser here, so such a destination (absent from the oracle) is declined
+        if ('\\' in value && SPECIAL_SCHEME_PREFIX.containsMatchIn(value)) throw StudioUnsupportedException("link destination with a backslash: $value")
+        val escapeParens = !isBalanced(value, '(', ')', false)
+        val sb = StringBuilder()
+        for (i in value.indices) {
+            val c = value[i]
+            val code = c.code
+            if (code <= 0x20 || code == 0x7f) {
+                sb.append('%').append(code.toString(16).uppercase(Locale.ROOT).padStart(2, '0'))
+            } else if (c == '\\' || c == '<' || c == '>' || escapeParens && (c == '(' || c == ')') ||
+                c == '&' && ENTITY_START.containsMatchIn(value.substring(i, minOf(value.length, i + 34)))
+            ) {
+                sb.append('\\').append(c)
+            } else {
+                sb.append(c)
+            }
+        }
+        return sb.toString()
     }
 
     private fun wrapInline(node: StudioElement, state: State, marker: String): String {
@@ -621,7 +826,46 @@ object StudioRenderer {
         return content + BLOCK_SEPARATOR
     }
 
-    private fun img(node: StudioElement): String {
+    private val TABLE_SECTIONS = setOf("thead", "tbody", "tr")
+
+    private fun isSpaceCode(c: Char) = c == ' ' || c == '\t' || c == '\n' || c == '\u000C' || c == '\r'
+
+    /** comark 0.9 `br`: a hard break only between two text runs that don't touch whitespace, else `:br` (or `<br>` first). */
+    private fun br(node: StudioElement, parent: StudioElement?): String {
+        val index = parent?.children?.indexOfFirst { it === node } ?: -1
+        if (index < 0) return "  \n"
+        val siblings = parent!!.children
+        val prev = if (index > 0) siblings[index - 1] else null
+        val next = siblings.getOrNull(index + 1)
+        val prevSpace = prev is StudioText && prev.text.isNotEmpty() && isSpaceCode(prev.text.last())
+        val nextSpace = next is StudioText && next.text.isNotEmpty() && isSpaceCode(next.text.first())
+        fun isBr(n: StudioNode?) = n is StudioElement && n.tag == "br"
+        if (prev != null && next != null && !isBr(prev) && !isBr(next) && !prevSpace && !nextSpace) return "  \n"
+        if (prev == null) return "<br>"
+        val open = if (prevSpace) ":br" else " :br"
+        return if (nextSpace) open else "$open "
+    }
+
+    /** comark 0.9 `imageAlt`: brackets escaped unless balanced. */
+    private fun imageAlt(alt: String): String =
+        if (isBalanced(alt, '[', ']', true)) alt else Regex("(?<!\\\\)[\\[\\]]").replace(alt) { "\\" + it.value }
+
+    private fun img(node: StudioElement, state: State): String {
+        if (state.ctx.comark09) {
+            val attrs = node.attrs
+            val title = attrs["title"]
+            val src = if ("src" in attrs) attrs["src"] else JsUndefined
+            val alt = imageAlt(StudioJs.str(if ("alt" in attrs && attrs["alt"] != JsUndefined) attrs["alt"] else ""))
+            val rest = without(attrs, "title", "src", "alt")
+            val attrsString = if (rest.isNotEmpty()) comarkAttributes(rest) else ""
+            val destination = linkDestination(src)
+            val link = if (StudioJs.truthy(title)) {
+                "![$alt]($destination \"" + StudioJs.str(title).replace(Regex("[\"\\\\<&]")) { "\\" + it.value } + "\")"
+            } else {
+                "![$alt]($destination)"
+            }
+            return link + attrsString
+        }
         val attrs = node.attrs
         val title = attrs["title"]
         val src = if ("src" in attrs) attrs["src"] else JsUndefined
@@ -687,16 +931,21 @@ object StudioRenderer {
                 if (StudioJs.truthy(classNameAttr)) classNameAttr else node.attrs["class"] ?: if ("class" in node.attrs) null else JsUndefined,
             )
         }
+        val c9 = state.ctx.comark09
+        // comark 0.9 measures the indent of continuation lines before adding the checkbox
+        val bulletWidth = prefix.length
         if ("task-list-item" in className) {
-            val inputAttrs = when (val input = children.removeAt(0)) {
+            val inputAttrs = if (c9) takeCheckbox(children)?.attrs else when (val input = children.removeAt(0)) {
                 is StudioElement -> input.attrs
                 is StudioComment -> input.attrs
                 is StudioText -> emptyMap()
             }
-            val checked = StudioJs.truthy(inputAttrs["checked"]) || StudioJs.truthy(inputAttrs[":checked"])
-            prefix += if (checked) "[x] " else "[ ] "
+            if (inputAttrs != null) {
+                val checked = StudioJs.truthy(inputAttrs["checked"]) || StudioJs.truthy(inputAttrs[":checked"])
+                prefix += if (checked) "[x] " else "[ ] "
+            }
         }
-        val prefixWidth = prefix.length
+        val prefixWidth = if (c9) bulletWidth else prefix.length
         val hasInlineContent = children.any { it is StudioText }
         var result = ""
         for (child in children) {
@@ -707,7 +956,7 @@ object StudioRenderer {
                     result = StudioJs.trimEnd(result) + "\n" + StudioJs.trimEnd(indented) + "\n"
                     continue
                 }
-                if (result.isNotEmpty() && tag == "p") {
+                if (result.isNotEmpty() && (tag == "p" || c9 && child is StudioComment && !hasInlineContent)) {
                     val indented = indent(one(child, state, node), width = prefixWidth)
                     result = StudioJs.trimEnd(result) + "\n\n" + StudioJs.trimEnd(indented) + "\n"
                     continue
@@ -730,6 +979,23 @@ object StudioRenderer {
         val suffix = if (attrs.isNotEmpty()) " $attrs" else ""
         if (order != 0.0) state.ctx.order = order + 1
         return "$prefix$result$suffix\n"
+    }
+
+    /** comark 0.9 `takeCheckbox`: the leading `input`, directly or as the first child of a leading paragraph. */
+    private fun takeCheckbox(children: MutableList<StudioNode>): StudioElement? {
+        val first = children.firstOrNull()
+        if (first is StudioElement && first.tag == "input") {
+            children.removeAt(0)
+            return first
+        }
+        if (first is StudioElement && first.tag == "p") {
+            val checkbox = first.children.firstOrNull()
+            if (checkbox is StudioElement && checkbox.tag == "input") {
+                children[0] = first.copy(children = first.children.drop(1))
+                return checkbox
+            }
+        }
+        return null
     }
 
     private val TEXT_BLOCKS = setOf("p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "td", "th")
@@ -777,7 +1043,12 @@ object StudioRenderer {
         }
         state.ctx.inline = revert
         var content = sb.toString()
-        val attrs = if (attributes.isNotEmpty()) " " + htmlAttributes(attributes) else ""
+        val attrs = if (state.ctx.comark09) {
+            val native = toNativeAttributes(tag, node, attributes)
+            if (native.isNotEmpty()) " " + htmlAttributes(native, verbatim = isOne(dollarAttr?.get("html"))) else ""
+        } else {
+            if (attributes.isNotEmpty()) " " + htmlAttributes(attributes) else ""
+        }
         val separator = if (parent == null && !isInline) BLOCK_SEPARATOR else ""
         if (isSelfClose) return "<$tag$attrs>$separator"
         if (!oneLiner && content.isNotEmpty()) content = "\n" + StudioJs.trimEnd(content) + "\n"
@@ -789,7 +1060,7 @@ object StudioRenderer {
     private fun mdc(node: StudioElement, state: State, parent: StudioElement?): String {
         val tag = node.tag
         val attributes = without(node.attrs, "\$")
-        if (tag == "table") return html(node, state, null)
+        if (tag == "table" && !state.ctx.comark09) return html(node, state, null)
         val attributeEntries = StudioJs.entries(attributes)
         val hasObjectAttributes = attributeEntries.any { StudioJs.isObject(it.second) }
         val hasTextSiblings = parent?.children?.any { it is StudioText } ?: false
@@ -827,7 +1098,10 @@ object StudioRenderer {
                 "$fence$tag$attrs$body\n$fence$BLOCK_SEPARATOR"
             }
         }
-        return if (inline) result else indent(result, level = if (parent != null) 1 else 0, levelWidth = state.ctx.style.indentSize)
+        // comark 0.9 does not indent a component that follows a list in its parent
+        val afterList = state.ctx.comark09 && parent != null &&
+            parent.children.indexOfFirst { it === node }.let { i -> i > 0 && tagOf(parent.children[i - 1]).let { t -> t == "ul" || t == "ol" } }
+        return if (inline) result else indent(result, level = if (parent != null && !afterList) 1 else 0, levelWidth = state.ctx.style.indentSize)
     }
 
     private fun template(node: StudioElement, state: State, parent: StudioElement?): String {
@@ -878,6 +1152,10 @@ object StudioRenderer {
         val sb = StringBuilder()
         for (child in cell.children) {
             if (child is StudioText) sb.append(child.text) else sb.append(one(child, state, cell))
+        }
+        if (StudioRenderer.comark09) {
+            val trimmed = sb.toString().replace(Regex("^[ \\t\\n]+|[ \\t\\n]+$"), "")
+            return escapePipes(trimmed.replace(Regex("^\u00a0+|\u00a0+$")) { "&nbsp;".repeat(it.value.length) })
         }
         return escapePipes(StudioJs.trim(sb.toString()))
     }

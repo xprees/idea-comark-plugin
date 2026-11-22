@@ -11,6 +11,9 @@ import java.io.File
 internal object StudioOracleCases {
     val cases: List<JsonObject> by lazy { load("oracle.json", "cases") }
 
+    /** The oracle recorded from nuxt-studio 1.8.2 / comark 0.9.2 (`node record-release.mjs 1.8.2 record.mjs`). */
+    val cases182: List<JsonObject> by lazy { load("1.8.2/oracle.json", "cases") }
+
     /** `text-vectors.json`: seeded random documents built from the corpus (`record-text-vectors.mjs`). */
     val textVectors: List<JsonObject> by lazy { load("text-vectors.json", "vectors") }
 
