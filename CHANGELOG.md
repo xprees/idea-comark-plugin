@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- The Nuxt Studio style supports nuxt-studio 1.8.2, which moved to comark 0.9.2, alongside 1.8.0. Projects without nuxt-studio
+  and projects on 1.8.2 or later get 1.8.2's output, for example explicit heading ids kept (`## Title {#custom}`), inline code
+  fenced with as many backticks as it needs, empty link destinations written `[text](<>)` and `<` escaped in raw HTML text;
+  projects on 1.8.0 or 1.8.1 keep 1.8.0's
+
 ## [2026.3.26] - 2026-11-22
 
 ### Added
@@ -9,10 +16,6 @@
 - *Settings › Languages & Frameworks › Comark › Nuxt Studio version* chooses the nuxt-studio release the Nuxt Studio style writes
   for. **Automatic**, the default, follows the release the project uses (the newest supported one not newer than it), and the
   newest supported release in projects without nuxt-studio
-- The Nuxt Studio style supports nuxt-studio 1.8.2, which moved to comark 0.9.2, alongside 1.8.0. Projects without nuxt-studio
-  and projects on 1.8.2 or later get 1.8.2's output, for example explicit heading ids kept (`## Title {#custom}`), inline code
-  fenced with as many backticks as it needs, empty link destinations written `[text](<>)` and `<` escaped in raw HTML text;
-  projects on 1.8.0 or 1.8.1 keep 1.8.0's
 - Nuxt Studio style: collection schemas imported by name from the project's own files (`import { pageSchema } from './schemas'`
   in `content.config.ts`, also through further imports) are read, so their fields and defaults get Studio's front matter rules;
   editing the imported file takes effect without touching the configuration
@@ -23,6 +26,8 @@
   Comark files to the name the new location gives (`components/base/Button.vue` moved to `components/ui/` turns `::base-button`
   into `::ui-base-button`); renaming a directory of components does the same. Moves inside `components/content/` keep the names,
   since Nuxt Content registers that directory without path prefixes
+
+## [2026.3.23] - 2026-11-21
 
 ### Fixed
 
@@ -194,7 +199,8 @@ Markdown plugin.
 - Components, props and slots render as labelled blocks in the built-in Markdown preview
 
 [Unreleased]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.26...HEAD
-[2026.3.26]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.21...2026.3.26
+[2026.3.26]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.23...2026.3.26
+[2026.3.23]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.21...2026.3.23
 [2026.3.21]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.18...2026.3.21
 [2026.3.18]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.17...2026.3.18
 [2026.3.17]: https://github.com/xprees/idea-comark-plugin/compare/2026.3.15...2026.3.17
